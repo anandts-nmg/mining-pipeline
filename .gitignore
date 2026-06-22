@@ -1,0 +1,51 @@
+# ---- Project data & generated outputs (NEVER commit raw data or deliverables) ----
+data/
+outputs/
+control/
+runs/
+*.gpkg
+*.tif
+*.tiff
+*.hdf
+*.kmz
+*.img
+*.ovr
+*.aux.xml
+
+# Large binaries / GIS sidecars that may slip in
+*.tfw
+*.jgw
+*.rpc
+*.eph
+
+# Generated registers / logs (regenerate from the pipeline)
+*.xlsx
+*.docx
+SHA-256_Checksum_Register.csv
+!config/*.csv          # keep the curated input register under version control
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.python-version
+
+# ---- Tooling caches ----
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# ---- Editors / OS ----
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

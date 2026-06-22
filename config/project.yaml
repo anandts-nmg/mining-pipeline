@@ -1,0 +1,73 @@
+# =============================================================================
+# Buduunkhad / XV-023222 exploration pipeline - project configuration
+# -----------------------------------------------------------------------------
+# These are the load-bearing project constants from the methodology. Treat them
+# as ground truth; do not invent values. Paths can be overridden per machine.
+# =============================================================================
+
+project:
+  name: Buduunkhad
+  project_code: "XV-023222"     # used in admin/register filenames (XV-023222_...)
+  license_code: "L23222"
+  # Compact code used in GIS data-layer filenames (XV023222_Buduunkhad_...).
+  data_prefix_code: "XV023222"
+
+crs:
+  # Standard CRS for ALL final deliverables.
+  target_epsg: 32647
+  target_name: "WGS 84 / UTM Zone 47N"
+  # CRS the raw license-boundary KMZ is assumed to be in (validated on import).
+  source_geographic_epsg: 4326
+
+paths:
+  # Root of the read-only raw archive (the 78 inputs). The pipeline NEVER writes
+  # here. Point this at the synced Google Drive folder once it is available
+  # locally. Relative paths resolve against the repo root.
+  raw_root: "data/00_Raw_Files_Archive"
+  # Everything the pipeline generates goes under this control/output root.
+  output_root: "outputs"
+  # Per-run logs and manifests.
+  runs_root: "runs"
+
+input_register:
+  # The 78-input register seeded from the methodology (section 1 / 1A / 1B).
+  path: "config/input_register.csv"
+
+boundary:
+  # Primary spatial boundary input (the license polygon).
+  input_no: 8
+  # Buffer rings (metres) generated around the license boundary in Phase 01.
+  buffers_m: [500, 1000, 5000, 10000, 20000]
+
+evidence_groups:
+  - { group_no: 1, name: "01_Tectonic_Terrane_KMZ", count: 8 }
+  - { group_no: 2, name: "02_DEM_ALOS_ASTERGDEM", count: 14 }
+  - { group_no: 3, name: "03_KOMPSAT2_MSC_L1G", count: 24 }
+  - { group_no: 4, name: "04_HeavyMineral_StreamSediment_Field", count: 6 }
+  - { group_no: 5, name: "05_Geology_Mineral_Prospectivity", count: 16 }
+  - { group_no: 6, name: "06_Regional_Metallogenic_L47B", count: 4 }
+  - { group_no: 7, name: "07_Basemap_Sentinel2_ASTER", count: 6 }
+
+# Layers created (empty, typed) in the Phase 01 Master GeoPackage, all EPSG:32647.
+master_gpkg_layers:
+  - { name: license_boundary, geometry: Polygon }
+  - { name: geology_units_polygon, geometry: Polygon }
+  - { name: faults_structures_line, geometry: LineString }
+  - { name: intrusive_contacts_line, geometry: LineString }
+  - { name: mineral_occurrences_point, geometry: Point }
+  - { name: stream_sediment_anomaly_polygon, geometry: Polygon }
+  - { name: heavy_mineral_anomaly_polygon, geometry: Polygon }
+  - { name: lineament_interpretation_line, geometry: LineString }
+  - { name: preliminary_prospect_polygon, geometry: Polygon }
+  - { name: target_polygon, geometry: Polygon }
+  - { name: field_observation_point, geometry: Point }
+  - { name: sample_point, geometry: Point }
+  # Non-spatial attribute table (pXRF readings) - no geometry column.
+  - { name: pXRF_reading_table, geometry: None }
+
+# Data-confidence vocabulary used in the Phase 01 confidence ranking.
+confidence_levels: ["High", "Medium", "Low", "Needs verification"]
+
+versioning:
+  default_version: 1
+  draft_suffix: "_DRAFT"

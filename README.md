@@ -104,9 +104,22 @@ locally**, so the pipeline cannot run on real data yet. The design accounts for 
 - The whole pipeline is tested against **tiny synthetic fixtures** (`tests/`), so `pytest`
   is green with zero real data.
 
-**When the Drive folder is synced locally**, point `paths.raw_root` in `config/project.yaml`
-at it (e.g. `G:/My Drive/.../00_Raw_Files_Archive`) and run `buduunkhad validate` to confirm
-all 79 inputs resolve, then `buduunkhad run --from 00 --to 01`.
+**Getting the data local (~1.8 GiB — the canonical `0. Raw Data`, not the 700 GB drone set):**
+make `0. Raw Data` available locally — either add a shortcut to it in Google Drive and mark it
+*Available offline* in Drive for Desktop, or `rclone copy` it — then point the pipeline at that
+folder. Per-machine paths go in an **environment variable** (so nothing machine-specific is
+committed):
+
+```bash
+# Windows PowerShell example (Drive-for-Desktop path):
+$env:BUDUUNKHAD_RAW_ROOT = "G:\My Drive\...\0. Raw Data"
+buduunkhad validate                 # confirms inputs resolve + manifest coverage (size match)
+buduunkhad run --from 00 --to 01    # add --override to pass the documented KOMPSAT-EULA gap
+```
+
+`BUDUUNKHAD_RAW_ROOT` / `BUDUUNKHAD_OUTPUT_ROOT` override `paths.*` from `project.yaml`. The
+pipeline reads files by basename, so the archive's 11-theme layout works as-is. See
+`DRIVE_MAP.md` for the layout and `config/raw_manifest.csv` for the canonical Drive file IDs.
 
 > The filenames in `config/input_register.csv` were seeded from the methodology PDF and should
 > be reconciled against the real archive once synced — the register is plain editable config,

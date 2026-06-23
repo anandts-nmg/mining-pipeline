@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from buduunkhad.config import RAW_ROOT_ENV
 from buduunkhad.core.paths import PHASE_DIRS
 
 
@@ -50,6 +53,16 @@ def test_master_gpkg_layers(project):
     # exactly one aspatial layer
     aspatial = [layer for layer in config.master_gpkg_layers if not layer.is_spatial]
     assert [layer.name for layer in aspatial] == ["pXRF_reading_table"]
+
+
+def test_raw_root_env_override(project, monkeypatch):
+    config, _register, _tmp = project
+    # default: resolves under the project base dir
+    assert config.raw_root.name == "00_Raw_Files_Archive"
+    # override: a per-machine path (e.g. a Drive-for-Desktop folder) wins
+    target = Path.home() / "drive_stub" / "0. Raw Data"
+    monkeypatch.setenv(RAW_ROOT_ENV, str(target))
+    assert config.raw_root == target
 
 
 def test_phase_dirs_cover_workflow():

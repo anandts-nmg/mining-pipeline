@@ -8,10 +8,15 @@ in ``config/project.yaml`` (constants/paths) and ``config/input_register.csv`` (
 from __future__ import annotations
 
 import csv
+import os
 from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+#: Per-machine path overrides (so a local Drive/synced path is never committed).
+RAW_ROOT_ENV = "BUDUUNKHAD_RAW_ROOT"
+OUTPUT_ROOT_ENV = "BUDUUNKHAD_OUTPUT_ROOT"
 
 # --------------------------------------------------------------------------- #
 # Register model
@@ -128,11 +133,15 @@ class ProjectConfig(BaseModel):
 
     @property
     def raw_root(self) -> Path:
-        return self._resolve(self.paths.raw_root)
+        # Per-machine override (e.g. a Drive-for-Desktop path) wins, so the
+        # committed default stays portable. See docs/adr/0001.
+        override = os.environ.get(RAW_ROOT_ENV)
+        return Path(override).expanduser() if override else self._resolve(self.paths.raw_root)
 
     @property
     def output_root(self) -> Path:
-        return self._resolve(self.paths.output_root)
+        override = os.environ.get(OUTPUT_ROOT_ENV)
+        return Path(override).expanduser() if override else self._resolve(self.paths.output_root)
 
     @property
     def runs_root(self) -> Path:

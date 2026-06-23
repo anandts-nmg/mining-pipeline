@@ -38,6 +38,7 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.5",
     "mypy>=1.10",
+    "pyright==1.1.410",
     "pre-commit>=3.7",
     "types-PyYAML>=6.0",
     "pandas-stubs>=2.1",
@@ -74,6 +75,14 @@ warn_redundant_casts = true
 no_implicit_optional = true
 disallow_untyped_defs = false
 check_untyped_defs = true
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.11"
+# Basic mode matches the default Pylance editor experience: it catches real type
+# errors (e.g. unresolved call overloads) without drowning the partially-typed
+# geospatial stack (rasterio/geopandas/fiona) in unknown-type noise.
+typeCheckingMode = "basic"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

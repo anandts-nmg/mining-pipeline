@@ -97,6 +97,7 @@ class QAQCReport:
         path.parent.mkdir(parents=True, exist_ok=True)
         wb = Workbook()
         ws = wb.active
+        assert ws is not None  # a fresh Workbook always has an active worksheet
         ws.title = f"Phase {self.phase_id} QAQC"
         header = ["QA/QC item", "Acceptance", "Decision", "Reviewer", "Date", "Note"]
         ws.append(header)

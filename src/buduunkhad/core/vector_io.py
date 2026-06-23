@@ -38,10 +38,15 @@ _PXRF_PROPS: dict[str, str] = {
 
 
 def _enable_kml_drivers() -> None:
-    import fiona
+    from typing import cast
 
+    from fiona.drvsupport import supported_drivers
+
+    # fiona's typed stub constrains the keys to a fixed Literal set of driver names
+    # that omits KML/LIBKML (both valid at runtime), so treat it as a plain mapping.
+    drivers = cast(dict[str, str], supported_drivers)
     for drv in ("KML", "LIBKML"):
-        fiona.drvsupport.supported_drivers[drv] = "rw"
+        drivers[drv] = "rw"
 
 
 def read_boundary(path: Path, assume_epsg: int = 4326):  # type: ignore[no-untyped-def]

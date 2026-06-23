@@ -76,6 +76,7 @@ def write_table_xlsx(
     path.parent.mkdir(parents=True, exist_ok=True)
     wb = Workbook()
     ws = wb.active
+    assert ws is not None  # a fresh Workbook always has an active worksheet
     ws.title = sheet_title[:31]
     ws.append(columns)
     for cell in ws[1]:

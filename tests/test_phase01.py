@@ -65,6 +65,7 @@ def test_phase01_real_run(raw_archive):
     boundary_files = list(gpkg_dir.glob("*LicenseBoundary*EPSG32647*.gpkg"))
     assert boundary_files, "boundary gpkg not written"
     bgdf = gpd.read_file(boundary_files[0])
+    assert bgdf.crs is not None
     assert bgdf.crs.to_epsg() == config.target_epsg
     assert len(bgdf) >= 1
 

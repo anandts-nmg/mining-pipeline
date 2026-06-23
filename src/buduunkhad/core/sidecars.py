@@ -33,13 +33,13 @@ SIDECAR_SUFFIXES: tuple[str, ...] = (
 _WORLD_FILE_PARENT_EXT = {".tfw": ".tif", ".jgw": ".jpg", ".pgw": ".png"}
 
 
-def is_sidecar(path: Path) -> bool:
+def is_sidecar(path: str | Path) -> bool:
     """True if ``path``'s name ends with a known sidecar suffix."""
     name = Path(path).name.lower()
     return any(name.endswith(s) for s in SIDECAR_SUFFIXES)
 
 
-def sidecar_stem(path: Path) -> str:
+def sidecar_stem(path: str | Path) -> str:
     """The shared stem a sidecar groups under.
 
     ``X.tif.aux.xml -> 'X'``, ``X.tfw -> 'X'``, ``X.rpc -> 'X'``. For non-sidecars,
@@ -56,7 +56,7 @@ def sidecar_stem(path: Path) -> str:
     return Path(name).stem
 
 
-def parent_filename(sidecar: Path) -> str | None:
+def parent_filename(sidecar: str | Path) -> str | None:
     """Best-effort parent filename for a sidecar, or ``None`` if not derivable.
 
     World files map to a specific image extension; ``.aux.xml`` / ``.ovr`` strip

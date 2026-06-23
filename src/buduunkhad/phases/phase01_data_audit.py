@@ -167,9 +167,14 @@ class Phase01DataAudit(Phase):
         if geom_col != "geometry":
             gdf32 = gdf32.rename_geometry("geometry")
         # Force 2D - boundary polygons are planar; KML often carries a Z=0 ordinate.
+        # Use shapely's vectorised force_2d on the geometry array (not per-element
+        # GeoSeries.apply, which the type checkers cannot resolve to a clean overload).
+        import geopandas as gpd
         from shapely import force_2d
 
-        gdf32 = gdf32.set_geometry(gdf32.geometry.apply(force_2d))
+        gdf32 = gdf32.set_geometry(
+            gpd.GeoSeries(force_2d(gdf32.geometry.to_numpy()), index=gdf32.index, crs=gdf32.crs)
+        )
         gdf32["name"] = cfg.project.license_code
         gdf32["source_input"] = f"#{ctx.config.boundary.input_no} {boundary_src.name}"
 

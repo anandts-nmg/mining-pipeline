@@ -334,7 +334,9 @@ class Phase01DataAudit(Phase):
                     "georef_required": _georef_required(rec),
                     "georef_status": "Not started" if _georef_required(rec) == "Yes" else "N/A",
                     "vectorization_status": "Not started" if _needs_vectorization(rec) else "N/A",
-                    "handover_status": "Use with caution" if _requires_manual_review(rec) else "Ready",
+                    "handover_status": "Use with caution"
+                    if _requires_manual_review(rec)
+                    else "Ready",
                     "source_note": "",
                     "owner": "",
                     "methodology_action": rec.methodology_action,
@@ -629,7 +631,9 @@ def _write_desktop_summary(path: Path, ctx: RunContext, *, data_gaps: int) -> Pa
     doc.add_heading("Buduunkhad Phase 1 Desktop Study Summary", level=1)
     doc.add_paragraph(f"Project: {ctx.config.project.project_code} / {ctx.config.project.name}")
     doc.add_paragraph(f"License: {ctx.config.project.license_code}")
-    doc.add_paragraph(f"Target CRS: {ctx.config.crs.target_name}, {ctx.config.crs.target_authority}")
+    doc.add_paragraph(
+        f"Target CRS: {ctx.config.crs.target_name}, {ctx.config.crs.target_authority}"
+    )
     doc.add_paragraph(f"Run ID: {ctx.run_id}")
     doc.add_paragraph("This readiness summary is generated from the configured 78-input register.")
     doc.add_paragraph("It does not interpret ore potential or process real raw data.")
@@ -692,7 +696,11 @@ def _write_simple_pdf(path: Path, lines: list[str]) -> Path:
             b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>"
         ),
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-        b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n" + stream + b"\nendstream",
+        b"<< /Length "
+        + str(len(stream)).encode("ascii")
+        + b" >>\nstream\n"
+        + stream
+        + b"\nendstream",
     ]
     chunks = [b"%PDF-1.4\n"]
     offsets = []

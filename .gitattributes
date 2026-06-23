@@ -1,0 +1,21 @@
+# Normalize all text files to LF in the repository and on checkout, on every
+# platform. The committed content is already LF; this keeps it that way and stops
+# autocrlf from rewriting checkouts to CRLF on Windows.
+* text=auto eol=lf
+
+# Binary assets: never touch their bytes / line endings.
+*.pdf  binary
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.tif  binary
+*.tiff binary
+*.ovr  binary
+*.hdf  binary
+*.kmz  binary
+*.gpkg binary
+*.qgz  binary
+*.xlsx binary
+*.docx binary
+*.laz  binary

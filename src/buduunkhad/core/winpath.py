@@ -33,7 +33,9 @@ def long_paths_enabled() -> bool | None:
     cannot be determined. On non-Windows platforms there is no such limit, so this
     returns ``True``.
     """
-    if not is_windows():
+    # `sys.platform` (not is_windows()) so type-checkers statically treat the winreg
+    # block as unreachable off Windows and skip it (winreg is Windows-only).
+    if sys.platform != "win32":
         return True
     try:
         import winreg

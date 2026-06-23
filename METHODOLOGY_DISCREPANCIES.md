@@ -5,8 +5,9 @@ other**, focused on the phases the pipeline implements end-to-end (**Phase 00** 
 **Phase 01**). It also records what the code currently implements, for reference.
 
 > Per `CLAUDE.md`, the **master methodology document is the ultimate source of truth.**
-> Where the two PDFs conflict, the code generally follows the master. The open items at
-> the end are documentation-reconciliation decisions, not code bugs.
+> Where the two PDFs conflict, the code follows the master. **The Phase 0–1 conflicts are now
+> resolved & implemented** — see "Resolutions for Phases 0–1" below (verified at tag `v0.1.0`);
+> only later-phase / documentation items remain open.
 
 ## Sources
 
@@ -129,25 +130,37 @@ PDF). It generates the buffers (per Doc B / the № 8 register action).
 
 ---
 
-## Open decisions (documentation reconciliation)
+## Resolutions for Phases 0–1 (decided & implemented — verified at tag `v0.1.0`)
 
-1. **Which Phase-1 folder taxonomy is canonical** — Doc A's `01_File_Inventory … 08_…`
-   (what the code builds) or Doc B's `00_Admin_and_Method … 07_Output`? (See 01-1.)
-2. **Raw archive folder name** — `00_Raw_Files_Archive` (A / code) vs
-   `00_Raw_Input_Evidence_Library` (B)? (See 00-2.)
-3. **Inventory record ID scheme** — № 1–78 (A / code) vs `BK-P1-xxx` (B)? (See 01-4.)
-4. **Buffer ownership** — keep buffers in Phase 1 explicitly (B / code), or treat as a № 8
-   register action only (A)? (See 01-6.)
-5. **Phase 3 / Phase 4 folder names** — adopt the longer A names (code) or the shorter B
-   names? (See 01-7.)
+**Rule applied:** the **master methodology (Doc A) is the source of truth** for
+structure / schema / naming / gates; the standalone PDF (Doc B) is honoured by *also*
+producing its extra deliverables (a superset); and physical reality is reconciled via
+`config/raw_manifest.csv` (by **filename + Drive file ID**, not folder name). Concretely:
 
-If the rule is simply "the master (Doc A) always wins," items 1, 2, 3, 5 resolve in favour of
-the current code; only the standalone PDF would need a note that it is superseded for folder
-structure. If Doc B is meant to govern Phase 1 specifically, `core/paths.PHASE01_SUBFOLDERS`
-and the inventory ID scheme would need to change.
+| Discrepancy | What we chose for Phases 0–1 | Where |
+|---|---|---|
+| 00-2 raw-archive folder name | Output archive = Doc A's `00_Raw_Files_Archive`. The *input* `raw_root` points at the real on-disk folder, actually named **`0. Raw Data`** (a third name) — matched by **filename**, not folder name. | `core/paths.py`; `BUDUUNKHAD_RAW_ROOT` |
+| 01-1 / 01-2 Phase-1 folder taxonomy | **Doc A** (`01_File_Inventory … 08_Master_QGIS_Project_Setup`) + an added `09_Handover_Package`. Doc B's tree is superseded. | `core/paths.PHASE01_SUBFOLDERS` |
+| 7 groups vs 11 themes vs 9-section | Register keeps the methodology's **7 evidence groups**; the **manifest maps each input to its real 11-theme folder + file ID**. The DataRoom 9-section tree is informational only. | `input_register.csv` + `raw_manifest.csv` |
+| 78 vs 79 inputs | **79** = 78 methodology + the reconciled **SAS hand-interpreted 1:25k** scan (#79). | register row 79; group 05 → 17 |
+| #23 KOMPSAT EULA (absent) | Recorded as an **acknowledged data gap** — logged, flows to the data-gap register, does **not** block the run. | manifest `match_status`; pipeline tolerance |
+| 01-3 deliverable count (4 vs 8) | **Superset** — Doc A's 4 core + Doc B's 4 extras + a Phase-2-ready list (11 artifacts). | Phase 01 outputs |
+| 01-4 inventory ID scheme | Doc A's **№ 1–79** numbering (not Doc B's `BK-P1-xxx`). | `input_register.csv` |
+| 01-5 master GPKG schema | Doc A's **13 named layers** (polygon layers written as MultiPolygon). | `project.yaml master_gpkg_layers` |
+| 01-6 buffer ownership | Buffers built in **Phase 1** (per Doc B + the №8 register action) — 5 rings 500 m–20 km. | Phase 01 output |
+
+**Net:** Phases 0–1 are master-methodology-faithful, also emit Doc B's deliverables, and ran
+**go/go on the real data** (`v0.1.0`).
+
+## Still open (later phases / documentation)
+
+- **Phase 3 / Phase 4 folder names** (01-7) — code uses Doc A's longer names; confirm when those phases are built.
+- Whether the **standalone Phase-1 PDF** should be formally marked "superseded for folder structure" (or updated to match Doc A).
+- **KOMPSAT EULA** — source the file, or keep it as a permanent documented gap.
+- **BMP-as-`.jpg`** MUGZ tectonic files — confirm reader handling in Phase 02/03.
 
 ---
 
 *Generated from analysis of the two repo-root methodology PDFs and the `src/buduunkhad` +
-`config/` implementation on 2026-06-23. The master methodology remains the stated source of
-truth per `CLAUDE.md`.*
+`config/` implementation on 2026-06-23; Phase 0–1 resolutions verified at tag `v0.1.0`. The
+master methodology remains the stated source of truth per `CLAUDE.md`.*

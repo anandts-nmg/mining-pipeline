@@ -9,7 +9,8 @@ Drive connector on 2026-06-23. The authoritative per-file pin is `config/raw_man
 - The linked top folder **"Buduun khad"** (`1nI4h-aYwG003HxmMIuJnGXFWwLvAVyoL`) is the whole
   **mine-lifecycle workspace**, not a clean input archive.
 - The **canonical raw archive** is `… / 1. Exploration Stage / 1. Geological Data Acquisition /
-  0. Raw Data` (`1EhF1o7ilDD8f-u73-fUHO5EXnEjkvlDP`) — ~78 inputs in **11 geology themes**.
+  0. Raw Data` (`1EhF1o7ilDD8f-u73-fUHO5EXnEjkvlDP`) — holds **78 of the 79 registered inputs**
+  (the KOMPSAT EULA is absent) in **11 geology themes**.
 - **The canonical raw set is ~1.8 GiB total** — it fits on a laptop. Phases 00–01 do not
   need cloud storage.
 - **The 700 GB is the drone survey** (`5. Drone`, daily LiDAR/ortho flights, still growing) —
@@ -17,6 +18,9 @@ Drive connector on 2026-06-23. The authoritative per-file pin is `config/raw_man
 - Heavy **duplication** inflates the wider drive (KOMPSAT PAN 699 MB copied ≥3×, license
   boundary gpkg ×40+); other licences (XV-022905, L08718 Suujiin Bulag) and a stray
   EPSG:32649 boundary also live in the drive — so we **pin file IDs**, never match by name.
+- **Verified end-to-end:** Phases 00–01 ran **go/go on this real data** (tag `v0.1.0`) — 78 files
+  checksummed, boundary → EPSG:32647 + 5 buffers, 13-layer master GeoPackage; the EULA gap was
+  recorded (not fatal).
 
 ## Structure (Exploration Stage)
 
@@ -37,7 +41,7 @@ Buduun khad/
 ```
 (The 6 non-acquisition Exploration-Stage folders were mapped at the top level only.)
 
-## Canonical size census (the 78-input set in `0. Raw Data`)
+## Canonical size census (78 files present in `0. Raw Data`; the EULA #23 is absent)
 
 | Theme | Files | Size |
 |---|--:|--:|
@@ -71,10 +75,14 @@ Google basemaps 185 MB (0.15 m) + 105 MB (2.4 m). Everything else is small scans
 
 ## Reconciliation results (see `config/raw_manifest.csv`)
 
-- **77 / 78** register inputs matched to a canonical Drive file ID.
-- **1 MISSING** from `0. Raw Data`: `#23 KOMPSATEULAForm_3.1.pdf` (KOMPSAT licence/EULA — provenance only).
-- **1 EXTRA** present in Drive, not in the register: `XV023222_Buduunkhad_SAS_HandInterpreted_GeologyMap_1-25000_RawScan_v01.jpg`
-  → this is the **79th input** (the DataRoom register is titled "…79Inputs"). Add to register as a Phase-03 hand-interpreted geology scan.
+- The register holds **79 inputs**; **78 of 79 are present** in `0. Raw Data` and matched to a
+  canonical Drive file ID, **size-verified (0 mismatches)**.
+- **1 missing:** `#23 KOMPSATEULAForm_3.1.pdf` (KOMPSAT licence/EULA — provenance only). Recorded
+  as an **acknowledged data gap** — it is logged and flows to the data-gap register, and does
+  **not** block the run.
+- The **SAS hand-interpreted 1:25k scan** (`XV023222_Buduunkhad_SAS_HandInterpreted_GeologyMap_1-25000_RawScan_v01.jpg`)
+  was in the archive but not in the original 78; it is now **input #79** in the register
+  (the DataRoom register is titled "…79Inputs").
 - Note: a few `…MUGZ500…Page*.jpg` tectonic files are actually **BMP** payloads with a `.jpg`
   extension (confirm reader handling in Phase 02/03).
 

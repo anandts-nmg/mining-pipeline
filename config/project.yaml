@@ -58,16 +58,16 @@ evidence_groups:
 
 # Layers created (empty, typed) in the Phase 01 Master GeoPackage, all EPSG:32647.
 master_gpkg_layers:
-  - { name: license_boundary, geometry: Polygon }
-  - { name: geology_units_polygon, geometry: Polygon }
+  - { name: license_boundary, geometry: MultiPolygon }
+  - { name: geology_units_polygon, geometry: MultiPolygon }
   - { name: faults_structures_line, geometry: LineString }
   - { name: intrusive_contacts_line, geometry: LineString }
   - { name: mineral_occurrences_point, geometry: Point }
-  - { name: stream_sediment_anomaly_polygon, geometry: Polygon }
-  - { name: heavy_mineral_anomaly_polygon, geometry: Polygon }
+  - { name: stream_sediment_anomaly_polygon, geometry: MultiPolygon }
+  - { name: heavy_mineral_anomaly_polygon, geometry: MultiPolygon }
   - { name: lineament_interpretation_line, geometry: LineString }
-  - { name: preliminary_prospect_polygon, geometry: Polygon }
-  - { name: target_polygon, geometry: Polygon }
+  - { name: preliminary_prospect_polygon, geometry: MultiPolygon }
+  - { name: target_polygon, geometry: MultiPolygon }
   - { name: field_observation_point, geometry: Point }
   - { name: sample_point, geometry: Point }
   # Non-spatial attribute table (pXRF readings) - no geometry column.

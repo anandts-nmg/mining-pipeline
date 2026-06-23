@@ -12,7 +12,14 @@ from tempfile import TemporaryDirectory
 
 from buduunkhad.config import GpkgLayer
 
-_FIONA_GEOM = {"Polygon": "Polygon", "LineString": "LineString", "Point": "Point"}
+_FIONA_GEOM = {
+    "Polygon": "Polygon",
+    "MultiPolygon": "MultiPolygon",
+    "LineString": "LineString",
+    "MultiLineString": "MultiLineString",
+    "Point": "Point",
+    "MultiPoint": "MultiPoint",
+}
 
 # Minimal generic attribute schema for the (empty) master GIS layers.
 _LAYER_PROPS: dict[str, str] = {

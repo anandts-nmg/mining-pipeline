@@ -166,15 +166,17 @@ class Phase01DataAudit(Phase):
         gdf32 = gdf32[[geom_col]].copy()
         if geom_col != "geometry":
             gdf32 = gdf32.rename_geometry("geometry")
-        # Force 2D - boundary polygons are planar; KML often carries a Z=0 ordinate.
-        # Use shapely's vectorised force_2d on the geometry array (not per-element
-        # GeoSeries.apply, which the type checkers cannot resolve to a clean overload).
+        # Force 2D (KML often carries a Z=0 ordinate) and promote to MultiPolygon so the
+        # written geometry matches the MultiPolygon master-schema layer: a single-part
+        # boundary is wrapped, a multipart one is kept. Avoids the GPKG geometry-type
+        # mismatch warning on append, for both single and multipart boundaries.
         import geopandas as gpd
         from shapely import force_2d
+        from shapely.geometry import MultiPolygon, Polygon
 
-        gdf32 = gdf32.set_geometry(
-            gpd.GeoSeries(force_2d(gdf32.geometry.to_numpy()), index=gdf32.index, crs=gdf32.crs)
-        )
+        flat2d = force_2d(gdf32.geometry.to_numpy())
+        promoted = [MultiPolygon([g]) if isinstance(g, Polygon) else g for g in flat2d]
+        gdf32 = gdf32.set_geometry(gpd.GeoSeries(promoted, index=gdf32.index, crs=gdf32.crs))
         gdf32["name"] = cfg.project.license_code
         gdf32["source_input"] = f"#{ctx.config.boundary.input_no} {boundary_src.name}"
 

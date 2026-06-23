@@ -74,6 +74,16 @@ def load_manifest(path: Path | str) -> dict[str, ManifestEntry]:
     return out
 
 
+def acknowledged_absent(manifest: dict[str, ManifestEntry]) -> set[str]:
+    """Filenames the manifest records as absent from the canonical archive.
+
+    These are *documented* gaps (e.g. the KOMPSAT EULA): a real run records them
+    in the data-gap register rather than hard-failing, whereas an input that is
+    unexpectedly missing (or not in the manifest at all) still stops the run.
+    """
+    return {fn for fn, e in manifest.items() if e.status and not e.present_in_archive}
+
+
 #: ``(entry, dest) -> written_path`` — fetches one file for drive/gcs modes.
 Fetcher = Callable[[ManifestEntry, Path], Path]
 

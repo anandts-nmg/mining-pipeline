@@ -28,12 +28,14 @@ class Phase00Archive(Phase):
     _checksums: list[raw_guard.ChecksumRecord]
     _copied_parents: int
     _missing: list[str]
+    _known_gaps: list[str]
     _raw_unchanged: bool
 
     def __init__(self) -> None:
         self._checksums = []
         self._copied_parents = 0
         self._missing = []
+        self._known_gaps = []
         self._raw_unchanged = True
 
     # ------------------------------------------------------------------ #
@@ -84,8 +86,14 @@ class Phase00Archive(Phase):
             src = index.get(rec.filename)
             working_copy = group_dir / rec.filename
             if src is None:
-                self._missing.append(rec.filename)
-                open_status, copy_status = "Missing", "Not copied"
+                entry = source.entry(rec)
+                if entry is not None and not entry.present_in_archive:
+                    # documented gap (manifest-flagged absent) -> record, don't block
+                    self._known_gaps.append(rec.filename)
+                    open_status, copy_status = "Known gap (manifest)", "Acknowledged absent"
+                else:
+                    self._missing.append(rec.filename)
+                    open_status, copy_status = "Missing", "Not copied"
             else:
                 assert_not_raw_write(working_copy, raw_root)  # never write into raw
                 if not rec.is_sidecar:
@@ -113,7 +121,8 @@ class Phase00Archive(Phase):
             result.add_output(p)
         result.log(
             f"archived {self._copied_parents} parent bundles, "
-            f"{len(self._checksums)} files checksummed, {len(self._missing)} missing"
+            f"{len(self._checksums)} files checksummed, {len(self._missing)} missing, "
+            f"{len(self._known_gaps)} acknowledged gap(s)"
         )
         return result
 
@@ -241,13 +250,18 @@ class Phase00Archive(Phase):
             if self._raw_unchanged
             else "Raw archive changed during run!",
         )
+        gap_note = (
+            f" {len(self._known_gaps)} acknowledged gap(s): {', '.join(self._known_gaps[:5])}."
+            if self._known_gaps
+            else ""
+        )
         report.add(
             "Sidecar completeness",
             RECORDED_ACCEPTANCE,
             decision=Decision.PASS if not self._missing else Decision.FAIL,
-            note="All registered files present."
+            note=("All registered files present (or acknowledged gaps)." + gap_note)
             if not self._missing
-            else f"Missing: {', '.join(self._missing[:10])}",
+            else f"Missing: {', '.join(self._missing[:10])}.{gap_note}",
         )
         report.add(
             "Source note and owner registered",

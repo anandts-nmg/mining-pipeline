@@ -63,6 +63,29 @@ def test_real_run_without_data_fails_loudly(project):
         run_pipeline(config, register, only=["00"], dry_run=False)
 
 
+def test_acknowledged_gap_does_not_block(raw_archive):
+    # the manifest flags the KOMPSAT EULA as absent from the canonical archive;
+    # removing it locally should be tolerated (recorded, not a hard failure).
+    config, register, raw_root = raw_archive
+    eula = next(r for r in register if r.filename == "KOMPSATEULAForm_3.1.pdf")
+    (raw_root / eula.evidence_group / eula.filename).unlink()
+
+    manifest = run_pipeline(config, register, only=["00"], dry_run=False)
+
+    p00 = next(p for p in manifest.phases if p.phase_id == "00")
+    assert p00.gate_status == "go"
+    assert any("acknowledged" in w.lower() for w in manifest.warnings)
+
+
+def test_unexpected_missing_still_fails(raw_archive):
+    # a file NOT flagged absent in the manifest is a real gap and must stop the run.
+    config, register, raw_root = raw_archive
+    boundary = next(r for r in register if r.no == config.boundary.input_no)
+    (raw_root / boundary.evidence_group / boundary.filename).unlink()
+    with pytest.raises(MissingRawDataError):
+        run_pipeline(config, register, only=["00"], dry_run=False)
+
+
 def test_stub_phase_real_run_records_not_implemented(raw_archive):
     config, register, _raw = raw_archive
     # Phase 03 is still an orchestrate stub -> real run raises NotImplementedError.

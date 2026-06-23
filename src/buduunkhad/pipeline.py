@@ -162,6 +162,16 @@ class PathTooLongError(RuntimeError):
     """Raised on a real run when generated paths would exceed the Windows limit."""
 
 
+def _acknowledged_absent(config: ProjectConfig) -> set[str]:
+    """Filenames the raw manifest records as documented gaps (absent from the archive)."""
+    mpath = config.manifest_path
+    if not (mpath and mpath.exists()):
+        return set()
+    from buduunkhad.core.ingest import acknowledged_absent, load_manifest
+
+    return acknowledged_absent(load_manifest(mpath))
+
+
 def baseline_checksum_path(config: ProjectConfig) -> Path:
     """Location of the SHA-256 baseline written by Phase 00."""
     return paths.phase_dir(config.output_root, "00") / "SHA-256_Checksum_Register.csv"
@@ -307,14 +317,25 @@ def run_pipeline(
     if not dry_run:
         missing = validate_raw_inputs(register, config.raw_root)
         if missing:
-            msg = (
-                f"{len(missing)} registered raw input(s) missing from {config.raw_root}.\n"
-                "First few: "
-                + ", ".join(missing[:10])
-                + "\nPoint paths.raw_root at the synced archive, or use --dry-run."
-            )
-            logger.error(msg)
-            raise MissingRawDataError(msg)
+            acknowledged = _acknowledged_absent(config)
+            unexpected = [m for m in missing if m not in acknowledged]
+            ack = [m for m in missing if m in acknowledged]
+            if ack:
+                logger.warning(
+                    "%d acknowledged data gap(s) (manifest-flagged absent): %s",
+                    len(ack),
+                    ", ".join(ack[:10]),
+                )
+                manifest.warnings.append(f"{len(ack)} acknowledged data gap(s): {', '.join(ack)}")
+            if unexpected:
+                msg = (
+                    f"{len(unexpected)} registered raw input(s) missing from {config.raw_root}.\n"
+                    "First few: "
+                    + ", ".join(unexpected[:10])
+                    + "\nPoint paths.raw_root at the synced archive, or use --dry-run."
+                )
+                logger.error(msg)
+                raise MissingRawDataError(msg)
         verify_raw_integrity(config, override=override, logger=logger)
 
     # Always ensure the full tree exists so handoffs have somewhere to land.

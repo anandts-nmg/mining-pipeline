@@ -23,7 +23,7 @@ class InputRecord(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    no: int = Field(..., ge=1, le=78)
+    no: int = Field(..., ge=1)
     evidence_group: str
     filename: str
     file_type: str
@@ -72,6 +72,12 @@ class RegisterConfig(BaseModel):
     path: Path
 
 
+class RawManifestConfig(BaseModel):
+    """Optional manifest pinning each raw input to its canonical Drive file ID."""
+
+    path: Path
+
+
 class BoundaryConfig(BaseModel):
     input_no: int = 8
     buffers_m: list[int] = Field(default_factory=lambda: [500, 1000, 5000, 10000, 20000])
@@ -108,6 +114,7 @@ class ProjectConfig(BaseModel):
     crs: CRSConfig
     paths: PathsConfig
     input_register: RegisterConfig
+    raw_manifest: RawManifestConfig | None = None
     boundary: BoundaryConfig
     evidence_groups: list[EvidenceGroup]
     master_gpkg_layers: list[GpkgLayer]
@@ -136,6 +143,11 @@ class ProjectConfig(BaseModel):
         return self._resolve(self.input_register.path)
 
     @property
+    def manifest_path(self) -> Path | None:
+        """Resolved path to the raw manifest, or ``None`` if not configured."""
+        return self._resolve(self.raw_manifest.path) if self.raw_manifest else None
+
+    @property
     def target_epsg(self) -> int:
         return self.crs.target_epsg
 
@@ -155,9 +167,11 @@ class ProjectConfig(BaseModel):
     @field_validator("evidence_groups")
     @classmethod
     def _check_group_total(cls, v: list[EvidenceGroup]) -> list[EvidenceGroup]:
+        # Must equal the number of register rows (78 methodology inputs + the SAS
+        # hand-interpreted 1:25k scan reconciled from the real archive = 79).
         total = sum(g.count for g in v)
-        if total != 78:
-            raise ValueError(f"evidence_groups counts sum to {total}, expected 78")
+        if total != 79:
+            raise ValueError(f"evidence_groups counts sum to {total}, expected 79")
         return v
 
 
@@ -194,12 +208,15 @@ def load_register(path: Path) -> list[InputRecord]:
 
 
 def _validate_register(records: list[InputRecord]) -> None:
-    if len(records) != 78:
-        raise ValueError(f"Expected 78 input records, found {len(records)}")
+    if not records:
+        raise ValueError("Input register is empty")
+    # Numbering must be contiguous from 1 (count is whatever the register holds:
+    # 78 methodology inputs + the reconciled SAS hand-interpreted scan = 79).
+    n = len(records)
     numbers = sorted(r.no for r in records)
-    if numbers != list(range(1, 79)):
-        missing = sorted(set(range(1, 79)) - set(numbers))
-        dupes = sorted({n for n in numbers if numbers.count(n) > 1})
+    if numbers != list(range(1, n + 1)):
+        missing = sorted(set(range(1, n + 1)) - set(numbers))
+        dupes = sorted({x for x in numbers if numbers.count(x) > 1})
         raise ValueError(f"Register numbering broken (missing={missing}, duplicates={dupes})")
     names = {r.filename for r in records}
     for r in records:

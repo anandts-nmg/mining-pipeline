@@ -31,9 +31,9 @@ def test_phase00_real_run(raw_archive):
     for p in (inv, integ, checksum, readme):
         assert p.exists(), f"missing {p.name}"
 
-    # checksum register has one row per raw file (78 inputs present)
+    # checksum register has one row per raw file present in the synthetic archive
     checks = read_checksum_register_csv(checksum)
-    assert len(checks) == 78
+    assert len(checks) == len(register)
 
     # working copies materialised (e.g. the boundary KMZ into its group folder)
     boundary = ctx.record_by_no(config.boundary.input_no)

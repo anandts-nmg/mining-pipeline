@@ -117,6 +117,7 @@ def project():
     cfg_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy(REPO_ROOT / "config" / "project.yaml", cfg_dir / "project.yaml")
     shutil.copy(REPO_ROOT / "config" / "input_register.csv", cfg_dir / "input_register.csv")
+    shutil.copy(REPO_ROOT / "config" / "raw_manifest.csv", cfg_dir / "raw_manifest.csv")
 
     config = load_config(cfg_dir / "project.yaml")
     register = load_register(config.register_path)

@@ -1,10 +1,10 @@
 # Buduunkhad / XV-023222 Exploration Pipeline
 
 A config-driven Python geospatial pipeline implementing the *automatable* parts of the
-**Buduunkhad / XV-023222 Exploration Workflow Methodology** (78 raw inputs, phases 00–99).
+**Buduunkhad / XV-023222 Exploration Workflow Methodology** (79 raw inputs, phases 00–99).
 
 This repository is the **foundation build**: the project skeleton, the conventions enforced
-in code, the 78-input register, the phase-runner architecture, **Phases 00 and 01 implemented
+in code, the 79-input register, the phase-runner architecture, **Phases 00 and 01 implemented
 end-to-end**, and every later phase registered as a stub behind a uniform interface.
 
 > The methodology is phase-gated. Remote sensing / pXRF / drone outputs are **support**
@@ -36,7 +36,8 @@ Stubs create their folders and a method/status note during `--dry-run`, and rais
 
 - **Project / license:** Buduunkhad — `XV-023222 / L23222`
 - **Standard deliverable CRS:** WGS 84 / UTM Zone 47N, **EPSG:32647**
-- **78 raw inputs** in 7 evidence groups (8, 14, 24, 6, 16, 4, 6) — `config/input_register.csv`
+- **79 raw inputs** in 7 evidence groups (8, 14, 24, 6, 17, 4, 6) — `config/input_register.csv`
+  (78 from the methodology + the reconciled SAS hand-interpreted 1:25k scan; see `DRIVE_MAP.md`)
 - **Boundary input:** №8 license-boundary KMZ
 - **Buffers:** 500 m, 1 km, 5 km, 10 km, 20 km
 
@@ -72,7 +73,7 @@ buduunkhad --help        # lists run / list / info / validate / phase00 ... phas
 ```bash
 buduunkhad list                       # phase registry
 buduunkhad info                       # project constants + resolved paths
-buduunkhad validate                   # are the 78 raw inputs present under raw_root?
+buduunkhad validate                   # are the 79 raw inputs present under raw_root? (+ manifest coverage)
 
 # Build the FULL 00–99 folder tree + empty registers + master GPKG schema, no data needed:
 buduunkhad run --dry-run
@@ -91,7 +92,7 @@ which phases ran, their gate decisions, and their outputs.
 
 ## The cloud-data caveat (important)
 
-The 78 raw inputs currently live in a **cloud-only Google Drive folder that is not synced
+The 79 raw inputs currently live in a **cloud-only Google Drive folder that is not synced
 locally**, so the pipeline cannot run on real data yet. The design accounts for this:
 
 - The raw archive path is a config value (`config/project.yaml → paths.raw_root`); nothing is
@@ -105,7 +106,7 @@ locally**, so the pipeline cannot run on real data yet. The design accounts for 
 
 **When the Drive folder is synced locally**, point `paths.raw_root` in `config/project.yaml`
 at it (e.g. `G:/My Drive/.../00_Raw_Files_Archive`) and run `buduunkhad validate` to confirm
-all 78 inputs resolve, then `buduunkhad run --from 00 --to 01`.
+all 79 inputs resolve, then `buduunkhad run --from 00 --to 01`.
 
 > The filenames in `config/input_register.csv` were seeded from the methodology PDF and should
 > be reconciled against the real archive once synced — the register is plain editable config,
@@ -145,7 +146,7 @@ Otherwise keep `paths.output_root` shallow (e.g. `C:\bk\outputs`). `core.winpath
 ## Layout
 
 ```
-config/            project.yaml (constants/paths) + input_register.csv (78 inputs)
+config/            project.yaml (constants/paths) + input_register.csv (79 inputs) + raw_manifest.csv (Drive pins)
 src/buduunkhad/
   config.py        typed (pydantic v2) config + register loaders
   core/            enforced primitives: paths, naming, raw_guard, sidecars, crs, vector_io,

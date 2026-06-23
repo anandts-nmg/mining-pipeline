@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from buduunkhad.core import raw_guard, registers, sidecars
+from buduunkhad.core.ingest import RawSource, load_manifest
 from buduunkhad.core.qaqc import RECORDED_ACCEPTANCE, Decision, QAQCReport, new_report
 from buduunkhad.core.raw_guard import assert_not_raw_write
 from buduunkhad.phases.base import Phase, PhaseResult, RunContext
@@ -47,15 +48,23 @@ class Phase00Archive(Phase):
         checksum_path = archive_dir / "SHA-256_Checksum_Register.csv"
         readme_path = archive_dir / f"{reg_prefix}_Source_Data_Readme.docx"
 
+        mpath = ctx.config.manifest_path
+        manifest = load_manifest(mpath) if (mpath and mpath.exists()) else {}
+        source = RawSource(ctx.raw_root, manifest)
+
         if ctx.dry_run:
-            # Empty, header-only scaffolding so the foundation is verifiable with no data.
-            registers.write_inventory_xlsx([], inv_path)
+            # No raw data needed: catalog from the manifest (Drive metadata) if present,
+            # else header-only. Integrity/checksum stay empty (no hashing in dry-run).
+            registers.write_inventory_xlsx(self._catalog_rows(ctx, source), inv_path)
             registers.write_integrity_log_xlsx([], integ_path)
             registers.write_checksum_register_csv([], checksum_path)
             self._write_readme(ctx, readme_path)
             for p in (inv_path, integ_path, checksum_path, readme_path):
                 result.add_output(p)
-            result.log("dry-run: empty inventory/integrity/checksum/readme scaffolding written")
+            result.log(
+                f"dry-run: catalog ({len(manifest)} manifest entries) + empty "
+                "integrity/checksum + readme scaffolding written"
+            )
             return result
 
         # --- real run --------------------------------------------------- #
@@ -86,7 +95,7 @@ class Phase00Archive(Phase):
                 open_status, copy_status = "Opens", "Copied"
             inv_rows.append(
                 self._inventory_row(
-                    ctx, rec, src, working_copy, size_by_name, open_status, copy_status
+                    ctx, rec, src, working_copy, size_by_name, open_status, copy_status, source
                 )
             )
 
@@ -119,6 +128,7 @@ class Phase00Archive(Phase):
         size_by_name: dict[str, int],
         open_status: str,
         copy_status: str,
+        source: RawSource,
     ) -> dict[str, object]:
         size_mb = round(size_by_name.get(rec.filename, 0) / (1024 * 1024), 4)
         checksum = next((c.sha256 for c in self._checksums if c.filename == rec.filename), "")
@@ -147,7 +157,51 @@ class Phase00Archive(Phase):
             "source_note": "",
             "owner": "",
             "methodology_action": rec.methodology_action,
+            **source.provenance(rec),
         }
+
+    def _catalog_rows(self, ctx: RunContext, source: RawSource) -> list[dict[str, object]]:
+        """Inventory rows built from the register + manifest metadata (no raw data).
+
+        This is the metadata-only catalog used in dry-run: when a manifest is present
+        every input is listed with its canonical Drive file ID and size without a
+        single byte being downloaded.
+        """
+        rows: list[dict[str, object]] = []
+        for rec in sorted(ctx.register, key=lambda r: r.no):
+            prov = source.provenance(rec)
+            size = prov.get("manifest_size_bytes")
+            size_mb = round(size / (1024 * 1024), 4) if isinstance(size, int) and size else ""
+            rows.append(
+                {
+                    "no": rec.no,
+                    "evidence_group": rec.evidence_group,
+                    "primary_phase": rec.primary_phase,
+                    "original_filename": rec.filename,
+                    "standardized_filename": rec.filename,
+                    "file_type": rec.file_type,
+                    "is_sidecar": rec.is_sidecar,
+                    "parent_file": rec.parent_file,
+                    "raw_path": "",
+                    "working_copy_path": "",
+                    "file_size_mb": size_mb,
+                    "checksum_sha256": "",
+                    "read_status": "catalog only (dry-run)",
+                    "open_status": "Not checked (dry-run)",
+                    "processing_copy_status": "Not materialized (dry-run)",
+                    "scan_quality": "",
+                    "has_coordinate_grid": "",
+                    "georef_required": "",
+                    "georef_status": "Not started",
+                    "vectorization_status": "Not started",
+                    "handover_status": "",
+                    "source_note": "",
+                    "owner": "",
+                    "methodology_action": rec.methodology_action,
+                    **prov,
+                }
+            )
+        return rows
 
     def _write_readme(self, ctx: RunContext, path: Path) -> Path:
         groups = [(g.name, g.count) for g in ctx.config.evidence_groups]

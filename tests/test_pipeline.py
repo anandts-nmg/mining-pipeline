@@ -58,7 +58,7 @@ def test_dry_run_builds_full_tree_and_manifest(project):
 def test_real_run_without_data_fails_loudly(project):
     config, register, _tmp = project  # raw_root empty
     missing = validate_raw_inputs(register, config.raw_root)
-    assert len(missing) == 78
+    assert len(missing) == len(register)
     with pytest.raises(MissingRawDataError):
         run_pipeline(config, register, only=["00"], dry_run=False)
 

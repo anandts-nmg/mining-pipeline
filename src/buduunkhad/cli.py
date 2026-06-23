@@ -83,6 +83,20 @@ def info(config: Path = _CONFIG_OPT) -> None:
 def validate(config: Path = _CONFIG_OPT) -> None:
     """Check that every registered raw input is present under raw_root."""
     cfg, register = load_project(config)
+
+    # Manifest coverage (provenance + size cross-check) when a manifest is configured.
+    if cfg.manifest_path and cfg.manifest_path.exists():
+        from buduunkhad.core.ingest import coverage, load_manifest
+
+        manifest = load_manifest(cfg.manifest_path)
+        cov = coverage(register, manifest, cfg.raw_root)
+        typer.echo(
+            f"Manifest: {len(manifest)} entries | local present {len(cov.present)}, "
+            f"missing {len(cov.missing)}, size-mismatch {len(cov.size_mismatch)}"
+        )
+        for name, exp, got in cov.size_mismatch[:10]:
+            typer.secho(f"  ~ size differs: {name} (manifest {exp}, local {got})", fg="yellow")
+
     missing = validate_raw_inputs(register, cfg.raw_root)
     if not missing:
         typer.secho(f"OK: all {len(register)} raw inputs present under {cfg.raw_root}", fg="green")

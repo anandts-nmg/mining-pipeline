@@ -6,7 +6,7 @@ the ultimate source of truth.
 ## What this is
 
 A config-driven Python geospatial pipeline implementing the *automatable* parts of the
-**Buduunkhad / XV-023222 Exploration Workflow Methodology** (78 raw inputs, phases 00–99).
+**Buduunkhad / XV-023222 Exploration Workflow Methodology** (79 raw inputs, phases 00–99).
 Phases are either **BUILD** (real geoprocessing) or **ORCHESTRATE** (scaffold folders,
 emit templates, ingest human/field outputs, run QA/QC). Phase 00 and Phase 01 are
 implemented end-to-end. Phase 02 has the automated core implemented: raster reprojection,
@@ -18,7 +18,8 @@ module explicitly implements real work.
 
 - Project / license: **Buduunkhad — XV-023222 / L23222**
 - Standard deliverable CRS: **WGS 84 / UTM Zone 47N, EPSG:32647**
-- 78 raw inputs in 7 evidence groups (8, 14, 24, 6, 16, 4, 6).
+- 79 raw inputs in 7 evidence groups (8, 14, 24, 6, 17, 4, 6) — 78 from the methodology
+  + the reconciled SAS hand-interpreted 1:25k geology scan (#79). See `DRIVE_MAP.md`.
 - Primary boundary input: **№8** `MN_BuduunKhad_L23222_LicenseBoundary_WGS84_v01_raw.kmz`
 - Buffers: **500 m, 1 km, 5 km, 10 km, 20 km**.
 
@@ -53,7 +54,8 @@ never by f-string in phase code.
 
 ## Layout
 
-- `config/` — `project.yaml` (constants/paths) and `input_register.csv` (the 78 inputs).
+- `config/` — `project.yaml` (constants/paths), `input_register.csv` (the 79 inputs), and
+  `raw_manifest.csv` (each input pinned to its canonical Google Drive file ID + size).
 - `src/buduunkhad/config.py` — typed (pydantic v2) config + register loaders.
 - `src/buduunkhad/core/` — the enforced primitives (paths, naming, raw_guard, sidecars,
   crs, qaqc, registers, gates).
@@ -83,7 +85,9 @@ Class attributes: `id`, `name`, `mode` ("build"|"orchestrate"), `input_numbers`,
 
 ## Data availability
 
-The 78 raw inputs live in a cloud-only Google Drive folder; `raw_root` may be empty.
+The 79 raw inputs live in a cloud-only Google Drive folder; `raw_root` may be empty.
+The canonical archive (`0. Raw Data`, ~1.8 GiB) and its layout are mapped in `DRIVE_MAP.md`;
+the storage approach (no S3; local-first; GCS only if ever) is `docs/adr/0001`.
 Real runs validate the register against `raw_root` and **fail loudly** with the list of
 missing files. Dry runs skip that check. Build and test against synthetic fixtures.
 

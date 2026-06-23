@@ -30,8 +30,16 @@ paths:
   runs_root: "runs"
 
 input_register:
-  # The 78-input register seeded from the methodology (section 1 / 1A / 1B).
+  # The raw-input register seeded from the methodology (section 1 / 1A / 1B),
+  # reconciled against the real archive (78 methodology inputs + the SAS
+  # hand-interpreted 1:25k scan = 79).
   path: "config/input_register.csv"
+
+raw_manifest:
+  # Optional: pins each raw input to its canonical Google Drive file ID + size
+  # (see DRIVE_MAP.md and docs/adr/0001). Used for provenance + coverage checks;
+  # the pipeline still reads bytes from a local raw_root.
+  path: "config/raw_manifest.csv"
 
 boundary:
   # Primary spatial boundary input (the license polygon).
@@ -44,7 +52,7 @@ evidence_groups:
   - { group_no: 2, name: "02_DEM_ALOS_ASTERGDEM", count: 14 }
   - { group_no: 3, name: "03_KOMPSAT2_MSC_L1G", count: 24 }
   - { group_no: 4, name: "04_HeavyMineral_StreamSediment_Field", count: 6 }
-  - { group_no: 5, name: "05_Geology_Mineral_Prospectivity", count: 16 }
+  - { group_no: 5, name: "05_Geology_Mineral_Prospectivity", count: 17 }
   - { group_no: 6, name: "06_Regional_Metallogenic_L47B", count: 4 }
   - { group_no: 7, name: "07_Basemap_Sentinel2_ASTER", count: 6 }
 

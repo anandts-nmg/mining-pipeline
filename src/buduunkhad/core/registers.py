@@ -39,6 +39,11 @@ INVENTORY_COLUMNS: list[str] = [
     "source_note",
     "owner",
     "methodology_action",
+    # provenance from the raw manifest (canonical Drive pin); blank when no manifest
+    "drive_file_id",
+    "drive_theme_folder",
+    "manifest_size_bytes",
+    "manifest_status",
 ]
 
 CONFIDENCE_COLUMNS: list[str] = [

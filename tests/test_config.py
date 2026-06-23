@@ -18,8 +18,10 @@ def test_config_loads(project):
 
 def test_register_is_complete(project):
     _config, register, _tmp = project
-    assert len(register) == 78
-    assert sorted(r.no for r in register) == list(range(1, 79))
+    # 78 methodology inputs + the SAS hand-interpreted 1:25k scan reconciled from
+    # the real archive = 79, numbered contiguously from 1.
+    assert len(register) == 79
+    assert sorted(r.no for r in register) == list(range(1, 80))
 
 
 def test_register_groups_match(project):

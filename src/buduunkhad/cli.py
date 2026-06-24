@@ -10,6 +10,8 @@ buduunkhad phase00 / phase01 / ... --dry-run   # run a single phase
 
 from __future__ import annotations
 
+import os
+from datetime import datetime
 from pathlib import Path
 
 import typer
@@ -107,6 +109,37 @@ def validate(config: Path = _CONFIG_OPT) -> None:
     for name in missing:
         typer.echo(f"  - {name}")
     raise typer.Exit(1)
+
+
+@app.command("publish")
+def publish_deliverables(
+    config: Path = _CONFIG_OPT,
+    label: str = typer.Option(
+        None, "--label", help="Version label for the published folder (default: timestamp)."
+    ),
+) -> None:
+    """Copy Phase 0-1 deliverables (not raw working copies) to BUDUUNKHAD_PUBLISH_ROOT.
+
+    Point BUDUUNKHAD_PUBLISH_ROOT at a destination folder (e.g. a Google
+    Drive-for-Desktop path); deliverables are copied into a versioned subfolder there.
+    """
+    cfg, _register = load_project(config)
+    publish_root = os.environ.get("BUDUUNKHAD_PUBLISH_ROOT")
+    if not publish_root:
+        typer.secho(
+            "Set BUDUUNKHAD_PUBLISH_ROOT to a destination folder (e.g. a Google "
+            "Drive-for-Desktop path) before publishing.",
+            fg="red",
+        )
+        raise typer.Exit(2)
+    from buduunkhad.core.publish import publish as do_publish
+
+    label = label or datetime.now().strftime("%Y%m%dT%H%M%S")
+    result = do_publish(cfg.output_root, Path(publish_root), label, runs_root=cfg.runs_root)
+    typer.secho(f"Published {len(result.files)} deliverable(s) to:", fg="green")
+    typer.echo(f"  {result.dest}")
+    typer.echo(f"  (skipped {result.skipped_working_copies} raw working-copy file(s) by design)")
+    typer.echo("Share that folder in Google Drive to give teammates access.")
 
 
 @app.command("run")

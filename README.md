@@ -110,16 +110,27 @@ make `0. Raw Data` available locally — either add a shortcut to it in Google D
 folder. Per-machine paths go in an **environment variable** (so nothing machine-specific is
 committed):
 
-```bash
-# Windows PowerShell example (Drive-for-Desktop path):
-$env:BUDUUNKHAD_RAW_ROOT = "G:\My Drive\...\0. Raw Data"
+```powershell
+# Windows PowerShell (per-machine paths via env vars; use SHORT paths — see below):
+$env:BUDUUNKHAD_RAW_ROOT    = "C:\bk\raw"   # the local/synced "0. Raw Data"
+$env:BUDUUNKHAD_OUTPUT_ROOT = "C:\bk\out"   # where generated outputs go
 buduunkhad validate                 # confirms inputs resolve + manifest coverage (size match)
-buduunkhad run --from 00 --to 01    # add --override to pass the documented KOMPSAT-EULA gap
+buduunkhad run --from 00 --to 01    # --override only if a *non-acknowledged* gap stops it
 ```
 
 `BUDUUNKHAD_RAW_ROOT` / `BUDUUNKHAD_OUTPUT_ROOT` override `paths.*` from `project.yaml`. The
 pipeline reads files by basename, so the archive's 11-theme layout works as-is. See
 `DRIVE_MAP.md` for the layout and `config/raw_manifest.csv` for the canonical Drive file IDs.
+
+**Where outputs go.** Generated outputs are **build artifacts** (git-ignored, regenerable) and
+should **not** live in the repo: on Windows the deep methodology folder names + long raster
+filenames breach the 260-char `MAX_PATH` limit, and they would bloat the working tree. Use a
+**short path outside the repo** via `BUDUUNKHAD_OUTPUT_ROOT` (e.g. `C:\bk\out`). The committed
+default `outputs/` is only for dry-runs/tests, or when Windows long paths are enabled. Run logs
+and `run_manifest.json` land under `runs/` (also git-ignored). Because the real Drive path is
+very deep, point `raw_root` at a short path too — e.g. a junction:
+`cmd /c mklink /J C:\bk\raw "G:\…\0. Raw Data"`. Final *deliverables* can be published to the
+project Google Drive separately so teammates can see them.
 
 > The filenames in `config/input_register.csv` were seeded from the methodology PDF and should
 > be reconciled against the real archive once synced — the register is plain editable config,

@@ -130,7 +130,18 @@ default `outputs/` is only for dry-runs/tests, or when Windows long paths are en
 and `run_manifest.json` land under `runs/` (also git-ignored). Because the real Drive path is
 very deep, point `raw_root` at a short path too — e.g. a junction:
 `cmd /c mklink /J C:\bk\raw "G:\…\0. Raw Data"`. Final *deliverables* can be published to the
-project Google Drive separately so teammates can see them.
+project Google Drive separately so teammates can see them:
+
+```powershell
+# Publish ONLY the deliverables (not the 1.8 GiB raw working copies) to a Drive folder:
+$env:BUDUUNKHAD_OUTPUT_ROOT  = "C:\bk\out"
+$env:BUDUUNKHAD_PUBLISH_ROOT = "G:\My Drive\Buduunkhad_Deliverables"   # a Drive-for-Desktop folder
+buduunkhad publish --label v0.1.0
+```
+
+This copies the GIS layers, registers, logs and reports into a versioned `PhaseNN/` folder with
+an `INDEX.md` + the run manifest; raw working copies are excluded. Then **share that folder in
+Google Drive** to give teammates access (Drive for Desktop uploads it automatically).
 
 > The filenames in `config/input_register.csv` were seeded from the methodology PDF and should
 > be reconciled against the real archive once synced — the register is plain editable config,

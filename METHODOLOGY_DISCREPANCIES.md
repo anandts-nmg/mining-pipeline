@@ -5,8 +5,8 @@ the phases the pipeline implements end-to-end (**Phase 00**, **Phase 01** and **
 It also records what the code currently implements, for reference.
 
 > Per `CLAUDE.md`, the **master methodology document is the ultimate source of truth.**
-> Where the two PDFs conflict, the code follows the master. **The Phase 0–1 conflicts are now
-> resolved & implemented** — see "Resolutions for Phases 0–1" below (verified at tag `v0.1.0`);
+> Where the sources conflict, the code follows the master. **The Phase 0–2 conflicts are now
+> resolved & implemented** — see "Resolutions" below (verified at tags `v0.1.0` / `v0.2.0`);
 > only later-phase / documentation items remain open.
 
 ## Sources
@@ -23,7 +23,54 @@ vocabulary **High / Medium / Low / Needs verification**). The disagreements belo
 
 ---
 
-## Phase 00 — Raw Files Archive
+## At a glance — count & status
+
+**12 explicitly-numbered conflicts** (Phase 00: 3 · Phase 01: 7 · Phase 02: 2), plus ~4
+doc-vs-reality reconciliations and 1 intra-document version drift. **10 of 12 are resolved &
+implemented; 2 remain open** (decision-only, non-blocking).
+
+| Group | Comparison | IDs | Resolved | Open |
+|---|---|---|---|---|
+| Phase 00 | master Doc A vs Phase-1 doc (Doc B) | 00-1, 00-2, 00-3 | 00-1, 00-2, 00-3 | — |
+| Phase 01 | master Doc A vs Phase-1 doc (Doc B) | 01-1 … 01-7 | 01-1 … 01-6 | **01-7** (Phase 3/4 names) |
+| Phase 02 | master Doc A vs `docs/phase_02` guides | 02-1, 02-2 | 02-2 | **02-1** (25 km buffer) |
+| Phase 01 ↔ 02 | inter-phase handoff | H-1, H-2, H-3 | H-2, H-3 | **H-1** (= 02-1) |
+| Doc vs reality | docs vs the real Drive archive | 7/11/9 taxonomy · 78/79 · `0. Raw Data` name · #23 EULA | all reconciled | — |
+| Intra-doc | Doc A filename vs body | v6-filename / v5-body | n/a (noted) | — |
+
+## Why these discrepancies exist (root causes)
+
+**The key point: none of these are scientific disagreements.** All sources agree on the actual
+methodology — EPSG:32647, the 7 evidence groups, the 500 m–20 km buffers, the confidence
+vocabulary. Every conflict is about **structure, naming and deliverable lists** — the signature
+of *document-assembly drift*, not methodological uncertainty. Five causes:
+
+1. **Layered authoring never merged back (dominant).** One master matrix (Doc A, phases 00–99)
+   with *separate, later, operator-style QGIS deep-dives written on top of it* — Doc B for
+   Phase 1, the four `docs/phase_02` guides for Phase 2. Each deep-dive re-invented its own
+   folder tree, deliverable set and ID scheme because its author was writing a fresh guide, not
+   editing the master. (Doc B even references "existing 11 (or 12) thematic folders" — written
+   against the disk, not against Doc A.) → 00-1/2/3, 01-1/2/3, 02-1/2.
+2. **Three competing folder taxonomies for the same 79 files** — the methodology's **7 evidence
+   groups**, the Drive archive's **11 themes**, and a **9-section DataRoom** — plus three names
+   for the raw archive (`00_Raw_Files_Archive` / `00_Raw_Input_Evidence_Library` / `0. Raw Data`).
+   → the folder-name / grouping conflicts.
+3. **Doc-vs-disk count drift.** The methodology says **78** inputs; the disk has a **79th** (the
+   SAS hand-interpreted 1:25k scan) never added to the master. → 78-vs-79.
+4. **Coarse matrix vs fine operator detail.** Doc A lists outputs at a high level; the deep-dives
+   enumerate every intermediate product. The "deliverable count" conflicts are granularity, not
+   contradiction. → 01-3, the Phase-2 output-coverage note.
+5. **Inconsistent versioning inside the master itself** — Doc A's filename says v6, its body says
+   v5 with a v2–v4 lineage.
+
+**Resolution rule applied throughout:** master methodology (Doc A) = source of truth for
+structure / schema / gates; the later deep-dives are honoured as **supersets** (we also emit
+their extra deliverables and follow their richer Phase-2 tree); physical reality is reconciled
+by **filename + Drive file-ID** (`config/raw_manifest.csv`), never by folder name.
+
+---
+
+## Phase 00 — Raw Files Archive (master Doc A vs Phase-1 deep-dive Doc B)
 
 **Coverage:** Only **Doc A** defines a Phase 00. **Doc B has no Phase 00 at all** — it folds
 raw preservation, checksums, working-copy creation and the file inventory into **Phase 1,
@@ -46,7 +93,7 @@ completeness · Source note+owner), and the gate wording — an **exact match to
 
 ---
 
-## Phase 01 — Data Audit & Master GIS Setup
+## Phase 01 — Data Audit & Master GIS Setup (master Doc A vs Phase-1 deep-dive Doc B)
 
 Both docs cover Phase 1, and this is where they diverge most.
 
@@ -120,10 +167,10 @@ PDF). It generates the buffers (per Doc B / the № 8 register action).
 
 ---
 
-## Phase 02 — Remote Sensing Preprocessing
+## Phase 02 — Remote Sensing Preprocessing (master Doc A vs the docs/phase_02 guides)
 
 The four detailed QGIS-4.0.2 guides under `docs/phase_02/` (a later, deeper deep-dive, like
-Doc B was for Phase 1) introduce one new disagreement against the core methodology and Phase 01:
+Doc B was for Phase 1) introduce two disagreements against the core methodology and Phase 01:
 
 **02-1 — A 25 km buffer that no other source defines.** The Phase-2 master guide's
 prerequisites list (§2.1) expects
@@ -163,6 +210,42 @@ formula-complete method notes for the tool-bound Sentinel/ASTER/KOMPSAT steps.
 
 ---
 
+## Phase 01 ↔ Phase 02 handoff (what each expects from the other)
+
+Phase 02 is the first phase that *consumes another phase's outputs*, so the sources also have to
+agree on the **interface** between Phase 1 and Phase 2. What the Phase-2 guide (§2.1) expects to
+already exist from Phase 1:
+
+| Phase 02 expects from Phase 01 | Produced by Phase 01? | Where |
+|---|---|---|
+| Master GIS database (`Master_GIS_Database.gpkg`) | ✅ yes | `01_.../06_Master_GeoPackage_Schema` |
+| Licence boundary (EPSG:32647 gpkg) | ✅ yes | `01_.../05_KMZ_KML_to_GPKG` |
+| Project buffers gpkg | ⚠️ partial — 500 m–20 km, **no 25 km** (H-1) | `01_.../05_KMZ_KML_to_GPKG` |
+| CRS / georeference QA/QC log | ✅ yes | `01_.../03_CRS_Check` |
+| Data confidence ranking | ✅ yes | `01_.../07_Data_Confidence_Ranking` |
+| Master QGIS project (`.qgz`) | ✅ yes | `01_.../08_Master_QGIS_Project_Setup` |
+
+Three interface points (two resolved, one open):
+
+**H-1 — the 25 km buffer (= 02-1).** The Phase-2 guide's prerequisite filename includes a 25 km
+ring; Phase 01 produced only 500 m–20 km. **Open** — non-blocking (Phase 02 clips to licence /
+1 km / 5 km only). Decide: add a 25 km ring to Phase 01, or treat it as a guide artefact.
+
+**H-2 — who reprojects the Sentinel UTM46N tile.** Doc B's *Phase 1* flags that the Sentinel
+T46 tile may be UTM46N (EPSG:32646) and cautions to reproject; Doc A assigns the *actual*
+reprojection to **Phase 2**. **Resolved:** the code reprojects in **Phase 2** (per Doc A) — Phase 1
+only records the caution in its CRS audit. (Confirmed live: #77/#78 are 46N and Phase 02
+reprojects them to 32647.)
+
+**H-3 — buffer-creation ownership (= 01-6).** Doc A is silent on which phase builds the buffers;
+Doc B puts it in Phase 1. **Resolved:** Phase 1 builds the 5 rings; Phase 2 consumes them as clip
+AOIs (DEM = 5 km, Sentinel = licence, basemap = 1 km) — a clean producer→consumer handoff.
+
+Everything else lines up: the AOIs Phase 02 clips to are exactly the layers Phase 01 writes, read
+back by **filename via `core.naming`**, so the two phases agree on the names without hard-coding.
+
+---
+
 ## Top-level project tree (cross-cutting)
 
 | Item | Doc A (master) | Doc B (standalone) |
@@ -173,7 +256,9 @@ formula-complete method notes for the tool-bound Sentinel/ASTER/KOMPSAT steps.
 
 ---
 
-## Resolutions for Phases 0–1 (decided & implemented — verified at tag `v0.1.0`)
+## Resolutions (how each was decided & implemented)
+
+### Phases 0–1 (verified at tag `v0.1.0`)
 
 **Rule applied:** the **master methodology (Doc A) is the source of truth** for
 structure / schema / naming / gates; the standalone PDF (Doc B) is honoured by *also*
@@ -195,6 +280,23 @@ producing its extra deliverables (a superset); and physical reality is reconcile
 **Net:** Phases 0–1 are master-methodology-faithful, also emit Doc B's deliverables, and ran
 **go/go on the real data** (`v0.1.0`).
 
+### Phase 02 (verified at tag `v0.2.0`)
+
+Same rule — master = truth; the `docs/phase_02` guides honoured as the more-specific Phase-2
+authority (as Doc B was for Phase 1):
+
+| Discrepancy | What we chose for Phase 02 | Where |
+|---|---|---|
+| 02-2 folder structure (6 vs 8) | The guide's **8-folder** per-sensor tree (adds `00_Input_Working_Copy` + `05_Basemap_Google_HighRes`; QA/QC→06, Export→07) — a superset of Doc A's 6. | `phase02 custom_subfolders` |
+| Expected outputs (Doc A p.39) | Emit `Terrain_Derivatives_Index.xlsx` + `RemoteSensing_QAQC_Report.docx`; the produced COGs cover the raster products. | Phase 02 outputs |
+| KOMPSAT / ASTER-HDF / Sentinel indices | **Method-notes** (external SNAP/ILWIS/ortho tooling) — not faked; formulas captured. | `01_/02_/03_` method notes |
+| Contour / drainage / watershed (vector) | **Method-note** (SAGA/GRASS); the raster terrain derivatives are automated. | `04_.../05_Drainage_Watershed` note |
+| Per-product clip buffer | DEM = 5 km, Sentinel = licence, basemap = 1 km (per the guides). | `phase02_remote_sensing.py` |
+| H-2 Sentinel 46N→47N | Reprojected in **Phase 2** (per Doc A). | `phase02` Sentinel path |
+
+**Net:** Phase 02 is master-faithful + follows the Phase-2 guides, and ran **go/go on the real
+data** (`v0.2.0`).
+
 ## Still open (later phases / documentation)
 
 - **Phase 3 / Phase 4 folder names** (01-7) — code uses Doc A's longer names; confirm when those phases are built.
@@ -206,6 +308,8 @@ producing its extra deliverables (a superset); and physical reality is reconcile
 
 ---
 
-*Generated from analysis of the two repo-root methodology PDFs and the `src/buduunkhad` +
-`config/` implementation on 2026-06-23; Phase 0–1 resolutions verified at tag `v0.1.0`. The
-master methodology remains the stated source of truth per `CLAUDE.md`.*
+*Generated from analysis of the master methodology PDF (repo root), the Phase-1 deep-dive
+(`docs/phase_01`) and the four Phase-2 guides (`docs/phase_02`), against the `src/buduunkhad` +
+`config/` implementation (first drafted 2026-06-23, extended for Phase 02 on 2026-06-26). Phase
+0–1 resolutions verified at `v0.1.0`; Phase 02 at `v0.2.0`. The master methodology remains the
+stated source of truth per `CLAUDE.md`.*

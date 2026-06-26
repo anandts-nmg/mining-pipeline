@@ -53,10 +53,16 @@ def test_phase02_real_run(raw_archive):
     for p in phase._outputs:
         assert raster_writers.is_cog(p), f"{p.name} is not a valid COG"
 
-    # QA/QC log + the formula-complete method notes
+    # QA/QC log + the master-named QA/QC report + terrain index + method notes
     assert (
         pdir / "06_RemoteSensing_QAQC" / f"{config.register_prefix}_RemoteSensing_QAQC_Log.xlsx"
     ).exists()
+    assert list((pdir / "06_RemoteSensing_QAQC").glob("*RemoteSensing_QAQC_Report*.docx"))
+    assert list(
+        (pdir / "04_ALOS_ASTERGDEM_GlobalMapper_QGIS" / "04_Terrain_Derivatives").glob(
+            "*Terrain_Derivatives_Index*.xlsx"
+        )
+    )
     assert list((pdir / "01_Sentinel2_SNAP13" / "04_Indices").glob("*.md"))
     assert list((pdir / "02_ASTER_Workflow_v5" / "04_Index_Calculation").glob("*.md"))
     assert list((pdir / "03_KOMPSAT2_ILWIS368_QGIS" / "04_Orthorectification").glob("*.md"))
@@ -89,5 +95,6 @@ def test_phase02_dry_run(project):
     assert not list(
         (pdir / "04_ALOS_ASTERGDEM_GlobalMapper_QGIS" / "04_Terrain_Derivatives").glob("*.tif")
     )
-    # method notes still scaffolded
+    # method notes + handover artifacts still scaffolded
     assert list((pdir / "01_Sentinel2_SNAP13" / "04_Indices").glob("*.md"))
+    assert list((pdir / "06_RemoteSensing_QAQC").glob("*RemoteSensing_QAQC_Report*.docx"))

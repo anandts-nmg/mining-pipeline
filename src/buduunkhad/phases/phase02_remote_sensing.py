@@ -46,6 +46,16 @@ _RS_LOG_COLUMNS = [
     "note",
 ]
 
+_TERRAIN_INDEX_COLUMNS = [
+    "dem_source_no",
+    "dem_source_file",
+    "derivative",
+    "output_filename",
+    "output_crs",
+    "validation_status",
+    "limitation",
+]
+
 # Per-product input groups (raw input numbers).
 _DEM_ELEV = {9, 12}  # ASTER GDEM, ALOS-PALSAR DEM -> reproject+clip+COG + terrain derivatives
 _DEM_SUPPORT = {10, 16, 20}  # NumObservations (int), ALOS hillshade (uint8), ALOS slope (float)
@@ -119,6 +129,7 @@ class Phase02RemoteSensing(Phase):
 
     _rows: list[dict[str, object]]
     _outputs: list[Path]
+    _terrain_rows: list[dict[str, object]]
     _derivatives: int
     _reprojected: int
     _skipped: int
@@ -128,6 +139,7 @@ class Phase02RemoteSensing(Phase):
     def __init__(self) -> None:
         self._rows = []
         self._outputs = []
+        self._terrain_rows = []
         self._derivatives = 0
         self._reprojected = 0
         self._skipped = 0
@@ -149,8 +161,9 @@ class Phase02RemoteSensing(Phase):
                 [], _RS_LOG_COLUMNS, rs_log, sheet_title="RemoteSensing QAQC"
             )
             self._write_method_notes(ctx, pdir)
+            self._write_handover(ctx, pdir, [], result)
             result.add_output(rs_log)
-            result.log("dry-run: per-sensor RS folders + method notes + empty QA/QC log")
+            result.log("dry-run: per-sensor RS folders + method notes + empty QA/QC log + report")
             return result
 
         epsg = cfg.target_epsg
@@ -235,6 +248,7 @@ class Phase02RemoteSensing(Phase):
             self._rows, _RS_LOG_COLUMNS, rs_log, sheet_title="RemoteSensing QAQC"
         )
         self._write_method_notes(ctx, pdir)
+        self._write_handover(ctx, pdir, self._terrain_rows, result)
         result.add_output(rs_log)
         for p in self._outputs:
             result.add_output(p)
@@ -392,9 +406,53 @@ class Phase02RemoteSensing(Phase):
         self._derivatives += len(written)
         self._outputs.extend(written)
         self._flow_skips.extend(skipped)
+        written_set = set(written)
+        for key, path in outputs.items():
+            if path in written_set:
+                self._terrain_rows.append(
+                    {
+                        "dem_source_no": rec.no,
+                        "dem_source_file": rec.filename,
+                        "derivative": key,
+                        "output_filename": path.name,
+                        "output_crs": f"EPSG:{epsg}",
+                        "validation_status": SUPPORT_VALIDATION,
+                        "limitation": SUPPORT_LIMITATION,
+                    }
+                )
         note = f"{len(written)} terrain layer(s)" + (f"; {'; '.join(skipped)}" if skipped else "")
         row["derivative"] = note
         return row
+
+    def _write_handover(
+        self,
+        ctx: RunContext,
+        pdir: Path,
+        terrain_rows: list[dict[str, object]],
+        result: PhaseResult,
+    ) -> None:
+        """Emit the master-doc-named Phase 02 outputs: the Terrain Derivatives index and the
+        RemoteSensing QA/QC report (.docx), alongside the per-raster QA/QC log."""
+        cfg = ctx.config
+        index_path = (
+            pdir
+            / "04_ALOS_ASTERGDEM_GlobalMapper_QGIS"
+            / "04_Terrain_Derivatives"
+            / naming.data_name(cfg.data_prefix, "Terrain_Derivatives_Index", version=1, ext="xlsx")
+        )
+        registers.write_table_xlsx(
+            terrain_rows, _TERRAIN_INDEX_COLUMNS, index_path, sheet_title="Terrain Derivatives"
+        )
+        report_path = (
+            pdir
+            / "06_RemoteSensing_QAQC"
+            / naming.register_name(
+                cfg.register_prefix, "RemoteSensing_QAQC_Report", ext="docx", version=1
+            )
+        )
+        self.qaqc(ctx).write_docx(report_path)
+        result.add_output(index_path)
+        result.add_output(report_path)
 
     def _base_row(self, rec, *, action: str, clip_label: str, compress: str) -> dict[str, object]:  # type: ignore[no-untyped-def]
         return {
@@ -533,7 +591,9 @@ _SENTINEL_NOTE = (
     "- shadow/dark mask: B04 < 0.05 (reflectance) or < 500 (DN scale)\n"
     "- usable-pixel mask = (VegetationMask==0) AND (WaterShadowMask==0)\n"
     "- Natural RGB = B04/B03/B02; Geology RGB = B12/B08/B03; FalseColor = B08/B04/B03\n"
-    "- lithology index stack = ratios B11/B12, B08/B11, B04/B03\n" + _SUPPORT_FOOTER
+    "- lithology index stack = ratios B11/B12, B08/B11, B04/B03\n"
+    "- alteration indices (master step 17): iron-oxide B04/B02, ferric B11/B08, clay/SWIR B11/B12,\n"
+    "  ferrous B12/B08, brightness (B02+B03+B04)/3\n" + _SUPPORT_FOOTER
 )
 
 _ASTER_NOTE = (

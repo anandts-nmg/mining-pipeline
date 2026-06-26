@@ -139,6 +139,23 @@ to add a 25 km ring to `boundary.buffers_m` (which would re-run Phase 01) for li
 prerequisite-list compliance, or treat the guide's 25 km as a documentation artefact. Tracked in
 `PHASE_02_PLAN.md`.
 
+**02-2 — Phase-2 folder structure (Doc A vs the detailed guide).** Doc A's Phase 02 tree (master,
+p.39) is **6 folders**: `01_Sentinel2_SNAP13 / 02_ASTER_Workflow_v5 / 03_KOMPSAT2_ILWIS368_QGIS /
+04_ALOS_ASTERGDEM_GlobalMapper_QGIS / 05_RemoteSensing_QAQC / 06_Export_EPSG32647`. The detailed
+guide (`docs/phase_02`, §3) adds `00_Input_Working_Copy` and a dedicated `05_Basemap_Google_HighRes`,
+renumbering QA/QC→`06` and Export→`07` (8 folders, each with nested subfolders).
+**Resolution:** follow the **detailed guide** (the more specific, later Phase-2 authority, like Doc B
+was for Phase 1) — it is a superset that keeps every Doc A concept and gives Google basemaps their own
+home (`config/.../phase02 custom_subfolders`). Mirrors the Phase-1 precedent (01-1) of honouring the
+deep-dive's richer structure.
+
+**Expected-output coverage vs Doc A (p.39).** Doc A lists `Terrain_Derivatives.gpkg` and
+`RemoteSensing_QAQC_Report.docx` among Phase-2 outputs. The pipeline now emits a
+`..._Terrain_Derivatives_Index.xlsx` (catalogues the derivative COGs) and the
+`..._RemoteSensing_QAQC_Report.docx`; the *vector* terrain package (contour/drainage/watershed gpkg)
+remains a method-note (SAGA/GRASS), and the Sentinel/ASTER/KOMPSAT processed products stay method-notes
+(external tooling). All other Doc A Phase-2 outputs map to produced COGs or method notes.
+
 The Phase-2 guides otherwise *agree* with the core methodology on the project constants, the
 EPSG:32647 target, the support-evidence-only rule, and the per-sensor processing — the pipeline
 implements their automatable core (clip → reproject → COG + DEM terrain derivatives) and emits

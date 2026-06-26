@@ -8,11 +8,13 @@ the ultimate source of truth.
 A config-driven Python geospatial pipeline implementing the *automatable* parts of the
 **Buduunkhad / XV-023222 Exploration Workflow Methodology** (79 raw inputs, phases 00–99).
 Phases are either **BUILD** (real geoprocessing) or **ORCHESTRATE** (scaffold folders,
-emit templates, ingest human/field outputs, run QA/QC). Phase 00 and Phase 01 are
-implemented end-to-end. Phase 02 has the automated core implemented: raster reprojection,
-DEM derivatives, QA/QC logging, and method notes for SNAP/ILWIS/KOMPSAT steps that need
-manual or external tooling. Phase 03 and later phases are registered stubs unless their
-module explicitly implements real work.
+emit templates, ingest human/field outputs, run QA/QC). Phases 00, 01 and 02 are
+implemented end-to-end. Phase 02 follows the `docs/phase_02` guides: per-product clip
+(DEM 5 km / Sentinel licence / basemap 1 km) → reproject to EPSG:32647 → Cloud-Optimized
+GeoTIFF; DEM terrain derivatives (multi-azimuth hillshade, slope, aspect, TRI, profile/plan
+curvature, flow); a terrain-derivatives index + QA/QC report; and formula-complete method
+notes for the external SNAP/ILWIS/ASTER-HDF/KOMPSAT-ortho steps. Phase 03 and later phases
+are registered stubs unless their module explicitly implements real work.
 
 ## Project constants (never invent — they live in `config/project.yaml`)
 

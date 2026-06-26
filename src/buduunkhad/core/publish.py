@@ -15,10 +15,11 @@ import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
-#: Deliverable file types. Everything else under ``output_root`` (raw working
-#: copies: .tif/.jpg/.png/.hdf/.kmz/.rpc/.eph/.tfw/.jgw/.aux.xml/.ovr/.txt) is skipped.
+#: Deliverable file types. Derived rasters (``.tif`` COGs from Phase 02 onward) are
+#: deliverables; raw working copies are excluded by **folder** (see ``WORKING_COPY_DIRS``),
+#: not by extension, so raw ``.tif`` duplicates of the Drive archive are never re-uploaded.
 DELIVERABLE_SUFFIXES: frozenset[str] = frozenset(
-    {".gpkg", ".qgz", ".xlsx", ".csv", ".docx", ".pdf", ".md", ".json"}
+    {".gpkg", ".qgz", ".xlsx", ".csv", ".docx", ".pdf", ".md", ".json", ".tif"}
 )
 
 #: Folders that hold raw working copies — never published (belt-and-suspenders on top
@@ -33,6 +34,7 @@ WORKING_COPY_DIRS: frozenset[str] = frozenset(
         "06_Regional_Metallogenic_L47B",
         "07_Basemap_Sentinel2_ASTER",
         "01_Input_Working_Copy",
+        "00_Input_Working_Copy",
     }
 )
 
@@ -55,6 +57,8 @@ def _phase_tag(rel: Path) -> str:
         return "Phase00"
     if top.startswith("01_"):
         return "Phase01"
+    if top.startswith("02_"):
+        return "Phase02"
     return top or "misc"
 
 
@@ -91,7 +95,7 @@ def publish(
 ) -> PublishResult:
     """Copy deliverables into ``publish_root/BuduunKhad_..._<label>/`` with an INDEX.md."""
     output_root = Path(output_root)
-    dest = Path(publish_root) / f"Phase0-1_Deliverables_{label}"
+    dest = Path(publish_root) / f"Buduunkhad_Deliverables_{label}"
     dest.mkdir(parents=True, exist_ok=True)
 
     copied: list[Path] = []
@@ -121,10 +125,10 @@ def _write_index(
     dest: Path, output_root: Path, copied: list[Path], label: str, manifest: Path | None
 ) -> Path:
     lines = [
-        f"# Buduunkhad XV-023222 — Phase 0-1 Deliverables ({label})",
+        f"# Buduunkhad XV-023222 — Deliverables ({label})",
         "",
-        "Published deliverables (GIS layers, registers, logs, reports). Raw working copies",
-        "are excluded — those are duplicates of the read-only Drive archive.",
+        "Published deliverables (GIS layers, COG rasters, registers, logs, reports). Raw working",
+        "copies are excluded — those are duplicates of the read-only Drive archive.",
         "",
     ]
     if manifest is not None and manifest.exists():

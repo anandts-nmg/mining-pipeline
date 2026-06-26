@@ -22,6 +22,11 @@ def _make_output(root: Path) -> None:
     gpkg_dir = root / "01_Phase_1_Data_Audit_and_Master_GIS_Setup" / "06_Master_GeoPackage_Schema"
     gpkg_dir.mkdir(parents=True)
     (gpkg_dir / "XV-023222_Buduunkhad_Master_GIS_Database.gpkg").write_bytes(b"SQLite format 3\x00")
+    # phase 02 derived COG (in a processing folder, not a working-copy dir) -> published
+    p02 = root / "02_Phase_2_Remote_Sensing_Preprocessing" / "04_ALOS_ASTERGDEM_GlobalMapper_QGIS"
+    deriv = p02 / "04_Terrain_Derivatives"
+    deriv.mkdir(parents=True)
+    (deriv / "XV023222_Buduunkhad_DEM_Hillshade_EPSG32647_v01.tif").write_bytes(b"II*\x00cog")
 
 
 def test_collect_excludes_working_copies(tmp_path):
@@ -32,6 +37,7 @@ def test_collect_excludes_working_copies(tmp_path):
     assert "XV-023222_Buduunkhad_Inventory.xlsx" in names
     assert "big_raster.tif" not in names  # raw working copy excluded
     assert "meta.txt" not in names  # non-deliverable extension excluded
+    assert "XV023222_Buduunkhad_DEM_Hillshade_EPSG32647_v01.tif" in names  # derived COG included
 
 
 def test_publish_copies_versioned_with_index(tmp_path):
@@ -46,4 +52,5 @@ def test_publish_copies_versioned_with_index(tmp_path):
 
     copied = {p.name for p in result.dest.rglob("*") if p.is_file()}
     assert "XV-023222_Buduunkhad_Master_GIS_Database.gpkg" in copied
+    assert "XV023222_Buduunkhad_DEM_Hillshade_EPSG32647_v01.tif" in copied  # derived COG published
     assert "big_raster.tif" not in copied  # never publish raw working copies

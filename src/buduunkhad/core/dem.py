@@ -95,6 +95,37 @@ def flow_accumulation_d8(z: np.ndarray) -> np.ndarray:
     return acc.astype("float32")
 
 
+def terrain_ruggedness_index(z: np.ndarray) -> np.ndarray:
+    """Riley (1999) Terrain Ruggedness Index: sqrt(sum of squared 8-neighbour diffs)."""
+    zp = np.pad(z.astype("float64"), 1, mode="edge")
+    rows, cols = z.shape
+    center = zp[1:-1, 1:-1]
+    ss = np.zeros_like(center)
+    for dr, dc in _NBRS:
+        nb = zp[1 + dr : 1 + dr + rows, 1 + dc : 1 + dc + cols]
+        ss += (nb - center) ** 2
+    return np.sqrt(ss).astype("float32")
+
+
+def curvature(z: np.ndarray, xres: float, yres: float) -> tuple[np.ndarray, np.ndarray]:
+    """Zevenbergen-Thorne (1987) profile and plan curvature (float32, flat cells -> 0)."""
+    cell = (abs(xres) + abs(yres)) / 2.0
+    zp = np.pad(z.astype("float64"), 1, mode="edge")
+    z1, z2, z3 = zp[:-2, :-2], zp[:-2, 1:-1], zp[:-2, 2:]
+    z4, z5, z6 = zp[1:-1, :-2], zp[1:-1, 1:-1], zp[1:-1, 2:]
+    z7, z8, z9 = zp[2:, :-2], zp[2:, 1:-1], zp[2:, 2:]
+    d = ((z4 + z6) / 2.0 - z5) / cell**2
+    e = ((z2 + z8) / 2.0 - z5) / cell**2
+    f = (-z1 + z3 + z7 - z9) / (4.0 * cell**2)
+    g = (-z4 + z6) / (2.0 * cell)
+    h = (z2 - z8) / (2.0 * cell)
+    denom = g**2 + h**2
+    with np.errstate(divide="ignore", invalid="ignore"):
+        prof = np.where(denom > 0, -2.0 * (d * g**2 + e * h**2 + f * g * h) / denom, 0.0)
+        plan = np.where(denom > 0, 2.0 * (d * h**2 + e * g**2 - f * g * h) / denom, 0.0)
+    return prof.astype("float32"), plan.astype("float32")
+
+
 # --------------------------------------------------------------------------- #
 # raster IO orchestration
 # --------------------------------------------------------------------------- #
@@ -110,24 +141,53 @@ def _read_elevation(path: Path):  # type: ignore[no-untyped-def]
     return band, xres, yres, profile
 
 
-def _write(path: Path, array: np.ndarray, profile: dict, dtype: str, nodata) -> Path:
+def _write_cog(
+    path: Path,
+    array: np.ndarray,
+    base_profile: dict,
+    *,
+    dtype: str,
+    nodata,
+    predictor: str | None,
+    overview_resampling: str,
+) -> Path:
+    """Write ``array`` as a COG. The profile is built **fresh** (crs/transform/size only)
+    so a source DEM's compression/predictor can never leak onto a derivative."""
+    import tempfile
+
     import rasterio
+
+    from buduunkhad.core import raster_writers
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    out = profile.copy()
-    out.update(count=1, dtype=dtype, driver="GTiff", nodata=nodata)
-    with rasterio.open(path, "w", **out) as ds:
-        ds.write(array.astype(dtype), 1)
+    prof = {
+        k: base_profile[k] for k in ("crs", "transform", "width", "height") if k in base_profile
+    }
+    prof.update(count=1, dtype=dtype, driver="GTiff", nodata=nodata)
+    with tempfile.TemporaryDirectory() as tmp:
+        tmpf = Path(tmp) / "deriv.tif"
+        with rasterio.open(tmpf, "w", **prof) as ds:
+            ds.write(array.astype(dtype), 1)
+        raster_writers.write_cog(
+            tmpf,
+            path,
+            compress="DEFLATE",
+            predictor=predictor,
+            overview_resampling=overview_resampling,
+        )
     return path
 
 
-def derive_terrain(dem_path: Path, outputs: dict[str, Path]) -> list[Path]:
-    """Compute terrain derivatives from a (reprojected) DEM and write GeoTIFFs.
+def derive_terrain(dem_path: Path, outputs: dict[str, Path]) -> tuple[list[Path], list[str]]:
+    """Compute terrain derivatives from a (clipped, reprojected) DEM and write COGs.
 
-    ``outputs`` maps any of ``hillshade|slope|aspect|flow`` to a destination path.
+    ``outputs`` maps derivative keys to destination paths. Supported keys:
+    ``hillshade`` (az 315), ``hillshade_az<NNN>`` (e.g. ``hillshade_az045``), ``slope``,
+    ``aspect``, ``tri``, ``profile_curvature``, ``plan_curvature``, ``flow``.
     NaNs (from masked nodata) are filled with the mean so gradients stay finite.
-    Returns the paths actually written (``flow`` is skipped for very large DEMs).
+    Returns ``(written_paths, skipped_notes)`` - ``flow`` is skipped (and noted, never
+    silently) for DEMs above :data:`MAX_CELLS_FOR_FLOW`.
     """
     z, xres, yres, profile = _read_elevation(dem_path)
     if np.isnan(z).any():
@@ -135,18 +195,49 @@ def derive_terrain(dem_path: Path, outputs: dict[str, Path]) -> list[Path]:
         z = np.where(np.isnan(z), mean if np.isfinite(mean) else 0.0, z)
 
     written: list[Path] = []
-    if "hillshade" in outputs:
-        written.append(_write(outputs["hillshade"], hillshade(z, xres, yres), profile, "uint8", 0))
-    if "slope" in outputs:
+    skipped: list[str] = []
+    _curv: tuple[np.ndarray, np.ndarray] | None = None
+
+    def _float(path: Path, arr: np.ndarray) -> None:
         written.append(
-            _write(outputs["slope"], slope_degrees(z, xres, yres), profile, "float32", -9999.0)
+            _write_cog(
+                path,
+                arr,
+                profile,
+                dtype="float32",
+                nodata=-9999.0,
+                predictor="3",
+                overview_resampling="AVERAGE",
+            )
         )
-    if "aspect" in outputs:
-        written.append(
-            _write(outputs["aspect"], aspect_degrees(z, xres, yres), profile, "float32", -9999.0)
-        )
-    if "flow" in outputs and z.size <= MAX_CELLS_FOR_FLOW:
-        written.append(
-            _write(outputs["flow"], flow_accumulation_d8(z), profile, "float32", -9999.0)
-        )
-    return written
+
+    for key, path in outputs.items():
+        if key == "hillshade" or key.startswith("hillshade_az"):
+            az = 315.0 if key == "hillshade" else float(key.rsplit("az", 1)[1])
+            written.append(
+                _write_cog(
+                    path,
+                    hillshade(z, xres, yres, azimuth=az),
+                    profile,
+                    dtype="uint8",
+                    nodata=0,
+                    predictor=None,
+                    overview_resampling="NEAREST",
+                )
+            )
+        elif key == "slope":
+            _float(path, slope_degrees(z, xres, yres))
+        elif key == "aspect":
+            _float(path, aspect_degrees(z, xres, yres))
+        elif key == "tri":
+            _float(path, terrain_ruggedness_index(z))
+        elif key in ("profile_curvature", "plan_curvature"):
+            if _curv is None:
+                _curv = curvature(z, xres, yres)
+            _float(path, _curv[0] if key == "profile_curvature" else _curv[1])
+        elif key == "flow":
+            if z.size <= MAX_CELLS_FOR_FLOW:
+                _float(path, flow_accumulation_d8(z))
+            else:
+                skipped.append(f"flow skipped: {z.size} cells > {MAX_CELLS_FOR_FLOW}")
+    return written, skipped

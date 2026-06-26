@@ -17,7 +17,7 @@ end-to-end**, and every later phase registered as a stub behind a uniform interf
 |------|------|------|--------|
 | 00 | Raw Files Archive | build | **implemented** — inventory, SHA-256 integrity, readme, working copies, raw read-only verification |
 | 01 | Data Audit & Master GIS Setup | build | **implemented** — KMZ→GeoPackage boundary (EPSG:32647), buffers, raster CRS audit, master GPKG schema, confidence ranking, QGIS project |
-| 02 | Remote Sensing Preprocessing | build | **implemented (core)** — reproject all rasters to EPSG:32647 + DEM derivatives (hillshade/slope/aspect/D8 drainage); SNAP/ILWIS index & KOMPSAT-ortho steps emitted as method notes |
+| 02 | Remote Sensing Preprocessing | build | **implemented** — per-product clip (DEM 5 km / Sentinel licence / basemap 1 km) → reproject to EPSG:32647 → Cloud-Optimized GeoTIFF; DEM terrain derivatives (multi-azimuth hillshade, slope, aspect, TRI, profile/plan curvature, flow); Sentinel indices / ASTER-HDF / KOMPSAT-ortho as formula-complete method notes. See `PHASE_02_PLAN.md` |
 | 03/03A | Geology / Metallogenic / CMCS Synthesis + Deposit Model | orchestrate | stub |
 | 04 | Preliminary Prospect Delineation & Ranking | build | stub |
 | 05 | DJI Matrice 400 Drone / LiDAR / Photogrammetry | orchestrate | stub |
@@ -185,7 +185,7 @@ config/            project.yaml (constants/paths) + input_register.csv (79 input
 src/buduunkhad/
   config.py        typed (pydantic v2) config + register loaders
   core/            enforced primitives: paths, naming, raw_guard, sidecars, crs, vector_io,
-                   dem, qaqc, registers, gates, winpath
+                   raster_writers, dem, qaqc, registers, gates, winpath
   phases/          base.py (Phase ABC + StubPhase) + one module per phase
   pipeline.py      registry + ordered runner (--from/--to/--only/--dry-run/--override)
   cli.py           typer app

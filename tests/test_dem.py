@@ -44,3 +44,18 @@ def test_flow_accumulation_drains_downhill():
     assert acc.min() >= 1.0
     # the bottom of each column collects all cells above it
     assert acc.max() >= rows
+
+
+def test_tri_flat_is_zero_and_responds_to_relief():
+    flat = np.full((8, 8), 5.0)
+    assert np.allclose(dem.terrain_ruggedness_index(flat), 0.0)
+    rough = np.random.default_rng(0).random((12, 12)) * 100
+    tri = dem.terrain_ruggedness_index(rough)
+    assert tri.dtype == np.float32 and tri[2:10, 2:10].max() > 0
+
+
+def test_curvature_flat_is_zero():
+    z = np.full((8, 8), 5.0)
+    prof, plan = dem.curvature(z, 30.0, 30.0)
+    assert prof.dtype == np.float32 and plan.dtype == np.float32
+    assert np.allclose(prof, 0.0) and np.allclose(plan, 0.0)

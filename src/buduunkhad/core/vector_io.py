@@ -131,6 +131,13 @@ def list_gpkg_layers(path: Path) -> list[str]:
     return list(fiona.listlayers(str(path)))
 
 
+def read_layer(path: Path, layer: str):  # type: ignore[no-untyped-def]
+    """Read one layer of a GeoPackage into a GeoDataFrame (used to load Phase 1 AOIs)."""
+    import geopandas as gpd
+
+    return gpd.read_file(Path(path), layer=layer)
+
+
 def write_layer(gdf, path: Path, layer: str, mode: str = "w") -> Path:  # type: ignore[no-untyped-def]
     """Write (``mode='w'``) or append (``mode='a'``) a GeoDataFrame as a GPKG layer.
 

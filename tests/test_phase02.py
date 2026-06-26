@@ -1,12 +1,16 @@
-"""Phase 02 (Remote Sensing Preprocessing) tests against synthetic fixtures."""
+"""Phase 02 (Remote Sensing Preprocessing) tests against synthetic fixtures.
+
+Phase 02 clips to Phase 01's AOIs (5 km / 1 km buffers + licence boundary), so the
+real-run test runs Phase 00 (working copies) and Phase 01 (buffers + boundary) first.
+"""
 
 from __future__ import annotations
 
-from buduunkhad.core import crs as crs_mod
-from buduunkhad.core import paths
+from buduunkhad.core import paths, raster_writers
 from buduunkhad.core.gates import GateStatus
 from buduunkhad.phases.base import RunContext
 from buduunkhad.phases.phase00_archive import Phase00Archive
+from buduunkhad.phases.phase01_data_audit import Phase01DataAudit
 from buduunkhad.phases.phase02_remote_sensing import Phase02RemoteSensing
 
 
@@ -18,6 +22,9 @@ def test_phase02_real_run(raw_archive):
     config, register, _raw = raw_archive
     ctx = _ctx(config, register)
     Phase00Archive().run(ctx)  # materialise working copies
+    p1 = Phase01DataAudit()
+    p1.prepare(ctx)
+    p1.run(ctx)  # produce the buffer + licence-boundary AOIs Phase 02 clips to
 
     phase = Phase02RemoteSensing()
     phase.prepare(ctx)
@@ -25,24 +32,41 @@ def test_phase02_real_run(raw_archive):
     assert result.status == "ok"
 
     pdir = paths.phase_dir(config.output_root, "02")
-    reproj = list((pdir / "02_Reprojected_EPSG32647").glob("*.tif"))
-    assert len(reproj) == 15  # all raster-type inputs in 9-46, 73-78
 
-    # reprojected rasters are in EPSG:32647
-    audit = crs_mod.audit_raster(reproj[0])
-    assert audit.epsg == config.target_epsg
+    # DEM terrain derivatives (multi-azimuth hillshade, slope, aspect, TRI, curvature, flow)
+    deriv_dir = pdir / "04_ALOS_ASTERGDEM_GlobalMapper_QGIS" / "04_Terrain_Derivatives"
+    names = " ".join(p.name for p in deriv_dir.glob("*.tif"))
+    for kind in (
+        "Hillshade_Az315",
+        "Hillshade_Az045",
+        "SlopeDeg",
+        "Aspect",
+        "TerrainRuggedness",
+        "ProfileCurvature",
+        "PlanCurvature",
+        "FlowAccumulation",
+    ):
+        assert kind in names, f"missing {kind} derivative"
 
-    # two DEM elevations -> 4 derivatives each (hillshade/slope/aspect/flow)
-    deriv = list((pdir / "03_DEM_Derivatives").glob("*.tif"))
-    assert len(deriv) == 8
-    kinds = {"Hillshade", "SlopeDeg", "Aspect", "FlowAccumulation"}
-    for kind in kinds:
-        assert any(kind in p.name for p in deriv), f"missing {kind} derivative"
+    # every produced raster is a valid COG
+    assert phase._outputs, "no COG outputs produced"
+    for p in phase._outputs:
+        assert raster_writers.is_cog(p), f"{p.name} is not a valid COG"
 
-    # QA/QC log + orchestrated method notes
-    assert (pdir / "06_QAQC" / f"{config.register_prefix}_RemoteSensing_QAQC_Log.xlsx").exists()
-    assert list((pdir / "04_Indices_Composites").glob("*.md"))
-    assert list((pdir / "05_KOMPSAT_Ortho_Pansharpen").glob("*.md"))
+    # QA/QC log + the formula-complete method notes
+    assert (
+        pdir / "06_RemoteSensing_QAQC" / f"{config.register_prefix}_RemoteSensing_QAQC_Log.xlsx"
+    ).exists()
+    assert list((pdir / "01_Sentinel2_SNAP13" / "04_Indices").glob("*.md"))
+    assert list((pdir / "02_ASTER_Workflow_v5" / "04_Index_Calculation").glob("*.md"))
+    assert list((pdir / "03_KOMPSAT2_ILWIS368_QGIS" / "04_Orthorectification").glob("*.md"))
+
+    # KOMPSAT bands + ASTER HDF are method-note rows (not processed in-pipeline)
+    decisions = {r["no"]: r["decision"] for r in phase._rows}
+    assert decisions[73] == "Method-note"
+    assert decisions[24] == "Method-note"
+    # support-evidence flag stamped on every row
+    assert all(r["validation_status"] == "Support evidence only" for r in phase._rows)
 
     report = phase.qaqc(ctx)
     decision = phase.gate(report, ctx)
@@ -58,8 +82,12 @@ def test_phase02_dry_run(project):
     assert result.status == "dry-run"
 
     pdir = paths.phase_dir(config.output_root, "02")
-    assert (pdir / "06_QAQC" / f"{config.register_prefix}_RemoteSensing_QAQC_Log.xlsx").exists()
+    assert (
+        pdir / "06_RemoteSensing_QAQC" / f"{config.register_prefix}_RemoteSensing_QAQC_Log.xlsx"
+    ).exists()
     # no derivatives produced without data
-    assert not list((pdir / "03_DEM_Derivatives").glob("*.tif"))
+    assert not list(
+        (pdir / "04_ALOS_ASTERGDEM_GlobalMapper_QGIS" / "04_Terrain_Derivatives").glob("*.tif")
+    )
     # method notes still scaffolded
-    assert list((pdir / "04_Indices_Composites").glob("*.md"))
+    assert list((pdir / "01_Sentinel2_SNAP13" / "04_Indices").glob("*.md"))

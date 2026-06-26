@@ -1,8 +1,8 @@
 # Methodology Document Discrepancies — XV-023222 / Buduunkhad
 
-This note records where the two methodology PDFs in the repo root **disagree with each
-other**, focused on the phases the pipeline implements end-to-end (**Phase 00** and
-**Phase 01**). It also records what the code currently implements, for reference.
+This note records where the methodology documents **disagree with each other**, focused on
+the phases the pipeline implements end-to-end (**Phase 00**, **Phase 01** and **Phase 02**).
+It also records what the code currently implements, for reference.
 
 > Per `CLAUDE.md`, the **master methodology document is the ultimate source of truth.**
 > Where the two PDFs conflict, the code follows the master. **The Phase 0–1 conflicts are now
@@ -120,6 +120,32 @@ PDF). It generates the buffers (per Doc B / the № 8 register action).
 
 ---
 
+## Phase 02 — Remote Sensing Preprocessing
+
+The four detailed QGIS-4.0.2 guides under `docs/phase_02/` (a later, deeper deep-dive, like
+Doc B was for Phase 1) introduce one new disagreement against the core methodology and Phase 01:
+
+**02-1 — A 25 km buffer that no other source defines.** The Phase-2 master guide's
+prerequisites list (§2.1) expects
+`XV023222_Buduunkhad_Project_Buffer_500m_1km_5km_10km_20km_25km_EPSG32647.gpkg` — i.e. a **25 km**
+ring in addition to the five. But both root methodology PDFs (Doc A / Doc B) state the buffers as
+**500 m / 1 / 5 / 10 / 20 km** (no 25 km), and Phase 01 (`config/project.yaml → boundary.buffers_m`)
+produced only those five. So the Phase-2 guide is the *only* source mentioning 25 km.
+
+**Code status / resolution:** **non-blocking, deferred.** Phase 02's actual clips use the
+licence boundary and the 1 km / 5 km buffers (DEM = 5 km, Sentinel = licence, basemap = 1 km),
+none of which need the 25 km ring, so Phase 02 runs go/go without it. Decision still open: whether
+to add a 25 km ring to `boundary.buffers_m` (which would re-run Phase 01) for literal
+prerequisite-list compliance, or treat the guide's 25 km as a documentation artefact. Tracked in
+`PHASE_02_PLAN.md`.
+
+The Phase-2 guides otherwise *agree* with the core methodology on the project constants, the
+EPSG:32647 target, the support-evidence-only rule, and the per-sensor processing — the pipeline
+implements their automatable core (clip → reproject → COG + DEM terrain derivatives) and emits
+formula-complete method notes for the tool-bound Sentinel/ASTER/KOMPSAT steps.
+
+---
+
 ## Top-level project tree (cross-cutting)
 
 | Item | Doc A (master) | Doc B (standalone) |
@@ -158,6 +184,8 @@ producing its extra deliverables (a superset); and physical reality is reconcile
 - Whether the **standalone Phase-1 PDF** should be formally marked "superseded for folder structure" (or updated to match Doc A).
 - **KOMPSAT EULA** — source the file, or keep it as a permanent documented gap.
 - **BMP-as-`.jpg`** MUGZ tectonic files — confirm reader handling in Phase 02/03.
+- **25 km buffer (02-1)** — decide whether to add a 25 km ring to `boundary.buffers_m` (re-runs
+  Phase 01) for the Phase-2 guide's prerequisite list, or treat 25 km as a documentation artefact.
 
 ---
 

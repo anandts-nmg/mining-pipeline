@@ -2,7 +2,7 @@
 
 Everything the pipeline needs to know that is *not* derivable from the data lives
 in ``config/project.yaml`` (constants/paths) and ``config/input_register.csv`` (the
-78 raw inputs). Both are validated here on load so we fail early and clearly.
+79 raw inputs). Both are validated here on load so we fail early and clearly.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ OUTPUT_ROOT_ENV = "BUDUUNKHAD_OUTPUT_ROOT"
 
 
 class InputRecord(BaseModel):
-    """One of the 78 raw input files."""
+    """One of the 79 raw input files."""
 
     model_config = ConfigDict(frozen=True)
 

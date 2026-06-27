@@ -136,7 +136,7 @@ project Google Drive separately so teammates can see them:
 # Publish ONLY the deliverables (not the 1.8 GiB raw working copies) to a Drive folder:
 $env:BUDUUNKHAD_OUTPUT_ROOT  = "C:\bk\out"
 $env:BUDUUNKHAD_PUBLISH_ROOT = "G:\My Drive\Buduunkhad_Deliverables"   # a Drive-for-Desktop folder
-buduunkhad publish --label v0.1.0
+buduunkhad publish --label v0.2.0
 ```
 
 This copies the GIS layers, registers, logs and reports into a versioned `PhaseNN/` folder with

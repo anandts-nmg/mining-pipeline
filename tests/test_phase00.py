@@ -24,7 +24,7 @@ def test_phase00_real_run(raw_archive):
 
     archive = paths.phase_dir(config.output_root, "00")
     prefix = config.register_prefix
-    inv = archive / f"{prefix}_78Input_Master_Inventory.xlsx"
+    inv = archive / f"{prefix}_79Input_Master_Inventory.xlsx"
     integ = archive / f"{prefix}_Raw_Data_Integrity_Log.xlsx"
     checksum = archive / "SHA-256_Checksum_Register.csv"
     readme = archive / f"{prefix}_Source_Data_Readme.docx"

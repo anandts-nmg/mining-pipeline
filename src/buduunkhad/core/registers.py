@@ -1,6 +1,6 @@
 """Register / inventory / readme writers (xlsx, csv, docx).
 
-These produce the methodology's bookkeeping artefacts: the 78-input master
+These produce the methodology's bookkeeping artefacts: the 79-input master
 inventory, the raw-data integrity log, the SHA-256 checksum register, the data
 confidence ranking, and the source-data readme.
 """
@@ -95,7 +95,7 @@ def write_table_xlsx(
 
 
 def write_inventory_xlsx(rows: Iterable[dict[str, object]], path: Path) -> Path:
-    """Write the 78-input master inventory."""
+    """Write the 79-input master inventory."""
     return write_table_xlsx(
         rows,
         INVENTORY_COLUMNS,
@@ -207,7 +207,7 @@ def write_source_readme_docx(
     doc.add_paragraph(f"License: {license_code}")
     doc.add_paragraph(f"Standard deliverable CRS: {target_crs}")
 
-    doc.add_heading("Evidence groups (78 raw inputs)", level=2)
+    doc.add_heading("Evidence groups (79 raw inputs)", level=2)
     table = doc.add_table(rows=1, cols=2)
     table.style = "Light Grid Accent 1"
     table.rows[0].cells[0].text = "Evidence group"

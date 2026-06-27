@@ -1,6 +1,6 @@
 """Phase 01 — Data Audit and Master GIS Setup (BUILD).
 
-Make the 78 inputs GIS-ready and stand up the EPSG:32647 master database:
+Make the 79 inputs GIS-ready and stand up the EPSG:32647 master database:
 
 1. Import the license-boundary KMZ (№8) -> GeoPackage, reprojected to EPSG:32647.
 2. Generate the project buffers (500 m, 1 km, 5 km, 10 km, 20 km).
@@ -27,7 +27,7 @@ class Phase01DataAudit(Phase):
     id = "01"
     name = "Data Audit and Master GIS Setup"
     mode = "build"
-    input_numbers = list(range(1, 79))
+    input_numbers = list(range(1, 80))
     gate_condition = (
         "Master GIS project opens without missing layers; critical data confidence recorded."
     )
@@ -642,7 +642,7 @@ def _write_desktop_summary(path: Path, ctx: RunContext, *, data_gaps: int) -> Pa
         f"Target CRS: {ctx.config.crs.target_name}, {ctx.config.crs.target_authority}"
     )
     doc.add_paragraph(f"Run ID: {ctx.run_id}")
-    doc.add_paragraph("This readiness summary is generated from the configured 78-input register.")
+    doc.add_paragraph("This readiness summary is generated from the configured 79-input register.")
     doc.add_paragraph("It does not interpret ore potential or process real raw data.")
 
     doc.add_heading("Phase 1 Handoff Status", level=2)

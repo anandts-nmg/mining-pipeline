@@ -6,7 +6,7 @@ applied consistently:
     GIS data layers:   <data_prefix>_<Description>_<CRSorParam>_v01.<ext>
                        e.g. XV023222_Buduunkhad_L23222_LicenseBoundary_EPSG32647_v01.gpkg
     Admin registers:   <register_prefix>_<Description>.<ext>
-                       e.g. XV-023222_Buduunkhad_78Input_Master_Inventory.xlsx
+                       e.g. XV-023222_Buduunkhad_79Input_Master_Inventory.xlsx
 
 Drafts get a ``_DRAFT`` suffix; versions are zero-padded ``v01, v02, ...``.
 """

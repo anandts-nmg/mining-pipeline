@@ -129,7 +129,7 @@ def project():
 
 @pytest.fixture
 def raw_archive(project):
-    """Populate raw_root with synthetic files for all 78 register entries."""
+    """Populate raw_root with synthetic files for all 79 register entries."""
     config, register, _tmp = project
     raw_root = config.raw_root
     for rec in register:

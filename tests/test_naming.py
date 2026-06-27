@@ -44,8 +44,8 @@ def test_data_name_buffer_no_version():
 
 
 def test_register_name_matches_methodology():
-    name = naming.register_name(REG_PREFIX, "78Input_Master_Inventory", ext="xlsx")
-    assert name == "XV-023222_Buduunkhad_78Input_Master_Inventory.xlsx"
+    name = naming.register_name(REG_PREFIX, "79Input_Master_Inventory", ext="xlsx")
+    assert name == "XV-023222_Buduunkhad_79Input_Master_Inventory.xlsx"
 
 
 def test_draft_suffix():

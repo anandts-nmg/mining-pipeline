@@ -1,6 +1,6 @@
 """Phase 00 — Raw Files Archive (BUILD).
 
-Inventory the 78 raw inputs, compute SHA-256 checksums, verify the raw archive is
+Inventory the 79 raw inputs, compute SHA-256 checksums, verify the raw archive is
 unchanged (read-only), and materialise working copies (parent + sidecars) into the
 control archive under the output root. Raw originals in ``raw_root`` are never
 touched.
@@ -21,7 +21,7 @@ class Phase00Archive(Phase):
     id = "00"
     name = "Raw Files Archive"
     mode = "build"
-    input_numbers = list(range(1, 79))
+    input_numbers = list(range(1, 80))
     gate_condition = "All files archived, checksum complete, processing copies available."
 
     # filled during run() so qaqc() can report on it
@@ -45,7 +45,7 @@ class Phase00Archive(Phase):
         result = PhaseResult(self.id, status="dry-run" if ctx.dry_run else "ok")
 
         reg_prefix = ctx.config.register_prefix
-        inv_path = archive_dir / f"{reg_prefix}_78Input_Master_Inventory.xlsx"
+        inv_path = archive_dir / f"{reg_prefix}_79Input_Master_Inventory.xlsx"
         integ_path = archive_dir / f"{reg_prefix}_Raw_Data_Integrity_Log.xlsx"
         checksum_path = archive_dir / "SHA-256_Checksum_Register.csv"
         readme_path = archive_dir / f"{reg_prefix}_Source_Data_Readme.docx"

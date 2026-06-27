@@ -209,7 +209,7 @@ def verify_raw_integrity(
 def candidate_output_paths(config: ProjectConfig, register: list[InputRecord]) -> list[Path]:
     """Representative paths the pipeline will create (for the length pre-flight).
 
-    Dominated by the 78 working copies (which hold the longest filenames) plus the
+    Dominated by the 79 working copies (which hold the longest filenames) plus the
     known Phase 01 GIS deliverables.
     """
     out: list[Path] = []

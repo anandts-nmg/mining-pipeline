@@ -172,6 +172,52 @@ def _acknowledged_absent(config: ProjectConfig) -> set[str]:
     return acknowledged_absent(load_manifest(mpath))
 
 
+def _manifest_present_names(config: ProjectConfig) -> set[str]:
+    """Filenames the manifest records as PRESENT in the canonical archive (status 'matched')."""
+    mpath = config.manifest_path
+    if not (mpath and mpath.exists()):
+        return set()
+    from buduunkhad.core.ingest import load_manifest
+
+    return {fn for fn, e in load_manifest(mpath).items() if e.present_in_archive}
+
+
+def _missing_raw_message(
+    unexpected: list[str],
+    register: list[InputRecord],
+    present_names: set[str],
+    config: ProjectConfig,
+) -> str:
+    """Build the missing-raw-data error, flagging a likely *incomplete directory walk*.
+
+    A common trap is pointing ``raw_root`` at a cloud virtual filesystem (e.g. Google Drive for
+    Desktop): its directory listing under-enumerates for Python's walk, so files the manifest
+    records as present read as 'missing'. When the walk found *some* inputs yet is missing ones the
+    manifest says are present, we say so explicitly — so the operator syncs a real local copy
+    instead of chasing phantom gaps. Cross-checks the walk count against the manifest.
+    """
+    expected_present = _manifest_present_names(config)
+    walked_present = sum(1 for r in register if r.filename in present_names)
+    suspect = [m for m in unexpected if m in expected_present]
+    lines = [
+        f"{len(unexpected)} registered raw input(s) missing from {config.raw_root}.",
+        "First few: " + ", ".join(unexpected[:10]),
+    ]
+    if expected_present:
+        lines.append(
+            f"(directory walk found {walked_present}/{len(expected_present)} manifest-listed inputs.)"
+        )
+    if suspect and present_names:
+        lines.append(
+            f"{len(suspect)} of the missing file(s) are recorded PRESENT in the manifest. If "
+            "raw_root is a cloud virtual filesystem (e.g. Google Drive for Desktop), its directory "
+            "listing can be incomplete for Python — copy the archive to a real LOCAL folder and "
+            "point raw_root there. Otherwise these were removed or not yet synced."
+        )
+    lines.append("Point paths.raw_root at a complete local archive, or use --dry-run.")
+    return "\n".join(lines)
+
+
 def baseline_checksum_path(config: ProjectConfig) -> Path:
     """Location of the SHA-256 baseline written by Phase 00."""
     return paths.phase_dir(config.output_root, "00") / "SHA-256_Checksum_Register.csv"
@@ -315,7 +361,12 @@ def run_pipeline(
 
     # Real runs require raw data + an unchanged read-only archive; dry runs do not.
     if not dry_run:
-        missing = validate_raw_inputs(register, config.raw_root)
+        present_names = (
+            {p.name for p in raw_guard.iter_files(config.raw_root)}
+            if config.raw_root.exists()
+            else set()
+        )
+        missing = [r.filename for r in register if r.filename not in present_names]
         if missing:
             acknowledged = _acknowledged_absent(config)
             unexpected = [m for m in missing if m not in acknowledged]
@@ -328,12 +379,7 @@ def run_pipeline(
                 )
                 manifest.warnings.append(f"{len(ack)} acknowledged data gap(s): {', '.join(ack)}")
             if unexpected:
-                msg = (
-                    f"{len(unexpected)} registered raw input(s) missing from {config.raw_root}.\n"
-                    "First few: "
-                    + ", ".join(unexpected[:10])
-                    + "\nPoint paths.raw_root at the synced archive, or use --dry-run."
-                )
+                msg = _missing_raw_message(unexpected, register, present_names, config)
                 logger.error(msg)
                 raise MissingRawDataError(msg)
         verify_raw_integrity(config, override=override, logger=logger)

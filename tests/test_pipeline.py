@@ -86,6 +86,22 @@ def test_unexpected_missing_still_fails(raw_archive):
         run_pipeline(config, register, only=["00"], dry_run=False)
 
 
+def test_missing_data_message_flags_incomplete_walk(raw_archive):
+    # When the walk finds some inputs yet is missing several the manifest records as PRESENT
+    # (the cloud virtual-FS under-enumeration failure mode, e.g. Drive for Desktop), the error
+    # must diagnose that — advise a real local copy + show the walk-vs-manifest count — not just
+    # report "missing".
+    config, register, raw_root = raw_archive
+    for r in [r for r in register if r.file_type == "raster"][:4]:
+        (raw_root / r.evidence_group / r.filename).unlink()
+    with pytest.raises(MissingRawDataError) as exc:
+        run_pipeline(config, register, only=["00"], dry_run=False)
+    text = str(exc.value).lower()
+    assert "manifest" in text  # names the manifest cross-check
+    assert "local" in text  # advises a real local copy
+    assert "found" in text  # surfaces the walk-vs-manifest count
+
+
 def test_stub_phase_real_run_records_not_implemented(raw_archive):
     config, register, _raw = raw_archive
     # Phase 03 is still an orchestrate stub -> real run raises NotImplementedError.

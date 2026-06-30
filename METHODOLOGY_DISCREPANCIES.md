@@ -27,14 +27,14 @@ vocabulary **High / Medium / Low / Needs verification**). The disagreements belo
 
 **12 explicitly-numbered conflicts** (Phase 00: 3 · Phase 01: 7 · Phase 02: 2), plus ~4
 doc-vs-reality reconciliations and 1 intra-document version drift. **10 of 12 are resolved &
-implemented; 2 remain open** (decision-only, non-blocking).
+implemented; 2 remain open** (decision-only, non-blocking) — both now **parked (deferred 2026-06-30)**.
 
 | Group | Comparison | IDs | Resolved | Open |
 |---|---|---|---|---|
 | Phase 00 | master Doc A vs Phase-1 doc (Doc B) | 00-1, 00-2, 00-3 | 00-1, 00-2, 00-3 | — |
-| Phase 01 | master Doc A vs Phase-1 doc (Doc B) | 01-1 … 01-7 | 01-1 … 01-6 | **01-7** (Phase 3/4 names) |
-| Phase 02 | master Doc A vs `docs/phase_02` guides | 02-1, 02-2 | 02-2 | **02-1** (25 km buffer) |
-| Phase 01 ↔ 02 | inter-phase handoff | H-1, H-2, H-3 | H-2, H-3 | **H-1** (= 02-1) |
+| Phase 01 | master Doc A vs Phase-1 doc (Doc B) | 01-1 … 01-7 | 01-1 … 01-6 | **01-7** (Phase 3/4 names) — Parked (deferred 2026-06-30) |
+| Phase 02 | master Doc A vs `docs/phase_02` guides | 02-1, 02-2 | 02-2 | **02-1** (25 km buffer) — Parked (deferred 2026-06-30) |
+| Phase 01 ↔ 02 | inter-phase handoff | H-1, H-2, H-3 | H-2, H-3 | **H-1** (= 02-1) — Parked (deferred 2026-06-30) |
 | Doc vs reality | docs vs the real Drive archive | 7/11/9 taxonomy · 78/79 · `0. Raw Data` name · #23 EULA | all reconciled | — |
 | Intra-doc | Doc A filename vs body | v6-filename / v5-body | n/a (noted) | — |
 
@@ -150,6 +150,13 @@ Both docs cover Phase 1, and this is where they diverge most.
 - Phase 3: `…_Geological_Metallogenic_and_CMCS_Synthesis` (A) vs `…_Geological_Metallogenic_Synthesis` (B).
 - Phase 4: `…_Preliminary_Prospect_Delineation_and_Ranking` (A) vs `…_Preliminary_Prospect_Ranking` (B).
 
+**Parked 2026-06-30** — intentionally deferred; to be addressed later. No action taken yet.
+`core/paths.py → PHASE_DIRS` still defaults to Doc A's longer names
+(`03_Phase_3_Geological_Metallogenic_and_CMCS_Synthesis`,
+`04_Phase_4_Preliminary_Prospect_Delineation_and_Ranking`); Doc B's short forms are not adopted.
+Non-blocking — Phases 03/04 are stubs; the Doc A vs Doc B choice is to be confirmed when those
+phases are actually built.
+
 ### Differences in scope/emphasis (additions, not contradictions)
 
 - **Doc B only:** a Day 1–5 work schedule; a detailed scan-georeference priority table
@@ -185,6 +192,11 @@ none of which need the 25 km ring, so Phase 02 runs go/go without it. Decision s
 to add a 25 km ring to `boundary.buffers_m` (which would re-run Phase 01) for literal
 prerequisite-list compliance, or treat the guide's 25 km as a documentation artefact. Tracked in
 `PHASE_02_PLAN.md`.
+
+**Parked 2026-06-30** — intentionally deferred; to be addressed later. No action taken yet.
+`config/project.yaml → boundary.buffers_m` remains `[500, 1000, 5000, 10000, 20000]` (no 25 km /
+25000 entry); the only repo references to "25" km are the unrelated 1:25,000 geology-scan scale.
+Non-blocking — Phase 02 clips to licence / 1 km / 5 km only.
 
 **02-2 — Phase-2 folder structure (Doc A vs the detailed guide).** Doc A's Phase 02 tree (master,
 p.39) is **6 folders**: `01_Sentinel2_SNAP13 / 02_ASTER_Workflow_v5 / 03_KOMPSAT2_ILWIS368_QGIS /
@@ -230,6 +242,10 @@ Three interface points (two resolved, one open):
 **H-1 — the 25 km buffer (= 02-1).** The Phase-2 guide's prerequisite filename includes a 25 km
 ring; Phase 01 produced only 500 m–20 km. **Open** — non-blocking (Phase 02 clips to licence /
 1 km / 5 km only). Decide: add a 25 km ring to Phase 01, or treat it as a guide artefact.
+
+**Parked 2026-06-30** — intentionally deferred; to be addressed later. No action taken yet. Same
+issue as 02-1 (not double-counted); `boundary.buffers_m` is still the five rings 500 m–20 km, no
+25 km in code or config.
 
 **H-2 — who reprojects the Sentinel UTM46N tile.** Doc B's *Phase 1* flags that the Sentinel
 T46 tile may be UTM46N (EPSG:32646) and cautions to reproject; Doc A assigns the *actual*
@@ -299,12 +315,13 @@ data** (`v0.2.0`).
 
 ## Still open (later phases / documentation)
 
-- **Phase 3 / Phase 4 folder names** (01-7) — code uses Doc A's longer names; confirm when those phases are built.
+- **Phase 3 / Phase 4 folder names** (01-7) — code uses Doc A's longer names; confirm when those phases are built. *(Parked 2026-06-30.)*
 - Whether the **standalone Phase-1 PDF** should be formally marked "superseded for folder structure" (or updated to match Doc A).
 - **KOMPSAT EULA** — source the file, or keep it as a permanent documented gap.
 - **BMP-as-`.jpg`** MUGZ tectonic files — confirm reader handling in Phase 02/03.
 - **25 km buffer (02-1)** — decide whether to add a 25 km ring to `boundary.buffers_m` (re-runs
   Phase 01) for the Phase-2 guide's prerequisite list, or treat 25 km as a documentation artefact.
+  *(Parked 2026-06-30.)*
 
 ---
 

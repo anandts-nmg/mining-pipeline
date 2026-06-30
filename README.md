@@ -4,7 +4,7 @@ A config-driven Python geospatial pipeline implementing the *automatable* parts 
 **Buduunkhad / XV-023222 Exploration Workflow Methodology** (79 raw inputs, phases 00–99).
 
 This repository is the **foundation build**: the project skeleton, the conventions enforced
-in code, the 79-input register, the phase-runner architecture, **Phases 00 and 01 implemented
+in code, the 79-input register, the phase-runner architecture, **Phases 00, 01 and 02 implemented
 end-to-end**, and every later phase registered as a stub behind a uniform interface.
 
 > The methodology is phase-gated. Remote sensing / pXRF / drone outputs are **support**
@@ -92,8 +92,9 @@ which phases ran, their gate decisions, and their outputs.
 
 ## The cloud-data caveat (important)
 
-The 79 raw inputs currently live in a **cloud-only Google Drive folder that is not synced
-locally**, so the pipeline cannot run on real data yet. The design accounts for this:
+The 79 raw inputs live in a **Google Drive folder (cloud-only by default)**. The pipeline runs on
+real data once that archive is synced/copied to a local folder — Phases 00–02 have been run
+end-to-end against a local copy (gates GO). The design keeps the data decoupled from the code:
 
 - The raw archive path is a config value (`config/project.yaml → paths.raw_root`); nothing is
   hard-coded.

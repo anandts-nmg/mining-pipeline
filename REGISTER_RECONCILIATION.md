@@ -60,6 +60,6 @@ MUGZ500 ... Page10   73fcd5484c18ad68...
 ## Recommendation
 
 - **No edits to `input_register.csv`** — it is validated against reality.
-- One optional config fix: correct `raw_manifest.csv` `#56 drive_size_bytes` to `2281723` (verified on disk).
+- Applied: `raw_manifest.csv` `#56 drive_size_bytes` corrected to `2281723` (verified on disk; commit `b17d3e2`).
 - Phase 03 should read inputs #3–#6 as **BMP** on the working copy (extension says `.jpg`).
 - The remaining items (#23 EULA spacing, #61 canonical copy) resolve when the archive is fully synced/curated.

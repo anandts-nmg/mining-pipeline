@@ -150,6 +150,7 @@ def _write_cog(
     nodata,
     predictor: str | None,
     overview_resampling: str,
+    invalid_mask: np.ndarray | None = None,
 ) -> Path:
     """Write ``array`` as a COG. The profile is built **fresh** (crs/transform/size only)
     so a source DEM's compression/predictor can never leak onto a derivative."""
@@ -167,8 +168,9 @@ def _write_cog(
     prof.update(count=1, dtype=dtype, driver="GTiff", nodata=nodata)
     with tempfile.TemporaryDirectory() as tmp:
         tmpf = Path(tmp) / "deriv.tif"
+        out_arr = array if invalid_mask is None else np.where(invalid_mask, nodata, array)
         with rasterio.open(tmpf, "w", **prof) as ds:
-            ds.write(array.astype(dtype), 1)
+            ds.write(out_arr.astype(dtype), 1)
         raster_writers.write_cog(
             tmpf,
             path,
@@ -190,9 +192,10 @@ def derive_terrain(dem_path: Path, outputs: dict[str, Path]) -> tuple[list[Path]
     silently) for DEMs above :data:`MAX_CELLS_FOR_FLOW`.
     """
     z, xres, yres, profile = _read_elevation(dem_path)
-    if np.isnan(z).any():
+    invalid = np.isnan(z)
+    if invalid.any():
         mean = np.nanmean(z)
-        z = np.where(np.isnan(z), mean if np.isfinite(mean) else 0.0, z)
+        z = np.where(invalid, mean if np.isfinite(mean) else 0.0, z)
 
     written: list[Path] = []
     skipped: list[str] = []
@@ -208,6 +211,7 @@ def derive_terrain(dem_path: Path, outputs: dict[str, Path]) -> tuple[list[Path]
                 nodata=-9999.0,
                 predictor="3",
                 overview_resampling="AVERAGE",
+                invalid_mask=invalid,
             )
         )
 
@@ -223,6 +227,7 @@ def derive_terrain(dem_path: Path, outputs: dict[str, Path]) -> tuple[list[Path]
                     nodata=0,
                     predictor=None,
                     overview_resampling="NEAREST",
+                    invalid_mask=invalid,
                 )
             )
         elif key == "slope":

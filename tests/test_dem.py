@@ -59,3 +59,42 @@ def test_curvature_flat_is_zero():
     prof, plan = dem.curvature(z, 30.0, 30.0)
     assert prof.dtype == np.float32 and plan.dtype == np.float32
     assert np.allclose(prof, 0.0) and np.allclose(plan, 0.0)
+
+
+def test_derive_terrain_remasks_nodata(tmp_path):
+    """A DEM block flagged nodata must stay nodata on slope (float) and hillshade (uint8)."""
+    import rasterio
+    from rasterio.transform import from_origin
+
+    sentinel = -9999.0
+    size = 20
+    z = np.fromfunction(lambda r, c: (r + c).astype("float64"), (size, size))
+    # mask a 4x4 interior block (away from edges so it is not just a Horn artefact)
+    z[8:12, 8:12] = sentinel
+    masked_idx = np.zeros((size, size), dtype=bool)
+    masked_idx[8:12, 8:12] = True
+
+    dem_path = tmp_path / "dem.tif"
+    profile = {
+        "driver": "GTiff",
+        "height": size,
+        "width": size,
+        "count": 1,
+        "dtype": "float32",
+        "crs": "EPSG:32647",
+        "transform": from_origin(300000.0, 5100000.0, 30.0, 30.0),
+        "nodata": sentinel,
+    }
+    with rasterio.open(dem_path, "w", **profile) as ds:
+        ds.write(z.astype("float32"), 1)
+
+    outs = {"slope": tmp_path / "slope.tif", "hillshade": tmp_path / "hillshade.tif"}
+    written, skipped = dem.derive_terrain(dem_path, outs)
+    assert len(written) == 2 and not skipped
+
+    for key in ("slope", "hillshade"):
+        with rasterio.open(outs[key]) as ds:
+            band = ds.read(1, masked=True)
+            assert band.mask[masked_idx].all(), f"{key} did not re-mask the nodata block"
+            # valid data must survive elsewhere (the whole raster is not masked away)
+            assert not band.mask.all()

@@ -102,6 +102,8 @@ def reproject_raster(
                     src_crs=ds.crs,
                     dst_transform=transform,
                     dst_crs=dst_crs,
+                    src_nodata=ds.nodata,
+                    dst_nodata=ds.nodata,
                     resampling=rs,
                 )
     return dst
@@ -117,6 +119,7 @@ def reproject_clip_cog(
     cog_predictor: str | None = None,
     cog_overview_resampling: str = "NEAREST",
     resampling: str = "bilinear",
+    nodata_fallback: float | None = None,
 ) -> tuple[Path | None, bool]:
     """Clip ``src`` to ``aoi_gdf`` (in the source CRS), reproject to ``dst_epsg``, write a COG.
 
@@ -139,6 +142,8 @@ def reproject_clip_cog(
         src_crs = ds.crs
         src_epsg = src_crs.to_epsg() if src_crs else None
         nodata = ds.nodata
+    if nodata is None:
+        nodata = nodata_fallback
 
     # geopandas.to_crs wants an EPSG/WKT, not a rasterio CRS object
     clip_crs = src_epsg if src_epsg is not None else (src_crs.to_wkt() if src_crs else None)

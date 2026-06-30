@@ -21,7 +21,7 @@ def _raster(
     res: float,
     origin: tuple[float, float],
     dtype: str = "float32",
-    nodata: float = -9999.0,
+    nodata: float | None = -9999.0,
 ) -> Path:
     data = np.fromfunction(lambda r, c: r + c, (size, size)).astype(dtype)
     profile = {
@@ -69,6 +69,41 @@ def test_reproject_clip_cog_clips_and_reprojects(tmp_path):
         assert d.crs.to_epsg() == 32647
         # clipped to the interior -> fewer pixels than the full source
         assert d.width * d.height < s.width * s.height
+
+
+def test_reproject_clip_cog_applies_nodata_fallback(tmp_path):
+    # source raster carries NO nodata; clip with a TRIANGLE AOI (partial coverage of its
+    # bbox window) and dst_epsg == src_epsg so no reproject runs -> the only nodata source
+    # is the fallback, and the corners of the bbox outside the triangle become nodata.
+    import geopandas as gpd
+    from shapely.geometry import Polygon
+
+    src = _raster(
+        tmp_path / "src.tif",
+        epsg=32647,
+        size=20,
+        res=30.0,
+        origin=(300000.0, 5100000.0),
+        nodata=None,
+    )
+    with rasterio.open(src) as ds:
+        assert ds.nodata is None  # precondition: source has no nodata
+    # triangle inside the raster extent; its bbox holds pixels outside the polygon
+    x0, y0 = 300000.0 + 2 * 30, 5100000.0 - 18 * 30
+    tri = Polygon([(x0, y0), (x0 + 16 * 30, y0), (x0, y0 + 16 * 30)])
+    aoi = gpd.GeoDataFrame({"id": [1]}, geometry=[tri], crs="EPSG:32647")
+    dst = tmp_path / "out.tif"
+
+    out, clipped = crs_mod.reproject_clip_cog(
+        src, dst, aoi, dst_epsg=32647, cog_compress="DEFLATE", nodata_fallback=-9999.0
+    )
+    assert out == dst and clipped is True
+    with rasterio.open(dst) as ds:
+        assert ds.nodata == -9999.0
+        band = ds.read(1, masked=True)
+        total = band.size
+        valid = int((~band.mask).sum())
+        assert 0 < valid < total  # some, but not all, pixels are nodata (valid fraction < 1)
 
 
 def test_reproject_clip_cog_no_overlap_returns_none(tmp_path):

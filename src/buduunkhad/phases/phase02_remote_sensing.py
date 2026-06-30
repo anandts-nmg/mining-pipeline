@@ -58,8 +58,8 @@ _TERRAIN_INDEX_COLUMNS = [
 
 # Per-product input groups (raw input numbers).
 _DEM_ELEV = {9, 12}  # ASTER GDEM, ALOS-PALSAR DEM -> reproject+clip+COG + terrain derivatives
-_DEM_SUPPORT = {10, 16, 20}  # NumObservations (int), ALOS hillshade (uint8), ALOS slope (float)
-_DEM_CATEGORICAL = {10, 16}  # nearest resampling / nearest overviews
+_DEM_SUPPORT = {10, 16, 20}  # NumObservations (int), ALOS hillshade (float), ALOS slope (float)
+_DEM_CATEGORICAL = {10}  # only #10 (NumObservations) is a true count raster; #16 is continuous
 _SENTINEL = {74, 77, 78}  # received composites/ratio stacks -> reproject+clip(licence)+COG
 _BASEMAP_NOCLIP = {75}  # 2.4 m Google basemap -> reproject only
 _BASEMAP_CLIP = {76}  # 0.15 m high-res basemap -> reproject + clip 1 km
@@ -312,6 +312,7 @@ class Phase02RemoteSensing(Phase):
         clip_label: str,
         compress: str,
         categorical: bool,
+        nodata_fallback: float | None = None,
         require_aoi: bool = True,
     ) -> dict[str, object]:
         cfg = ctx.config
@@ -346,6 +347,7 @@ class Phase02RemoteSensing(Phase):
                 cog_predictor=predictor,
                 cog_overview_resampling="NEAREST" if categorical else "AVERAGE",
                 resampling="nearest" if categorical else "bilinear",
+                nodata_fallback=nodata_fallback,
             )
         except Exception as exc:  # noqa: BLE001 - record and continue the batch
             self._failed += 1
@@ -374,6 +376,7 @@ class Phase02RemoteSensing(Phase):
             clip_label=f"{_DEM_CLIP_M // 1000}km",
             compress="DEFLATE",
             categorical=False,
+            nodata_fallback=-9999.0,
         )
         if row.get("decision") != "Pass":
             return row

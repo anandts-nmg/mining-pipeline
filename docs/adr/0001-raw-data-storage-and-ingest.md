@@ -50,5 +50,7 @@ growing daily. Inspection (metadata-only) established:
   rasters once (one-time, acceptable).
 - **−** A new ingest layer (`core/ingest.py` + manifest support in Phase 00) must be built; until
   then, runs require a local copy of `0. Raw Data` (or a Drive-synced path) at `raw_root`.
-- **Resolved:** the 79th input (SAS hand-interpreted 1:25k scan) is now in the register (79 rows). **Open follow-ups:** locate/flag the
-  missing KOMPSAT EULA; decide reader handling for the BMP-as-`.jpg` MUGZ tectonic files.
+- **Resolved:** the 79th input (SAS hand-interpreted 1:25k scan) is in the register (79 rows); the BMP-as-`.jpg`
+  MUGZ tectonic files are characterized — 4 files in folder 11, confirmed BMP (magic `42 4d`) and SHA-256-verified
+  as 4 *distinct* pages, so read them as BMP on the Phase-03 working copy. **Open follow-up:** locate/flag the
+  missing KOMPSAT EULA (#23, absent from the archive). See `REGISTER_RECONCILIATION.md` for the full reconciliation.

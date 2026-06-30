@@ -69,6 +69,11 @@ _ASTER_HDF = {73}  # method-note only (SNAP/ILWIS band extraction)
 _DEM_CLIP_M = 5000
 _BASEMAP_CLIP_M = 1000
 
+# NumObservations (#10) is a uint8 count where 0 is a valid reading, so the clip must not leave
+# out-of-AOI margins as 0 (that conflates with genuine zero-observation cells). Flag the margin
+# with 255 (uint8 max, above the observed count range) so it is recorded as nodata instead.
+_SUPPORT_NODATA_FALLBACK: dict[int, float] = {10: 255.0}
+
 # tokens stripped from a raw filename stem when building a clean output description
 _STRIP_TOKENS = re.compile(r"_(raw|received_?raw|v\d{2})$", re.IGNORECASE)
 
@@ -201,6 +206,7 @@ class Phase02RemoteSensing(Phase):
                         clip_label=f"{_DEM_CLIP_M // 1000}km",
                         compress="DEFLATE",
                         categorical=rec.no in _DEM_CATEGORICAL,
+                        nodata_fallback=_SUPPORT_NODATA_FALLBACK.get(rec.no),
                     )
                 )
             elif rec.no in _SENTINEL:

@@ -6,6 +6,8 @@ real-run test runs Phase 00 (working copies) and Phase 01 (buffers + boundary) f
 
 from __future__ import annotations
 
+import rasterio
+
 from buduunkhad.core import paths, raster_writers
 from buduunkhad.core.gates import GateStatus
 from buduunkhad.phases.base import RunContext
@@ -52,6 +54,12 @@ def test_phase02_real_run(raw_archive):
     assert phase._outputs, "no COG outputs produced"
     for p in phase._outputs:
         assert raster_writers.is_cog(p), f"{p.name} is not a valid COG"
+
+    # NumObservations (#10) clip margins must be tagged nodata, not left as a valid 0 count
+    num_obs = list(deriv_dir.glob("*NumObservations*.tif"))
+    if num_obs:
+        with rasterio.open(num_obs[0]) as ds:
+            assert ds.nodata == 255, f"{num_obs[0].name} missing nodata=255"
 
     # QA/QC log + the master-named QA/QC report + terrain index + method notes
     assert (

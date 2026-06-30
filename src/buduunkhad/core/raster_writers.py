@@ -105,3 +105,29 @@ def predictor_for(dtype: str | None) -> str | None:
     if d.startswith(("int", "uint")):
         return "2"
     return None
+
+
+def subset_cog_bands(path: Path, keep: list[int]) -> Path:
+    """Rewrite a COG in place keeping only the 1-based bands in ``keep`` (CRS/geotransform preserved).
+
+    For received composites that bundle more bands than the deliverable should expose — e.g. a
+    Sentinel-2 "lithology index" stack that ships raw-reflectance bands alongside the named ratio
+    bands. Compression/predictor are chosen from the dtype, matching the other COG writers.
+    """
+    import tempfile
+
+    import rasterio
+
+    path = Path(path)
+    with rasterio.open(path) as ds:
+        profile = ds.profile.copy()
+        dtype = ds.dtypes[0]
+        data = [ds.read(i) for i in keep]
+    profile.update(count=len(keep), driver="GTiff")
+    with tempfile.TemporaryDirectory() as tmp:
+        plain = Path(tmp) / "subset.tif"
+        with rasterio.open(plain, "w", **profile) as out:
+            for j, arr in enumerate(data, start=1):
+                out.write(arr, j)
+        write_cog(plain, path, compress="DEFLATE", predictor=predictor_for(dtype))
+    return path

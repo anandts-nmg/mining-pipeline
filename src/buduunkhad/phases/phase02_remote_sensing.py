@@ -74,6 +74,12 @@ _BASEMAP_CLIP_M = 1000
 # with 255 (uint8 max, above the observed count range) so it is recorded as nodata instead.
 _SUPPORT_NODATA_FALLBACK: dict[int, float] = {10: 255.0}
 
+# A few received Sentinel "composites" bundle extra raw-reflectance bands alongside the named
+# product. #78 (LithologyIndex) ships 8 bands, but the deliverable is the 3 named ratios
+# (B11/B12, B08/B11, B04/B03) = bands 1-3; keep those, drop the rest. (Confirmed in the register
+# reconciliation: bands 4-8 are raw reflectance DN, not part of the lithology index.)
+_SENTINEL_BAND_SUBSET: dict[int, tuple[int, ...]] = {78: (1, 2, 3)}
+
 # tokens stripped from a raw filename stem when building a clean output description
 _STRIP_TOKENS = re.compile(r"_(raw|received_?raw|v\d{2})$", re.IGNORECASE)
 
@@ -220,6 +226,7 @@ class Phase02RemoteSensing(Phase):
                         clip_label="Licence",
                         compress="DEFLATE",
                         categorical=False,
+                        band_subset=_SENTINEL_BAND_SUBSET.get(rec.no),
                     )
                 )
             elif rec.no in _BASEMAP_NOCLIP:
@@ -319,6 +326,7 @@ class Phase02RemoteSensing(Phase):
         compress: str,
         categorical: bool,
         nodata_fallback: float | None = None,
+        band_subset: tuple[int, ...] | None = None,
         require_aoi: bool = True,
     ) -> dict[str, object]:
         cfg = ctx.config
@@ -364,10 +372,17 @@ class Phase02RemoteSensing(Phase):
             self._skipped += 1
             row.update(decision="Skip", note=f"no overlap with {clip_label} AOI")
             return row
+        note = ""
+        if band_subset is not None and audit.band_count and audit.band_count > len(band_subset):
+            raster_writers.subset_cog_bands(result_path, list(band_subset))
+            note = (
+                f"kept bands {list(band_subset)}; dropped "
+                f"{audit.band_count - len(band_subset)} extra received band(s)"
+            )
         self._reprojected += 1
         self._outputs.append(result_path)
         row.update(output=result_path.name, clip_buffer=clip_label if clip_applied else "(none)")
-        row.update(decision="Pass", note="")
+        row.update(decision="Pass", note=note)
         return row
 
     def _do_dem_elev(

@@ -179,5 +179,36 @@ def test_derive_terrain_flow_skip_is_noted(tmp_path, monkeypatch):
     assert skipped and "flow skipped" in skipped[0]
 
 
+def test_subset_cog_bands_keeps_named_bands(tmp_path):
+    # A received composite with 5 bands subset to its first 3 -> a 3-band EPSG:32647 COG,
+    # geotransform/CRS preserved and the kept bands' data unchanged (Phase 02 #2: the Sentinel
+    # lithology stack ships extra reflectance bands beyond the 3 named ratios).
+    from rasterio.transform import from_origin
+
+    src = tmp_path / "stack.tif"
+    profile = {
+        "driver": "GTiff",
+        "height": 8,
+        "width": 8,
+        "count": 5,
+        "dtype": "float32",
+        "crs": "EPSG:32647",
+        "transform": from_origin(300000.0, 5100000.0, 10.0, 10.0),
+    }
+    with rasterio.open(src, "w", **profile) as ds:
+        for b in range(1, 6):
+            ds.write(np.full((8, 8), float(b), dtype="float32"), b)
+
+    raster_writers.subset_cog_bands(src, [1, 2, 3])
+
+    assert raster_writers.is_cog(src)
+    with rasterio.open(src) as ds:
+        assert ds.count == 3
+        assert ds.crs.to_epsg() == 32647
+        # kept bands retain their original values (band b was filled with value b)
+        for b in (1, 2, 3):
+            assert float(ds.read(b).max()) == float(b)
+
+
 if __name__ == "__main__":  # pragma: no cover
     pytest.main([__file__, "-q"])

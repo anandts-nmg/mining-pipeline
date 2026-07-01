@@ -204,6 +204,44 @@ def test_phase03_xlsx_ingest_real_workbook(raw_archive):
     assert (gdf["validation_status"] == "Historical only").all()
 
 
+def test_phase03_xlsx_ingest_mongolian_dms(raw_archive):
+    """The real #68 register uses Mongolian headers (Уртраг/Өргөрөг) with DMS coordinate
+    strings (96°41'16"). Those must be detected, parsed to decimal degrees, and reprojected."""
+    import openpyxl as pyxl
+
+    config, register, _raw = raw_archive
+    ctx = _ctx(config, register)
+    Phase00Archive().run(ctx)
+    p1 = Phase01DataAudit()
+    p1.prepare(ctx)
+    p1.run(ctx)
+
+    rec = ctx.record_by_no(68)
+    wc = paths.phase_dir(config.output_root, "00") / rec.evidence_group / rec.filename
+    wc.parent.mkdir(parents=True, exist_ok=True)
+    wb = pyxl.Workbook()
+    ws = wb.active
+    assert ws is not None
+    ws.append(["№", "Цэгийн дугаар", "Уртраг", "Өргөрөг"])
+    ws.append([1, "MO-1", "96°41'16\"", "45°57'32\""])
+    ws.append([2, "MO-2", "96°40'46\"", "45°59'27\""])
+    wb.save(wc)
+
+    phase = Phase03GeologySynthesis()
+    phase.prepare(ctx)
+    phase.run(ctx)
+    assert phase._mineralized_points == 2
+
+    gpkg = _evidence_gpkg(config)
+    gdf = vector_io.read_layer(gpkg, "mineralized_points_point")
+    assert len(gdf) == 2
+    assert gdf.crs is not None and gdf.crs.to_epsg() == config.target_epsg
+    assert sorted(gdf["feature_id"]) == ["BUD-MIN-0001", "BUD-MIN-0002"]
+    # DMS parsed to lon ~96.7 / lat ~46.0 then reprojected -> finite metre-scale UTM
+    coords = gdf.geometry.get_coordinates()
+    assert (coords["x"].abs() < 1e7).all() and (coords["y"].abs() < 1e7).all()
+
+
 def test_phase03_ingest_human_layer(raw_archive):
     """A human-digitized layer dropped into a phase folder is ingested into the evidence GPKG."""
     import geopandas as gpd

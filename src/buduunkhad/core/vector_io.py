@@ -6,6 +6,7 @@ the vector code paths.
 
 from __future__ import annotations
 
+import re
 import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -171,15 +172,46 @@ def buffer_rings(boundary_gdf, distances_m: list[int], epsg: int):  # type: igno
     return gpd.GeoDataFrame(rings, crs=f"EPSG:{epsg}")
 
 
+# Degrees-minutes-seconds like 96°41'16" or 45°59'26.8"N (seconds/hemisphere optional).
+_DMS_RE = re.compile(
+    r"(?P<deg>-?\d+(?:\.\d+)?)\s*[°ºd]\s*"
+    r"(?:(?P<min>\d+(?:\.\d+)?)\s*['′m]\s*)?"
+    r"(?:(?P<sec>\d+(?:\.\d+)?)\s*[\"″s]?\s*)?"
+    r"(?P<hemi>[NSEWnsew])?"
+)
+
+
+def _to_decimal_degrees(value):  # type: ignore[no-untyped-def]
+    """Coerce a coordinate cell to a float. Numeric values pass through; a DMS string such
+    as ``96°41'16"`` (e.g. a Mongolian register's Уртраг/Өргөрөг columns) is parsed to decimal
+    degrees, honouring a leading sign or an N/S/E/W hemisphere. Returns ``None`` when unparseable.
+    """
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        pass
+    m = _DMS_RE.search(str(value).strip())
+    if not m or not m.group("deg"):
+        return None
+    deg = float(m.group("deg"))
+    dd = abs(deg) + float(m.group("min") or 0) / 60 + float(m.group("sec") or 0) / 3600
+    negative = deg < 0 or (m.group("hemi") or "").upper() in ("S", "W")
+    return -dd if negative else dd
+
+
 def xlsx_points_to_gdf(path: Path, source_epsg: int = 4326, target_epsg: int = 32647):  # type: ignore[no-untyped-def]
     """Read an XLSX point table, detect coordinate columns, build a reprojected GeoDataFrame.
 
-    Detects lon/lat / x/y / easting-northing column pairs case-insensitively, then classifies
-    by coordinate MAGNITUDE (not label): |x|<=180 and |y|<=90 are geographic (``source_epsg``,
-    WGS84) and reprojected to ``target_epsg``; metre-scale magnitudes are taken as already in
-    ``target_epsg`` (so a UTM easting/northing table is never mis-reprojected to (inf, inf)).
-    Returns ``None`` gracefully — never raises — when the workbook is unreadable, empty, or has
-    no detectable coordinate column pair (e.g. a synthetic placeholder); the caller notes + skips.
+    Detects lon/lat / x/y / easting-northing column pairs case-insensitively — including the
+    Mongolian register headers Уртраг (lon) / Өргөрөг (lat) — and parses DMS strings like
+    ``96°41'16"`` to decimal degrees, then classifies by coordinate MAGNITUDE (not label):
+    |x|<=180 and |y|<=90 are geographic (``source_epsg``, WGS84) and reprojected to
+    ``target_epsg``; metre-scale magnitudes are taken as already in ``target_epsg`` (so a UTM
+    easting/northing table is never mis-reprojected to (inf, inf)). Returns ``None`` gracefully —
+    never raises — when the workbook is unreadable, empty, or has no detectable coordinate column
+    pair (e.g. a synthetic placeholder); the caller notes + skips.
     """
     try:
         import geopandas as gpd
@@ -198,29 +230,30 @@ def xlsx_points_to_gdf(path: Path, source_epsg: int = 4326, target_epsg: int = 3
         return None
 
     lower = {str(c).strip().lower(): c for c in df.columns}
-    x_col = next(
-        (lower[k] for k in ("lon", "long", "longitude", "x", "easting", "east") if k in lower), None
-    )
-    y_col = next(
-        (lower[k] for k in ("lat", "latitude", "y", "northing", "north") if k in lower), None
-    )
+    x_keys = ("lon", "long", "longitude", "x", "easting", "east", "уртраг")
+    y_keys = ("lat", "latitude", "y", "northing", "north", "өргөрөг")
+    x_col = next((lower[k] for k in x_keys if k in lower), None)
+    y_col = next((lower[k] for k in y_keys if k in lower), None)
     if x_col is None or y_col is None:
         return None
 
-    coords = df[[x_col, y_col]].apply(pd.to_numeric, errors="coerce").dropna()
+    # Coerce to numbers, parsing DMS strings (e.g. 96°41'16") to decimal degrees, then drop bad rows.
+    coords = pd.DataFrame(
+        {"x": df[x_col].map(_to_decimal_degrees), "y": df[y_col].map(_to_decimal_degrees)}
+    ).dropna()
     if coords.empty:
         return None
     # Trust the coordinate MAGNITUDE, not the column label: degrees (|x|<=180, |y|<=90)
     # are geographic (source_epsg / WGS84); metre-scale magnitudes are projected and taken
     # to be already in target_epsg. This stops a UTM easting/northing table being mislabeled
     # as lon/lat and reprojected to (inf, inf).
-    geographic = coords[x_col].abs().max() <= 180 and coords[y_col].abs().max() <= 90
+    geographic = coords["x"].abs().max() <= 180 and coords["y"].abs().max() <= 90
     detected_epsg = source_epsg if geographic else target_epsg
     attrs = df.loc[coords.index].reset_index(drop=True)
     gdf = gpd.GeoDataFrame(
         attrs,
         geometry=gpd.points_from_xy(
-            coords[x_col].reset_index(drop=True), coords[y_col].reset_index(drop=True)
+            coords["x"].reset_index(drop=True), coords["y"].reset_index(drop=True)
         ),
         crs=f"EPSG:{detected_epsg}",
     )

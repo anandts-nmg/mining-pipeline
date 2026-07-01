@@ -34,9 +34,8 @@ CMCS_LIMITATION = "Context only — not proof of mineralization inside license"
 # CMCS/MRPAM context screening rings (guide §03.4 Step 7).
 CMCS_RINGS_M = [5000, 10000, 20000]
 
-# The 14 mandatory provenance fields carried on every evidence layer, plus the adopted
-# Appendix-A feature_id (PHASE_03_PLAN.md §"The 14 mandatory fields"). Ordered; feature_id
-# leads so it reads as the primary key.
+# The evidence-layer attribute schema: the 13 provenance fields (guide §03.4 Step 8) plus the
+# adopted Appendix-A feature_id = 14 columns total. Ordered; feature_id leads as the primary key.
 EVIDENCE_FIELDS: dict[str, str] = {
     "feature_id": "str:32",
     "source_raw_input_no": "str:16",
@@ -58,23 +57,23 @@ EVIDENCE_FIELDS: dict[str, str] = {
 # A prefix of "" means the layer has no Appendix-A feature-ID prefix (inherited/context
 # layers). PHASE_03_PLAN.md §"The authoritative evidence GPKG — 17-layer schema".
 EVIDENCE_LAYERS: list[tuple[str, str, str]] = [
-    ("license_boundary", "Polygon", ""),
-    ("buffer_5km_10km_20km", "Polygon", ""),
-    ("tectonic_terrane_context_polygon", "Polygon", ""),
-    ("metallogenic_zones_polygon", "Polygon", "BUD-MET"),
-    ("ore_district_node_context_polygon", "Polygon", ""),
-    ("geology_units_200k_polygon", "Polygon", "BUD-GEO200"),
-    ("geology_units_50k_polygon", "Polygon", "BUD-GEO50"),
-    ("faults_structures_line", "LineString", "BUD-STR"),
-    ("intrusive_contacts_line", "LineString", ""),
-    ("dyke_vein_line", "LineString", ""),
-    ("mineral_occurrences_point", "Point", "BUD-MIN"),
-    ("mineralized_points_point", "Point", "BUD-MIN"),
-    ("prospectivity_target_zones_polygon", "Polygon", "BUD-TGT"),
-    ("source_material_observation_point", "Point", "BUD-OBS"),
-    ("source_material_route_line", "LineString", "BUD-RTE"),
-    ("source_material_trench_pit_point", "Point", "BUD-OBS"),
-    ("cmcs_nearest_occurrences_point", "Point", ""),
+    ("license_boundary", "MultiPolygon", ""),
+    ("buffer_5km_10km_20km", "MultiPolygon", ""),
+    ("tectonic_terrane_context_polygon", "MultiPolygon", ""),
+    ("metallogenic_zones_polygon", "MultiPolygon", "BUD-MET"),
+    ("ore_district_node_context_polygon", "MultiPolygon", ""),
+    ("geology_units_200k_polygon", "MultiPolygon", "BUD-GEO200"),
+    ("geology_units_50k_polygon", "MultiPolygon", "BUD-GEO50"),
+    ("faults_structures_line", "MultiLineString", "BUD-STR"),
+    ("intrusive_contacts_line", "MultiLineString", ""),
+    ("dyke_vein_line", "MultiLineString", ""),
+    ("mineral_occurrences_point", "MultiPoint", "BUD-MIN"),
+    ("mineralized_points_point", "MultiPoint", "BUD-MIN"),
+    ("prospectivity_target_zones_polygon", "MultiPolygon", "BUD-TGT"),
+    ("source_material_observation_point", "MultiPoint", "BUD-OBS"),
+    ("source_material_route_line", "MultiLineString", "BUD-RTE"),
+    ("source_material_trench_pit_point", "MultiPoint", "BUD-OBS"),
+    ("cmcs_nearest_occurrences_point", "MultiPoint", ""),
 ]
 
 # The layer the validated #68 mineralized points are ingested into.
@@ -340,14 +339,24 @@ class Phase03GeologySynthesis(Phase):
         vector_io.write_layer(rings, buffer_path, layer="cmcs_mrpam_buffer")
         result.add_output(buffer_path)
 
-        # also populate the evidence GPKG's buffer layer (schema-aligned)
+        # populate the evidence GPKG's buffer + license_boundary layers (schema-aligned, 32647)
         ring_geom = self._prepare_evidence_gdf(
             rings[["geometry"]].copy(),
             "buffer_5km_10km_20km",
+            target_epsg=cfg.target_epsg,
             evidence_type="buffer",
             limitation=CMCS_LIMITATION,
         )
         vector_io.write_layer(ring_geom, evidence_path, layer="buffer_5km_10km_20km", mode="a")
+
+        boundary_geom = self._prepare_evidence_gdf(
+            boundary[[boundary.geometry.name]].copy(),
+            "license_boundary",
+            target_epsg=cfg.target_epsg,
+            input_no=str(cfg.boundary.input_no),
+            evidence_type="boundary",
+        )
+        vector_io.write_layer(boundary_geom, evidence_path, layer="license_boundary", mode="a")
 
     # ------------------------------------------------------------------ #
     # Step 5 — #68 mineralized-point XLSX -> validated points
@@ -378,6 +387,7 @@ class Phase03GeologySynthesis(Phase):
         gdf = self._prepare_evidence_gdf(
             gdf[["geometry"]].copy(),
             _MINERALIZED_LAYER,
+            target_epsg=cfg.target_epsg,
             input_no=str(rec.no),
             scale="1:50k",
             evidence_type="occurrence",
@@ -428,7 +438,7 @@ class Phase03GeologySynthesis(Phase):
                     continue
                 if len(gdf) == 0:
                     continue
-                gdf = self._prepare_evidence_gdf(gdf, layer)
+                gdf = self._prepare_evidence_gdf(gdf, layer, target_epsg=ctx.config.target_epsg)
                 vector_io.write_layer(gdf, evidence_path, layer=layer, mode="a")
                 self._ingested_layers.append(layer)
 
@@ -437,6 +447,7 @@ class Phase03GeologySynthesis(Phase):
         gdf,  # type: ignore[no-untyped-def]
         layer: str,
         *,
+        target_epsg: int = 0,
         input_no: str = "",
         scale: str = "",
         evidence_type: str = "",
@@ -444,18 +455,61 @@ class Phase03GeologySynthesis(Phase):
         source_group: str = "",
         limitation: str = HISTORICAL_LIMITATION,
     ):  # type: ignore[no-untyped-def]
-        """Stamp mandatory provenance fields, mint ``feature_id`` where missing, and reindex
-        the frame to *exactly* the evidence schema columns + geometry so appending to the
-        typed evidence layer aligns by name (fiona/pyogrio otherwise matches positionally
-        and scrambles values across columns)."""
+        """Enforce ``target_epsg``, promote to the layer's Multi* geometry, stamp mandatory
+        provenance fields, mint ``feature_id`` where missing/blank, and reindex to *exactly* the
+        evidence schema columns + geometry so appending aligns by name (fiona/pyogrio otherwise
+        matches positionally and scrambles values across columns)."""
+        import geopandas as gpd
+        from shapely import force_2d
+        from shapely.geometry import (
+            LineString,
+            MultiLineString,
+            MultiPoint,
+            MultiPolygon,
+            Point,
+            Polygon,
+        )
+
         gdf = gdf.reset_index(drop=True).copy()
         _, geom_type, prefix = next(spec for spec in EVIDENCE_LAYERS if spec[0] == layer)
 
+        # invariant #4: every deliverable is EPSG:32647. Human-digitized layers may arrive in any
+        # CRS -> reproject. A CRS-less layer is assumed already in target (noted, never silently wrong).
+        if target_epsg and gdf.crs is not None and gdf.crs.to_epsg() != target_epsg:
+            gdf = gdf.to_crs(epsg=target_epsg)
+        elif target_epsg and gdf.crs is None:
+            self._notes.append(f"layer '{layer}': no CRS on ingest; assumed EPSG:{target_epsg}")
+
+        # promote to the layer's declared Multi* type so appends match the schema (no pyogrio warning)
+        def _multi(g):  # type: ignore[no-untyped-def]
+            if isinstance(g, Polygon):
+                return MultiPolygon([g])
+            if isinstance(g, LineString):
+                return MultiLineString([g])
+            if isinstance(g, Point):
+                return MultiPoint([g])
+            return g
+
+        if gdf.geometry.name != "geometry":
+            gdf = gdf.rename_geometry("geometry")
+        gdf["geometry"] = gpd.GeoSeries(
+            [_multi(g) for g in force_2d(gdf.geometry.to_numpy())], index=gdf.index, crs=gdf.crs
+        )
+
         def setdefault(col: str, value: object) -> None:
-            if col not in gdf or gdf[col].isna().all() or (gdf[col].astype(str) == "").all():
+            if (
+                col not in gdf
+                or gdf[col].isna().all()
+                or (gdf[col].astype(str).str.strip() == "").all()
+            ):
                 gdf[col] = value
 
-        if prefix and ("feature_id" not in gdf or gdf["feature_id"].isna().all()):
+        blank_ids = (
+            "feature_id" not in gdf
+            or gdf["feature_id"].isna().all()
+            or (gdf["feature_id"].astype(str).str.strip() == "").all()
+        )
+        if prefix and blank_ids:
             gdf["feature_id"] = [self.feature_id(prefix, i + 1) for i in range(len(gdf))]
         setdefault("feature_id", "")
         setdefault("source_raw_input_no", input_no)
@@ -463,7 +517,7 @@ class Phase03GeologySynthesis(Phase):
         setdefault("source_group", source_group)
         setdefault("processing_phase", self.id)
         setdefault("source_scale", scale)
-        gdf["geometry_type"] = geom_type.lower()
+        gdf["geometry_type"] = geom_type.lower().replace("multi", "")
         setdefault("evidence_type", evidence_type)
         setdefault("validation_status", HISTORICAL_VALIDATION)
         setdefault("confidence", "Needs verification")
@@ -472,9 +526,7 @@ class Phase03GeologySynthesis(Phase):
         setdefault("reviewer", "")
         setdefault("review_date", date.today().isoformat())
 
-        geom_col = gdf.geometry.name
-        keep = [*EVIDENCE_FIELDS.keys(), geom_col]
-        return gdf[keep]
+        return gdf[[*EVIDENCE_FIELDS.keys(), "geometry"]]
 
     # ------------------------------------------------------------------ #
     # schema + template emission
@@ -709,11 +761,11 @@ class Phase03GeologySynthesis(Phase):
         report.add(
             "CMCS/MRPAM 5/10/20 km buffer register ready",
             RECORDED_ACCEPTANCE,
-            decision=Decision.PASS if self._buffer_ok else Decision.PENDING,
+            decision=Decision.PASS if self._buffer_ok else Decision.FAIL,
             note=(
                 f"{self._cmcs_rings}-ring CMCS buffer built + nearest-deposit register template."
                 if self._buffer_ok
-                else "Buffer pending Phase 01 licence boundary; register template emitted."
+                else "CMCS buffer NOT built: Phase 01 licence boundary missing (run Phase 01 first)."
             ),
         )
         report.add(

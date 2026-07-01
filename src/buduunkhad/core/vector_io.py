@@ -135,7 +135,7 @@ def create_evidence_gpkg(
     ``layers`` is a list of ``(layer_name, geometry_type)`` where geometry_type is one
     of the keys in :data:`_FIONA_GEOM` (``Point`` / ``LineString`` / ``Polygon`` / their
     Multi- variants). Every layer carries the same ``props`` attribute schema (used for
-    Phase 03's 17-layer evidence package: the 14 mandatory fields + ``feature_id``).
+    Phase 03's 17-layer evidence package: the 13 provenance fields + ``feature_id`` = 14 columns).
     """
     import fiona
     from pyproj import CRS as PyCRS
@@ -174,11 +174,12 @@ def buffer_rings(boundary_gdf, distances_m: list[int], epsg: int):  # type: igno
 def xlsx_points_to_gdf(path: Path, source_epsg: int = 4326, target_epsg: int = 32647):  # type: ignore[no-untyped-def]
     """Read an XLSX point table, detect coordinate columns, build a reprojected GeoDataFrame.
 
-    Detects lon/lat (or x/y / easting-northing) column pairs case-insensitively, builds
-    points in ``source_epsg`` (assumed WGS84 for lon/lat), and reprojects to
-    ``target_epsg``. Returns ``None`` gracefully — never raises — when the workbook is
-    unreadable, empty, or has no detectable coordinate column pair (e.g. a synthetic
-    placeholder), so the caller can record a note and skip.
+    Detects lon/lat / x/y / easting-northing column pairs case-insensitively, then classifies
+    by coordinate MAGNITUDE (not label): |x|<=180 and |y|<=90 are geographic (``source_epsg``,
+    WGS84) and reprojected to ``target_epsg``; metre-scale magnitudes are taken as already in
+    ``target_epsg`` (so a UTM easting/northing table is never mis-reprojected to (inf, inf)).
+    Returns ``None`` gracefully — never raises — when the workbook is unreadable, empty, or has
+    no detectable coordinate column pair (e.g. a synthetic placeholder); the caller notes + skips.
     """
     try:
         import geopandas as gpd
@@ -197,26 +198,33 @@ def xlsx_points_to_gdf(path: Path, source_epsg: int = 4326, target_epsg: int = 3
         return None
 
     lower = {str(c).strip().lower(): c for c in df.columns}
-    lon_keys = ("lon", "long", "longitude", "x", "easting", "east")
-    lat_keys = ("lat", "latitude", "y", "northing", "north")
-    lon_col = next((lower[k] for k in lon_keys if k in lower), None)
-    lat_col = next((lower[k] for k in lat_keys if k in lower), None)
-    if lon_col is None or lat_col is None:
+    x_col = next(
+        (lower[k] for k in ("lon", "long", "longitude", "x", "easting", "east") if k in lower), None
+    )
+    y_col = next(
+        (lower[k] for k in ("lat", "latitude", "y", "northing", "north") if k in lower), None
+    )
+    if x_col is None or y_col is None:
         return None
 
-    coords = df[[lon_col, lat_col]].apply(pd.to_numeric, errors="coerce")
-    coords = coords.dropna()
+    coords = df[[x_col, y_col]].apply(pd.to_numeric, errors="coerce").dropna()
     if coords.empty:
         return None
+    # Trust the coordinate MAGNITUDE, not the column label: degrees (|x|<=180, |y|<=90)
+    # are geographic (source_epsg / WGS84); metre-scale magnitudes are projected and taken
+    # to be already in target_epsg. This stops a UTM easting/northing table being mislabeled
+    # as lon/lat and reprojected to (inf, inf).
+    geographic = coords[x_col].abs().max() <= 180 and coords[y_col].abs().max() <= 90
+    detected_epsg = source_epsg if geographic else target_epsg
     attrs = df.loc[coords.index].reset_index(drop=True)
-    lon = coords[lon_col].reset_index(drop=True)
-    lat = coords[lat_col].reset_index(drop=True)
     gdf = gpd.GeoDataFrame(
         attrs,
-        geometry=gpd.points_from_xy(lon, lat),
-        crs=f"EPSG:{source_epsg}",
+        geometry=gpd.points_from_xy(
+            coords[x_col].reset_index(drop=True), coords[y_col].reset_index(drop=True)
+        ),
+        crs=f"EPSG:{detected_epsg}",
     )
-    if source_epsg != target_epsg:
+    if detected_epsg != target_epsg:
         gdf = gdf.to_crs(epsg=target_epsg)
     return gdf
 

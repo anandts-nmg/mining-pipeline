@@ -21,7 +21,7 @@ from buduunkhad.phases.phase03_geology_synthesis import (
     Phase03GeologySynthesis,
 )
 
-_MANDATORY = set(EVIDENCE_FIELDS)  # 14 mandatory fields + feature_id
+_MANDATORY = set(EVIDENCE_FIELDS)  # 13 provenance fields + feature_id = 14 columns
 
 
 def _ctx(config, register, *, dry_run=False):
@@ -75,15 +75,15 @@ def test_phase03_evidence_schema_fields_and_geometry(project):
 
     import fiona
 
-    geom_map = {"Polygon": "Polygon", "LineString": "LineString", "Point": "Point"}
     for name, geom, _prefix in EVIDENCE_LAYERS:
+        assert geom.startswith("Multi")  # layers are Multi* so promoted ingests append cleanly
         with fiona.open(gpkg, layer=name) as src:
             schema = src.schema
             assert schema is not None
             props = set(schema["properties"])
             assert props == _MANDATORY, f"{name} field mismatch: {props ^ _MANDATORY}"
             assert "feature_id" in props
-            assert schema["geometry"] == geom_map[geom], f"{name} geometry mismatch"
+            assert schema["geometry"] == geom, f"{name} geometry mismatch"
 
 
 def test_phase03_feature_id_generation():
@@ -252,6 +252,86 @@ def test_phase03_qaqc_items_and_gate_go(raw_archive):
 
     decision = phase.gate(report, ctx)
     assert decision.status is GateStatus.GO, decision.reason
+
+
+def test_phase03_human_layer_reprojected_from_4326(raw_archive):
+    """A human layer supplied in EPSG:4326 is reprojected to the target CRS on ingest (invariant #4)."""
+    import geopandas as gpd
+    from shapely.geometry import LineString
+
+    config, register, _raw = raw_archive
+    ctx = _ctx(config, register)
+    Phase00Archive().run(ctx)
+    p1 = Phase01DataAudit()
+    p1.prepare(ctx)
+    p1.run(ctx)
+
+    phase = Phase03GeologySynthesis()
+    phase.prepare(ctx)
+    pdir = paths.phase_dir(config.output_root, "03")
+    human = pdir / "05_Local_Geology_Occurrence_1M50K" / "human_faults_4326.gpkg"
+    gdf = gpd.GeoDataFrame(
+        {"note": ["fault B"]},
+        geometry=[LineString([(96.50, 45.50), (96.52, 45.52)])],
+        crs="EPSG:4326",
+    )
+    vector_io.write_layer(gdf, human, layer="faults_structures_line")
+
+    phase.run(ctx)
+    gpkg = _evidence_gpkg(config)
+    ingested = vector_io.read_layer(gpkg, "faults_structures_line")
+    assert len(ingested) == 1
+    assert ingested.crs is not None and ingested.crs.to_epsg() == config.target_epsg
+    # coordinates are now metre-scale UTM eastings, not lon/lat degrees
+    coords = ingested.geometry.get_coordinates()
+    assert not coords.empty and (coords["x"].abs() > 1000).all()
+
+
+def test_phase03_xlsx_ingest_utm_easting_northing(raw_archive):
+    """A #68 workbook in UTM easting/northing (metre-scale) is NOT mislabeled as lon/lat -> no (inf, inf)."""
+    import openpyxl as pyxl
+
+    config, register, _raw = raw_archive
+    ctx = _ctx(config, register)
+    Phase00Archive().run(ctx)
+    p1 = Phase01DataAudit()
+    p1.prepare(ctx)
+    p1.run(ctx)
+
+    rec = ctx.record_by_no(68)
+    wc = paths.phase_dir(config.output_root, "00") / rec.evidence_group / rec.filename
+    wc.parent.mkdir(parents=True, exist_ok=True)
+    wb = pyxl.Workbook()
+    ws = wb.active
+    assert ws is not None
+    ws.append(["name", "commodity", "easting", "northing"])
+    ws.append(["OccU", "Au", 305000.0, 5040000.0])
+    ws.append(["OccV", "Cu", 310000.0, 5042000.0])
+    wb.save(wc)
+
+    phase = Phase03GeologySynthesis()
+    phase.prepare(ctx)
+    phase.run(ctx)
+    assert phase._mineralized_points == 2
+
+    gpkg = _evidence_gpkg(config)
+    gdf = vector_io.read_layer(gpkg, "mineralized_points_point")
+    assert len(gdf) == 2
+    assert gdf.crs is not None and gdf.crs.to_epsg() == config.target_epsg
+    coords = gdf.geometry.get_coordinates()
+    assert (coords["x"].abs() < 1e7).all() and (
+        coords["y"].abs() < 1e7
+    ).all()  # finite, not (inf, inf)
+
+
+def test_phase03_license_boundary_populated(raw_archive):
+    """The evidence GPKG's license_boundary layer is populated from the Phase 01 boundary."""
+    config, register, _raw = raw_archive
+    _ctx_, phase, _result = _run_real(config, register)
+    gpkg = _evidence_gpkg(config)
+    boundary = vector_io.read_layer(gpkg, "license_boundary")
+    assert len(boundary) >= 1
+    assert boundary.crs is not None and boundary.crs.to_epsg() == config.target_epsg
 
 
 def test_phase03_input_numbers():

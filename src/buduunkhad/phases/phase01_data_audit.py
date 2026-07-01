@@ -195,7 +195,7 @@ class Phase01DataAudit(Phase):
         vector_io.write_layer(gdf32, master_path, layer="license_boundary", mode="a")
 
         # buffers
-        buffers_gdf = self._make_buffers(gdf32, cfg.boundary.buffers_m, epsg)
+        buffers_gdf = vector_io.buffer_rings(gdf32, cfg.boundary.buffers_m, epsg)
         self._n_buffers = len(buffers_gdf)
         buffer_name = naming.data_name(
             cfg.data_prefix,
@@ -208,19 +208,6 @@ class Phase01DataAudit(Phase):
         vector_io.write_layer(buffers_gdf, buffer_path, layer="project_buffers")
         result.add_output(buffer_path)
         self._boundary_ok = True
-
-    def _make_buffers(self, boundary_gdf, buffers_m: list[int], epsg: int):  # type: ignore[no-untyped-def]
-        import geopandas as gpd
-
-        merged = (
-            boundary_gdf.geometry.union_all()
-            if hasattr(boundary_gdf.geometry, "union_all")
-            else boundary_gdf.geometry.unary_union
-        )
-        rings = []
-        for dist in sorted(buffers_m):
-            rings.append({"distance_m": dist, "geometry": merged.buffer(dist)})
-        return gpd.GeoDataFrame(rings, crs=f"EPSG:{epsg}")
 
     def _audit_rasters(self, ctx: RunContext) -> list[dict[str, object]]:
         rows: list[dict[str, object]] = []

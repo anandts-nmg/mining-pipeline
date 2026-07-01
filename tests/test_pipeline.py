@@ -104,9 +104,9 @@ def test_missing_data_message_flags_incomplete_walk(raw_archive):
 
 def test_stub_phase_real_run_records_not_implemented(raw_archive):
     config, register, _raw = raw_archive
-    # Phase 03 is still an orchestrate stub -> real run raises NotImplementedError.
-    manifest = run_pipeline(config, register, only=["03"], dry_run=False)
-    assert manifest.stopped_at == "03"
+    # Phase 04 is still an orchestrate stub -> real run raises NotImplementedError.
+    manifest = run_pipeline(config, register, only=["04"], dry_run=False)
+    assert manifest.stopped_at == "04"
     assert manifest.phases[0].status == "not-implemented"
     assert "build pending" in manifest.phases[0].error
 

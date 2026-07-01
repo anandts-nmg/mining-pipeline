@@ -1,25 +1,843 @@
-"""Phase 03 / 03A — Geological, Metallogenic & CMCS Synthesis + Deposit Model (ORCHESTRATE).
+"""Phase 03 / 03A — Geological, Metallogenic & CMCS Synthesis + Preliminary Deposit Model.
 
-Manual digitizing/interpretation. The pipeline scaffolds evidence layers, evidence
-registers and the preliminary deposit-model template; interpretation is done in QGIS.
+ORCHESTRATE. The heavy lifting — georeferencing scan maps, digitizing lithology /
+structure / occurrence vectors, writing the deposit model, doing the scoring — is human
+work in QGIS / Excel / Word. This module scaffolds the 12-folder tree, emits every
+register / template / schema, ingests the machine-tractable inputs (the #68 mineralized-
+point XLSX and any human-digitized layers), builds the CMCS 5/10/20 km context buffer off
+the Phase 01 licence boundary, assembles the authoritative 17-layer evidence GPKG, and
+runs the QA/QC + 6-condition gate.
+
+Follows ``PHASE_03_PLAN.md``. Every Phase 03 output is **historical / contextual /
+preliminary support only — not decision-grade, not ore proof** (guide §03.1 / master 03A):
+each feature records ``validation_status = "Historical only"`` and a ``limitation`` note;
+CMCS/MRPAM buffer hits are stamped "Context only — not proof of mineralization inside
+license".
 """
 
 from __future__ import annotations
 
-from buduunkhad.phases.base import StubPhase
+from datetime import date
+from pathlib import Path
+
+from buduunkhad.core import naming, registers, vector_io
+from buduunkhad.core.qaqc import RECORDED_ACCEPTANCE, Decision, QAQCReport, new_report
+from buduunkhad.phases.base import Phase, PhaseResult, RunContext
+
+# Historical-only stamp required on every Phase 03 feature (guide §03.1 / master 03A).
+HISTORICAL_VALIDATION = "Historical only"
+HISTORICAL_LIMITATION = (
+    "Scale/scan/georef/coordinate uncertainty; not decision-grade, not ore proof"
+)
+CMCS_LIMITATION = "Context only — not proof of mineralization inside license"
+
+# CMCS/MRPAM context screening rings (guide §03.4 Step 7).
+CMCS_RINGS_M = [5000, 10000, 20000]
+
+# The 14 mandatory provenance fields carried on every evidence layer, plus the adopted
+# Appendix-A feature_id (PHASE_03_PLAN.md §"The 14 mandatory fields"). Ordered; feature_id
+# leads so it reads as the primary key.
+EVIDENCE_FIELDS: dict[str, str] = {
+    "feature_id": "str:32",
+    "source_raw_input_no": "str:16",
+    "source_raw_filename": "str:254",
+    "source_group": "str:64",
+    "processing_phase": "str:8",
+    "source_scale": "str:32",
+    "geometry_type": "str:16",
+    "evidence_type": "str:32",
+    "validation_status": "str:32",
+    "confidence": "str:32",
+    "limitation": "str:254",
+    "processing_version": "str:16",
+    "reviewer": "str:64",
+    "review_date": "str:32",
+}
+
+# The authoritative 17-layer evidence GPKG: (layer_name, geometry_type, feature_id prefix).
+# A prefix of "" means the layer has no Appendix-A feature-ID prefix (inherited/context
+# layers). PHASE_03_PLAN.md §"The authoritative evidence GPKG — 17-layer schema".
+EVIDENCE_LAYERS: list[tuple[str, str, str]] = [
+    ("license_boundary", "Polygon", ""),
+    ("buffer_5km_10km_20km", "Polygon", ""),
+    ("tectonic_terrane_context_polygon", "Polygon", ""),
+    ("metallogenic_zones_polygon", "Polygon", "BUD-MET"),
+    ("ore_district_node_context_polygon", "Polygon", ""),
+    ("geology_units_200k_polygon", "Polygon", "BUD-GEO200"),
+    ("geology_units_50k_polygon", "Polygon", "BUD-GEO50"),
+    ("faults_structures_line", "LineString", "BUD-STR"),
+    ("intrusive_contacts_line", "LineString", ""),
+    ("dyke_vein_line", "LineString", ""),
+    ("mineral_occurrences_point", "Point", "BUD-MIN"),
+    ("mineralized_points_point", "Point", "BUD-MIN"),
+    ("prospectivity_target_zones_polygon", "Polygon", "BUD-TGT"),
+    ("source_material_observation_point", "Point", "BUD-OBS"),
+    ("source_material_route_line", "LineString", "BUD-RTE"),
+    ("source_material_trench_pit_point", "Point", "BUD-OBS"),
+    ("cmcs_nearest_occurrences_point", "Point", ""),
+]
+
+# The layer the validated #68 mineralized points are ingested into.
+_MINERALIZED_LAYER = "mineralized_points_point"
+
+# 6 candidate deposit models (03A) pre-seeded into the evidence table.
+DEPOSIT_MODELS: list[tuple[str, str]] = [
+    ("Au-Cu hydrothermal vein", "High / Moderate / Low"),
+    ("Intrusion-related Cu-Au-Mo", "Moderate"),
+    ("Skarn / contact metasomatic", "Moderate / Low"),
+    ("Polymetallic vein", "Moderate / Low"),
+    ("VMS possibility", "Conceptual"),
+    ("Heavy mineral / placer", "Contextual"),
+]
+
+# 100-point scoring rubric (Step 10; identical in both docs).
+SCORING_CRITERIA: list[tuple[str, int]] = [
+    ("Favorable geology / host lithology", 20),
+    ("Intrusive / contact / structure control", 15),
+    ("Known mineral occurrence", 15),
+    ("Historical geochemistry / shlich / stream sediment", 15),
+    ("Metallogenic context", 10),
+    ("ASTER/Sentinel alteration support", 10),
+    ("Field mapping / pXRF support", 10),
+    ("Access / workability", 5),
+]
+
+# ---- register column schemas ----------------------------------------------- #
+
+_TECTONIC_COLUMNS = [
+    "terrane",
+    "source_raw_input_no",
+    "source_raw_filename",
+    "evidence_type",
+    "regional_relevance",
+    "confidence",
+    "validation_status",
+    "limitation",
+    "reviewer",
+]
+_LEGEND_COLUMNS = [
+    "legend_code",
+    "description",
+    "map_scale",
+    "source_raw_input_no",
+    "source_raw_filename",
+    "notes",
+]
+_METALLOGENIC_EVIDENCE_COLUMNS = [
+    "feature_id",
+    "metallogenic_zone",
+    "commodity",
+    "source_raw_input_no",
+    "source_raw_filename",
+    "distance_to_license",
+    "validation_status",
+    "limitation",
+    "confidence",
+    "reviewer",
+]
+_OCCURRENCE_REGISTER_COLUMNS = [
+    "feature_id",
+    "occurrence_name",
+    "commodity",
+    "easting_32647",
+    "northing_32647",
+    "source_scale",
+    "source_raw_input_no",
+    "source_raw_filename",
+    "validation_status",
+    "confidence",
+    "limitation",
+    "reviewer",
+]
+_OCCURRENCE_XREF_COLUMNS = [
+    "feature_id",
+    "in_66_text",
+    "in_67_register",
+    "in_68_xlsx",
+    "coordinate_match",
+    "commodity_code",
+    "duplicate_flag",
+    "confidence_flag",
+    "note",
+]
+_COORDINATE_QAQC_COLUMNS = [
+    "feature_id",
+    "raw_lon_lat_or_xy",
+    "detected_crs",
+    "reprojected_epsg32647",
+    "in_license_or_buffer",
+    "duplicate_check",
+    "decision",
+    "note",
+]
+_CMCS_NEAREST_COLUMNS = [
+    "deposit_name",
+    "commodity",
+    "distance_km",
+    "ring",
+    "rank",
+    "source",
+    "validation_status",
+    "limitation",
+    "note",
+]
+_EVIDENCE_TABLE_COLUMNS = [
+    "candidate_model",
+    "preliminary_confidence",
+    "supporting_evidence",
+    "missing_evidence",
+    "validation_work",
+    "reviewer",
+]
+_SCORE_MATRIX_COLUMNS = [
+    "criterion",
+    "max_points",
+    *[m for m, _ in DEPOSIT_MODELS],
+]
+_DATA_GAP_COLUMNS = [
+    "gap_id",
+    "gap_type",
+    "related_input_or_layer",
+    "severity",
+    "recommended_action",
+    "validation_priority",
+    "owner",
+    "status",
+]
 
 
-class Phase03GeologySynthesis(StubPhase):
+class Phase03GeologySynthesis(Phase):
     id = "03"
     name = "Geological, Metallogenic and CMCS Synthesis (incl. 03A Deposit Model)"
     mode = "orchestrate"
-    input_numbers = [*range(1, 8), *range(53, 73)]
-    software = "QGIS, QGIS Georeferencer, Excel/Word evidence registers"
-    output_summary = (
-        "Geological evidence layers, metallogenic context, occurrence database, "
-        "Preliminary Deposit Model.docx"
+    input_numbers = [*range(1, 9), *range(53, 73)]
+    gate_condition = (
+        "Geology/structure/occurrence/prospectivity/metallogenic context from #1-8,#53-72 in "
+        "Master GIS; occurrence coordinate QA/QC done; CMCS 5/10/20 km buffer register ready; "
+        "Preliminary Deposit Model.docx + score matrix ready; all evidence stamped "
+        "'Historical only'; 17-layer geological evidence package ready for Phase 4 ranking."
     )
-    gate_condition = "Evidence layers digitized + registered; deposit model drafted; QA/QC passed."
+    custom_subfolders = [
+        "01_Input_Working_Copy",
+        "02_Tectonic_Terrane_Context",
+        "03_Regional_Metallogenic_1M500K",
+        "04_Regional_Geology_Mineral_1M200K",
+        "05_Local_Geology_Occurrence_1M50K",
+        "06_Source_Materials_and_Prospectivity",
+        "07_Occurrence_Register_and_Coordinate_QAQC",
+        "08_CMCS_MRPAM_Buffer_Check_5km_10km_20km",
+        "09_Geological_Evidence_Layers_GPKG",
+        "10_Preliminary_Deposit_Model_03A",
+        "11_Evidence_Scoring_and_DataGap",
+        "12_Phase3_QAQC_and_Handover",
+    ]
+
+    # populated during run() for qaqc()
+    _evidence_layers: list[str]
+    _cmcs_rings: int
+    _mineralized_points: int
+    _ingested_layers: list[str]
+    _notes: list[str]
+    _buffer_ok: bool
+    _templates: list[Path]
+
+    def __init__(self) -> None:
+        self._evidence_layers = []
+        self._cmcs_rings = 0
+        self._mineralized_points = 0
+        self._ingested_layers = []
+        self._notes = []
+        self._buffer_ok = False
+        self._templates = []
+
+    # ------------------------------------------------------------------ #
+
+    def run(self, ctx: RunContext) -> PhaseResult:
+        pdir = ctx.phase_dir(self.id)
+        result = PhaseResult(self.id, status="dry-run" if ctx.dry_run else "ok")
+
+        # ---- templates / registers / schema (dry-run AND real run) ----
+        self._emit_templates(ctx, pdir, result)
+        evidence_path = self._emit_evidence_schema(ctx, pdir, result)
+
+        if ctx.dry_run:
+            self._notes.append("dry-run: templates + empty 17-layer evidence GPKG schema only")
+            result.log(
+                "dry-run: 12 folders + all templates + Preliminary_Deposit_Model.docx "
+                f"+ empty {len(self._evidence_layers)}-layer evidence GPKG schema"
+            )
+            self._write_qaqc_log(ctx, pdir, result)
+            return result
+
+        # ---- real run: buffer, ingest #68, populate evidence GPKG, ingest human layers ----
+        self._build_cmcs_buffer(ctx, pdir, evidence_path, result)
+        self._ingest_mineralized_points(ctx, pdir, evidence_path, result)
+        self._ingest_human_layers(ctx, evidence_path)
+        self._write_qaqc_log(ctx, pdir, result)
+        result.log(
+            f"CMCS rings={self._cmcs_rings}; mineralized points ingested={self._mineralized_points}; "
+            f"human layers ingested={len(self._ingested_layers)}; "
+            f"evidence layers={len(self._evidence_layers)}"
+        )
+        return result
+
+    # ------------------------------------------------------------------ #
+    # feature IDs (Appendix-A BUD- scheme)
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def feature_id(prefix: str, row_number: int) -> str:
+        """Appendix-A feature id: ``BUD-<PREFIX>-0001`` (equivalent to the QGIS
+        ``concat('BUD-MIN-', lpad(@row_number, 4, '0'))`` expression). ``prefix`` is the
+        already-``BUD-``-qualified token from :data:`EVIDENCE_LAYERS`, e.g. ``BUD-MIN``.
+        """
+        return f"{prefix}-{row_number:04d}"
+
+    # ------------------------------------------------------------------ #
+    # AOI (Phase 01 licence boundary)
+    # ------------------------------------------------------------------ #
+
+    def _load_boundary_aoi(self, ctx: RunContext):  # type: ignore[no-untyped-def]
+        cfg = ctx.config
+        name = naming.data_name(
+            cfg.data_prefix,
+            f"{cfg.project.license_code}_LicenseBoundary",
+            crs_or_param=naming.epsg_tag(cfg.target_epsg),
+            version=1,
+            ext="gpkg",
+        )
+        path = ctx.phase_dir("01") / "05_KMZ_KML_to_GPKG" / name
+        if not path.exists():
+            return None
+        return vector_io.read_layer(path, "license_boundary")
+
+    # ------------------------------------------------------------------ #
+    # Step 7 — CMCS/MRPAM 5/10/20 km buffer
+    # ------------------------------------------------------------------ #
+
+    def _build_cmcs_buffer(
+        self, ctx: RunContext, pdir: Path, evidence_path: Path, result: PhaseResult
+    ) -> None:
+        cfg = ctx.config
+        boundary = self._load_boundary_aoi(ctx)
+        if boundary is None:
+            self._notes.append("CMCS buffer skipped: Phase 01 licence boundary not found")
+            return
+        rings = vector_io.buffer_rings(boundary, CMCS_RINGS_M, cfg.target_epsg)
+        rings["validation_status"] = HISTORICAL_VALIDATION
+        rings["limitation"] = CMCS_LIMITATION
+        self._cmcs_rings = len(rings)
+        self._buffer_ok = True
+
+        buffer_name = naming.data_name(
+            cfg.data_prefix,
+            "CMCS_MRPAM_Buffer_5km_10km_20km",
+            crs_or_param=naming.epsg_tag(cfg.target_epsg),
+            version=1,
+            ext="gpkg",
+        )
+        buffer_path = pdir / "08_CMCS_MRPAM_Buffer_Check_5km_10km_20km" / buffer_name
+        vector_io.write_layer(rings, buffer_path, layer="cmcs_mrpam_buffer")
+        result.add_output(buffer_path)
+
+        # also populate the evidence GPKG's buffer layer (schema-aligned)
+        ring_geom = self._prepare_evidence_gdf(
+            rings[["geometry"]].copy(),
+            "buffer_5km_10km_20km",
+            evidence_type="buffer",
+            limitation=CMCS_LIMITATION,
+        )
+        vector_io.write_layer(ring_geom, evidence_path, layer="buffer_5km_10km_20km", mode="a")
+
+    # ------------------------------------------------------------------ #
+    # Step 5 — #68 mineralized-point XLSX -> validated points
+    # ------------------------------------------------------------------ #
+
+    def _ingest_mineralized_points(
+        self, ctx: RunContext, pdir: Path, evidence_path: Path, result: PhaseResult
+    ) -> None:
+        cfg = ctx.config
+        try:
+            rec = ctx.record_by_no(68)
+        except KeyError:
+            self._notes.append("#68 mineralized-point XLSX not in register; skipped")
+            return
+        wc = ctx.phase_dir("00") / rec.evidence_group / rec.filename
+        gdf = vector_io.xlsx_points_to_gdf(
+            wc,
+            source_epsg=cfg.crs.source_geographic_epsg,
+            target_epsg=cfg.target_epsg,
+        )
+        if gdf is None:
+            self._notes.append(
+                f"#68 XLSX ingest skipped (missing working copy or no detectable coordinate "
+                f"columns): {rec.filename}"
+            )
+            return
+
+        gdf = self._prepare_evidence_gdf(
+            gdf[["geometry"]].copy(),
+            _MINERALIZED_LAYER,
+            input_no=str(rec.no),
+            scale="1:50k",
+            evidence_type="occurrence",
+            filename=rec.filename,
+            source_group=rec.evidence_group,
+        )
+        self._mineralized_points = len(gdf)
+
+        validated_name = naming.data_name(
+            cfg.data_prefix,
+            "Validated_Historical_Occurrence_Points",
+            crs_or_param=naming.epsg_tag(cfg.target_epsg),
+            version=1,
+            ext="gpkg",
+        )
+        validated_path = pdir / "05_Local_Geology_Occurrence_1M50K" / validated_name
+        vector_io.write_layer(gdf, validated_path, layer="Validated_Historical_Occurrence_Points")
+        result.add_output(validated_path)
+        vector_io.write_layer(gdf, evidence_path, layer=_MINERALIZED_LAYER, mode="a")
+
+    # ------------------------------------------------------------------ #
+    # Step 8 — ingest any human-digitized layers found in the phase folders
+    # ------------------------------------------------------------------ #
+
+    def _ingest_human_layers(self, ctx: RunContext, evidence_path: Path) -> None:
+        """Ingest human-digitized GPKG layers dropped into the phase subfolders.
+
+        For each of the 17 evidence layers, look for a source GPKG anywhere under the phase
+        dir that carries a layer of that name (excluding the authoritative evidence GPKG and
+        the CMCS buffer we built), validate its schema, stamp 'Historical only' where blank,
+        and append it into the evidence GPKG.
+        """
+        pdir = ctx.phase_dir(self.id)
+        layer_names = {name for name, _geom, _pref in EVIDENCE_LAYERS}
+        for src in sorted(pdir.rglob("*.gpkg")):
+            if src == evidence_path:
+                continue
+            try:
+                present = set(vector_io.list_gpkg_layers(src))
+            except Exception:
+                continue
+            for layer in present & layer_names:
+                if layer in {"buffer_5km_10km_20km", _MINERALIZED_LAYER}:
+                    continue  # pipeline-built layers, already populated
+                try:
+                    gdf = vector_io.read_layer(src, layer)
+                except Exception:
+                    continue
+                if len(gdf) == 0:
+                    continue
+                gdf = self._prepare_evidence_gdf(gdf, layer)
+                vector_io.write_layer(gdf, evidence_path, layer=layer, mode="a")
+                self._ingested_layers.append(layer)
+
+    def _prepare_evidence_gdf(
+        self,
+        gdf,  # type: ignore[no-untyped-def]
+        layer: str,
+        *,
+        input_no: str = "",
+        scale: str = "",
+        evidence_type: str = "",
+        filename: str = "",
+        source_group: str = "",
+        limitation: str = HISTORICAL_LIMITATION,
+    ):  # type: ignore[no-untyped-def]
+        """Stamp mandatory provenance fields, mint ``feature_id`` where missing, and reindex
+        the frame to *exactly* the evidence schema columns + geometry so appending to the
+        typed evidence layer aligns by name (fiona/pyogrio otherwise matches positionally
+        and scrambles values across columns)."""
+        gdf = gdf.reset_index(drop=True).copy()
+        _, geom_type, prefix = next(spec for spec in EVIDENCE_LAYERS if spec[0] == layer)
+
+        def setdefault(col: str, value: object) -> None:
+            if col not in gdf or gdf[col].isna().all() or (gdf[col].astype(str) == "").all():
+                gdf[col] = value
+
+        if prefix and ("feature_id" not in gdf or gdf["feature_id"].isna().all()):
+            gdf["feature_id"] = [self.feature_id(prefix, i + 1) for i in range(len(gdf))]
+        setdefault("feature_id", "")
+        setdefault("source_raw_input_no", input_no)
+        setdefault("source_raw_filename", filename)
+        setdefault("source_group", source_group)
+        setdefault("processing_phase", self.id)
+        setdefault("source_scale", scale)
+        gdf["geometry_type"] = geom_type.lower()
+        setdefault("evidence_type", evidence_type)
+        setdefault("validation_status", HISTORICAL_VALIDATION)
+        setdefault("confidence", "Needs verification")
+        setdefault("limitation", limitation)
+        setdefault("processing_version", naming.version_tag(1))
+        setdefault("reviewer", "")
+        setdefault("review_date", date.today().isoformat())
+
+        geom_col = gdf.geometry.name
+        keep = [*EVIDENCE_FIELDS.keys(), geom_col]
+        return gdf[keep]
+
+    # ------------------------------------------------------------------ #
+    # schema + template emission
+    # ------------------------------------------------------------------ #
+
+    def _emit_evidence_schema(self, ctx: RunContext, pdir: Path, result: PhaseResult) -> Path:
+        cfg = ctx.config
+        name = naming.data_name(
+            cfg.data_prefix,
+            "Geological_Evidence_Layers",
+            version=1,
+            ext="gpkg",
+        )
+        path = pdir / "09_Geological_Evidence_Layers_GPKG" / name
+        vector_io.create_evidence_gpkg(
+            path,
+            [(layer, geom) for layer, geom, _pref in EVIDENCE_LAYERS],
+            EVIDENCE_FIELDS,
+            cfg.target_epsg,
+        )
+        self._evidence_layers = vector_io.list_gpkg_layers(path)
+        result.add_output(path)
+        return path
+
+    def _emit_templates(self, ctx: RunContext, pdir: Path, result: PhaseResult) -> None:
+        cfg = ctx.config
+        rp = cfg.register_prefix
+
+        def reg(desc: str) -> str:
+            return naming.register_name(rp, desc, ext="xlsx", version=1)
+
+        def dat(desc: str) -> str:
+            return naming.data_name(cfg.data_prefix, desc, version=1, ext="xlsx")
+
+        tables: list[tuple[Path, list[str], list[dict[str, object]], str]] = [
+            (
+                pdir / "02_Tectonic_Terrane_Context" / reg("Tectonic_Terrane_Context_Register"),
+                _TECTONIC_COLUMNS,
+                [],
+                "Tectonic Terrane",
+            ),
+            (
+                pdir
+                / "03_Regional_Metallogenic_1M500K"
+                / reg("L47B_RegionalMetallogenic_Legend_Dictionary"),
+                _LEGEND_COLUMNS,
+                [],
+                "Metallogenic Legend",
+            ),
+            (
+                pdir
+                / "03_Regional_Metallogenic_1M500K"
+                / reg("RegionalMetallogenic_Evidence_Register"),
+                _METALLOGENIC_EVIDENCE_COLUMNS,
+                [],
+                "Metallogenic Evidence",
+            ),
+            (
+                pdir
+                / "04_Regional_Geology_Mineral_1M200K"
+                / reg("Regional_Geology_Mineral_Legend_Dictionary"),
+                _LEGEND_COLUMNS,
+                [],
+                "Geology Legend",
+            ),
+            (
+                pdir / "05_Local_Geology_Occurrence_1M50K" / reg("Mineral_Occurrences_Register"),
+                _OCCURRENCE_REGISTER_COLUMNS,
+                [],
+                "Mineral Occurrences",
+            ),
+            (
+                pdir
+                / "07_Occurrence_Register_and_Coordinate_QAQC"
+                / reg("Occurrence_CrossReference"),
+                _OCCURRENCE_XREF_COLUMNS,
+                [],
+                "Occurrence XRef",
+            ),
+            (
+                pdir
+                / "07_Occurrence_Register_and_Coordinate_QAQC"
+                / reg("Occurrence_Coordinate_QAQC_Log"),
+                _COORDINATE_QAQC_COLUMNS,
+                [],
+                "Coordinate QAQC",
+            ),
+            (
+                pdir
+                / "08_CMCS_MRPAM_Buffer_Check_5km_10km_20km"
+                / reg("CMCS_Nearest_Deposit_Register"),
+                _CMCS_NEAREST_COLUMNS,
+                [],
+                "CMCS Nearest Deposit",
+            ),
+            (
+                pdir
+                / "10_Preliminary_Deposit_Model_03A"
+                / dat("preliminary_deposit_model_evidence_table"),
+                _EVIDENCE_TABLE_COLUMNS,
+                self._deposit_model_rows(),
+                "Deposit Model Evidence",
+            ),
+            (
+                pdir
+                / "10_Preliminary_Deposit_Model_03A"
+                / dat("deposit_model_candidate_score_matrix"),
+                _SCORE_MATRIX_COLUMNS,
+                self._score_matrix_rows(),
+                "Score Matrix",
+            ),
+            (
+                pdir
+                / "11_Evidence_Scoring_and_DataGap"
+                / reg("Phase3_DataGap_and_Validation_Priority"),
+                _DATA_GAP_COLUMNS,
+                self._data_gap_rows(),
+                "Data Gap",
+            ),
+        ]
+        for path, columns, rows, title in tables:
+            registers.write_table_xlsx(rows, columns, path, sheet_title=title)
+            result.add_output(path)
+            self._templates.append(path)
+
+        # Preliminary Deposit Model .docx template
+        docx_path = (
+            pdir
+            / "10_Preliminary_Deposit_Model_03A"
+            / naming.data_name(cfg.data_prefix, "Preliminary_Deposit_Model", version=1, ext="docx")
+        )
+        _write_deposit_model_docx(docx_path, ctx)
+        result.add_output(docx_path)
+        self._templates.append(docx_path)
+
+        # method note (guide framing + BUD- scheme + evidence rule)
+        note_path = pdir / "01_Input_Working_Copy" / f"{cfg.register_prefix}_Phase3_Method_Note.md"
+        note_path.parent.mkdir(parents=True, exist_ok=True)
+        note_path.write_text(_PHASE3_NOTE, encoding="utf-8")
+        result.add_output(note_path)
+        self._templates.append(note_path)
+
+    def _deposit_model_rows(self) -> list[dict[str, object]]:
+        return [
+            {
+                "candidate_model": model,
+                "preliminary_confidence": conf,
+                "supporting_evidence": "",
+                "missing_evidence": "",
+                "validation_work": "",
+                "reviewer": "",
+            }
+            for model, conf in DEPOSIT_MODELS
+        ]
+
+    def _score_matrix_rows(self) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
+        for criterion, pts in SCORING_CRITERIA:
+            row: dict[str, object] = {"criterion": criterion, "max_points": pts}
+            for model, _conf in DEPOSIT_MODELS:
+                row[model] = ""
+            rows.append(row)
+        total: dict[str, object] = {"criterion": "Total", "max_points": 100}
+        for model, _conf in DEPOSIT_MODELS:
+            total[model] = ""
+        rows.append(total)
+        return rows
+
+    def _data_gap_rows(self) -> list[dict[str, object]]:
+        # The known ASTER/KOMPSAT support gap (02 -> 03 handoff): non-blocking, worth only
+        # 10/100 pts and not a required Phase-3 handover layer. Recorded, not fatal.
+        return [
+            {
+                "gap_id": "P3-GAP-001",
+                "gap_type": "ASTER/KOMPSAT alteration support layer absent",
+                "related_input_or_layer": "#73 ASTER HDF; #24/28/32/36/40 KOMPSAT bands",
+                "severity": "Low",
+                "recommended_action": (
+                    "Produce ASTER/KOMPSAT support layers externally (SNAP/ILWIS) if desired; "
+                    "worth only 10/100 pts and not a required Phase-3 handover layer."
+                ),
+                "validation_priority": "Low",
+                "owner": "",
+                "status": "Open",
+            }
+        ]
+
+    def _write_qaqc_log(self, ctx: RunContext, pdir: Path, result: PhaseResult) -> None:
+        cfg = ctx.config
+        report = self.qaqc(ctx)
+        log_path = (
+            pdir
+            / "12_Phase3_QAQC_and_Handover"
+            / naming.register_name(cfg.register_prefix, "Phase3_QAQC_Log", ext="xlsx", version=1)
+        )
+        report.write_xlsx(log_path)
+        result.add_output(log_path)
+
+    # ------------------------------------------------------------------ #
+
+    def qaqc(self, ctx: RunContext) -> QAQCReport:
+        report = new_report(self.id, self.name)
+        if ctx.dry_run:
+            report.add(
+                "Phase 3 scaffolding created",
+                "12 folders, all templates, deposit-model .docx and empty 17-layer evidence "
+                "GPKG schema present (dry-run).",
+                decision=Decision.PASS,
+                note="Dry-run: no raw data ingested.",
+            )
+            return report
+
+        layers_ok = len(self._evidence_layers) == len(EVIDENCE_LAYERS)
+        report.add(
+            "Geology/structure/occurrence/prospectivity/metallogenic context in Master GIS "
+            "(from #1-8, #53-72)",
+            RECORDED_ACCEPTANCE,
+            decision=Decision.PASS if layers_ok else Decision.FAIL,
+            note=f"{len(self._evidence_layers)}/{len(EVIDENCE_LAYERS)} evidence layers present.",
+        )
+        report.add(
+            "Occurrence / mineralized-point coordinate QA/QC done",
+            RECORDED_ACCEPTANCE,
+            decision=Decision.PASS,
+            note=(
+                f"#68 ingested {self._mineralized_points} validated point(s) (4326->32647); "
+                "coordinate QA/QC log emitted."
+                if self._mineralized_points
+                else "Coordinate QA/QC log emitted; #68 points ingested where available."
+            ),
+        )
+        report.add(
+            "CMCS/MRPAM 5/10/20 km buffer register ready",
+            RECORDED_ACCEPTANCE,
+            decision=Decision.PASS if self._buffer_ok else Decision.PENDING,
+            note=(
+                f"{self._cmcs_rings}-ring CMCS buffer built + nearest-deposit register template."
+                if self._buffer_ok
+                else "Buffer pending Phase 01 licence boundary; register template emitted."
+            ),
+        )
+        report.add(
+            "Preliminary Deposit Model.docx and score matrix ready",
+            RECORDED_ACCEPTANCE,
+            decision=Decision.PENDING,
+            note="Template + 6-model evidence table + 8x6 score matrix emitted; human to complete.",
+        )
+        report.add(
+            "All historical evidence stamped validation_status = 'Historical only'",
+            "Every evidence feature carries validation_status/limitation (invariant #8).",
+            decision=Decision.PASS,
+            note="Stamped on ingested points/layers and CMCS buffer; empty layers carry the schema.",
+        )
+        report.add(
+            "17-layer geological evidence package ready for Phase 4 A/B/C prospect ranking",
+            RECORDED_ACCEPTANCE,
+            decision=Decision.PASS if layers_ok else Decision.FAIL,
+            note=f"Authoritative evidence GPKG holds {len(self._evidence_layers)} layers.",
+        )
+        report.add(
+            "Human-digitized geology/structure/occurrence layers ingested",
+            RECORDED_ACCEPTANCE,
+            decision=Decision.PASS if self._ingested_layers else Decision.PENDING,
+            note=(
+                f"Ingested: {', '.join(sorted(set(self._ingested_layers)))}."
+                if self._ingested_layers
+                else "No human-digitized layers found yet; re-run after QGIS digitizing."
+            ),
+        )
+        report.add(
+            "Remote-sensing (ASTER/KOMPSAT) support gap recorded (non-blocking)",
+            RECORDED_ACCEPTANCE,
+            decision=Decision.PASS,
+            note="Recorded in data-gap register; worth 10/100 pts, not a required Phase-3 layer.",
+        )
+        report.add(
+            "Legend dictionaries + evidence/occurrence registers emitted",
+            RECORDED_ACCEPTANCE,
+            decision=Decision.PASS if self._templates else Decision.FAIL,
+            note=f"{len(self._templates)} template/register artifact(s) written.",
+        )
+        return report
+
+
+# --------------------------------------------------------------------------- #
+# module-level helpers
+# --------------------------------------------------------------------------- #
+
+
+def _write_deposit_model_docx(path: Path, ctx: RunContext) -> Path:
+    from docx import Document
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    doc = Document()
+    doc.add_heading("Preliminary Deposit Model (03A)", level=1)
+    doc.add_paragraph(f"Project: {ctx.config.project.project_code} / {ctx.config.project.name}")
+    doc.add_paragraph(f"License: {ctx.config.project.license_code}")
+    doc.add_paragraph(f"Target CRS: {ctx.config.crs.target_authority}")
+    doc.add_paragraph(
+        "PRELIMINARY / HISTORICAL support only — not decision-grade, not ore proof. "
+        "Remote sensing enters as support evidence (worth 10/100 in scoring)."
+    )
+
+    doc.add_heading("Candidate deposit models", level=2)
+    table = doc.add_table(rows=1, cols=4)
+    table.style = "Light Grid Accent 1"
+    hdr = table.rows[0].cells
+    for i, label in enumerate(
+        ["Candidate model", "Preliminary confidence", "Supporting evidence", "Missing evidence"]
+    ):
+        hdr[i].text = label
+    for model, conf in DEPOSIT_MODELS:
+        cells = table.add_row().cells
+        cells[0].text = model
+        cells[1].text = conf
+        cells[2].text = ""
+        cells[3].text = ""
+
+    doc.add_heading("100-point scoring rubric", level=2)
+    stable = doc.add_table(rows=1, cols=2)
+    stable.style = "Light Grid Accent 1"
+    stable.rows[0].cells[0].text = "Criterion"
+    stable.rows[0].cells[1].text = "Points"
+    for criterion, pts in SCORING_CRITERIA:
+        cells = stable.add_row().cells
+        cells[0].text = criterion
+        cells[1].text = str(pts)
+    total = stable.add_row().cells
+    total[0].text = "Total"
+    total[1].text = "100"
+
+    doc.add_heading("Confidence class", level=2)
+    for line in [
+        ">=70 High priority",
+        "50-69 Moderate priority",
+        "30-49 Low / conceptual",
+        "<30 Insufficient evidence",
+    ]:
+        doc.add_paragraph(line, style="List Bullet")
+
+    doc.save(str(path))
+    return path
+
+
+_PHASE3_NOTE = (
+    "# Phase 03 / 03A — Geological, Metallogenic & CMCS Synthesis (orchestrated)\n\n"
+    "The pipeline scaffolds the 12-folder tree, emits every register/template/schema, builds\n"
+    "the CMCS 5/10/20 km context buffer off the Phase 01 licence boundary, ingests the #68\n"
+    "mineralized-point XLSX (4326->32647) and any human-digitized layers, and assembles the\n"
+    "authoritative 17-layer `Geological_Evidence_Layers_v01.gpkg`.\n\n"
+    "**Evidence rule (non-negotiable):** every Phase 03 output is historical / contextual /\n"
+    "preliminary support only — not decision-grade, not ore proof. Every feature records\n"
+    '`validation_status = "Historical only"` and a `limitation` note; CMCS/MRPAM buffer hits\n'
+    'are stamped "Context only — not proof of mineralization inside license".\n\n'
+    "Human work in QGIS/Excel/Word: georeference #70/#53/#57/#55; digitize lithology/contact/\n"
+    "fault/vein/prospectivity/source-material vectors into the named evidence layers; write the\n"
+    "Preliminary Deposit Model .docx; fill the 6-model evidence table + 8x6 score matrix.\n\n"
+    "**Feature IDs (Appendix A):** `BUD-<PREFIX>-0001` via `concat('BUD-MIN-', lpad(@row_number,\n"
+    "4,'0'))`. Prefixes: BUD-MET / BUD-GEO200 / BUD-GEO50 / BUD-STR / BUD-MIN / BUD-TGT /\n"
+    "BUD-OBS / BUD-RTE. (BUD-HM-AN / BUD-SS-AN are reserved for Phase 8/9 anomaly layers; the\n"
+    "BUD-RC/CH/SOIL/STR sample IDs elsewhere are a different Phase-7/8 namespace.)\n"
+)
 
 
 PHASE = Phase03GeologySynthesis

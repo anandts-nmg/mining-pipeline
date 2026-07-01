@@ -124,6 +124,103 @@ def create_master_gpkg(path: Path, layers: list[GpkgLayer], epsg: int) -> Path:
     return path
 
 
+def create_evidence_gpkg(
+    path: Path,
+    layers: list[tuple[str, str]],
+    props: dict[str, str],
+    epsg: int,
+) -> Path:
+    """Create a GeoPackage of empty, typed spatial layers sharing one property schema.
+
+    ``layers`` is a list of ``(layer_name, geometry_type)`` where geometry_type is one
+    of the keys in :data:`_FIONA_GEOM` (``Point`` / ``LineString`` / ``Polygon`` / their
+    Multi- variants). Every layer carries the same ``props`` attribute schema (used for
+    Phase 03's 17-layer evidence package: the 14 mandatory fields + ``feature_id``).
+    """
+    import fiona
+    from pyproj import CRS as PyCRS
+
+    path = Path(path)
+    if path.exists():
+        path.unlink()
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    crs_wkt = PyCRS.from_epsg(epsg).to_wkt()
+    for name, geometry in layers:
+        schema = {"geometry": _FIONA_GEOM[geometry], "properties": dict(props)}
+        with fiona.open(path, "w", driver="GPKG", layer=name, schema=schema, crs_wkt=crs_wkt):
+            pass
+    return path
+
+
+def buffer_rings(boundary_gdf, distances_m: list[int], epsg: int):  # type: ignore[no-untyped-def]
+    """Build a multi-ring buffer GeoDataFrame off ``boundary_gdf``.
+
+    Returns a GeoDataFrame with one row per distance (ascending), a ``distance_m``
+    column and the buffered geometry, in ``EPSG:<epsg>``. The boundary geometry is
+    dissolved first so overlapping parts produce a single ring per distance.
+    """
+    import geopandas as gpd
+
+    merged = (
+        boundary_gdf.geometry.union_all()
+        if hasattr(boundary_gdf.geometry, "union_all")
+        else boundary_gdf.geometry.unary_union
+    )
+    rings = [{"distance_m": dist, "geometry": merged.buffer(dist)} for dist in sorted(distances_m)]
+    return gpd.GeoDataFrame(rings, crs=f"EPSG:{epsg}")
+
+
+def xlsx_points_to_gdf(path: Path, source_epsg: int = 4326, target_epsg: int = 32647):  # type: ignore[no-untyped-def]
+    """Read an XLSX point table, detect coordinate columns, build a reprojected GeoDataFrame.
+
+    Detects lon/lat (or x/y / easting-northing) column pairs case-insensitively, builds
+    points in ``source_epsg`` (assumed WGS84 for lon/lat), and reprojects to
+    ``target_epsg``. Returns ``None`` gracefully — never raises — when the workbook is
+    unreadable, empty, or has no detectable coordinate column pair (e.g. a synthetic
+    placeholder), so the caller can record a note and skip.
+    """
+    try:
+        import geopandas as gpd
+        import pandas as pd
+    except Exception:
+        return None
+
+    path = Path(path)
+    if not path.exists():
+        return None
+    try:
+        df = pd.read_excel(path)
+    except Exception:
+        return None
+    if df is None or df.empty:
+        return None
+
+    lower = {str(c).strip().lower(): c for c in df.columns}
+    lon_keys = ("lon", "long", "longitude", "x", "easting", "east")
+    lat_keys = ("lat", "latitude", "y", "northing", "north")
+    lon_col = next((lower[k] for k in lon_keys if k in lower), None)
+    lat_col = next((lower[k] for k in lat_keys if k in lower), None)
+    if lon_col is None or lat_col is None:
+        return None
+
+    coords = df[[lon_col, lat_col]].apply(pd.to_numeric, errors="coerce")
+    coords = coords.dropna()
+    if coords.empty:
+        return None
+    attrs = df.loc[coords.index].reset_index(drop=True)
+    lon = coords[lon_col].reset_index(drop=True)
+    lat = coords[lat_col].reset_index(drop=True)
+    gdf = gpd.GeoDataFrame(
+        attrs,
+        geometry=gpd.points_from_xy(lon, lat),
+        crs=f"EPSG:{source_epsg}",
+    )
+    if source_epsg != target_epsg:
+        gdf = gdf.to_crs(epsg=target_epsg)
+    return gdf
+
+
 def list_gpkg_layers(path: Path) -> list[str]:
     """Return the layer names present in a GeoPackage."""
     import fiona

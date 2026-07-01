@@ -25,16 +25,19 @@ vocabulary **High / Medium / Low / Needs verification**). The disagreements belo
 
 ## At a glance — count & status
 
-**12 explicitly-numbered conflicts** (Phase 00: 3 · Phase 01: 7 · Phase 02: 2), plus ~4
-doc-vs-reality reconciliations and 1 intra-document version drift. **All 12 are resolved &
-implemented** — the last two decision-only items (01-7, 02-1 / H-1) were decided 2026-06-30 (details below).
+**15 explicitly-numbered conflicts** (Phase 00: 3 · Phase 01: 7 · Phase 02: 2 · Phase 03: 3), plus ~4
+doc-vs-reality reconciliations and 1 intra-document version drift. **All 15 are resolved (by decision)** —
+01-7 and 02-1 / H-1 were decided 2026-06-30; the Phase-03 items (03-1/2/3 + handoff H-4) were decided
+2026-07-01 during Phase-3 planning (`PHASE_03_PLAN.md`). Phase 03 module implementation is pending.
 
 | Group | Comparison | IDs | Resolved | Open |
 |---|---|---|---|---|
 | Phase 00 | master Doc A vs Phase-1 doc (Doc B) | 00-1, 00-2, 00-3 | 00-1, 00-2, 00-3 | — |
 | Phase 01 | master Doc A vs Phase-1 doc (Doc B) | 01-1 … 01-7 | 01-1 … 01-7 | — |
 | Phase 02 | master Doc A vs `docs/phase_02` guides | 02-1, 02-2 | 02-1, 02-2 | — |
+| Phase 03 | master Doc A §03 vs Phase-3 QGIS guide | 03-1, 03-2, 03-3 | 03-1, 03-2, 03-3 | — |
 | Phase 01 ↔ 02 | inter-phase handoff | H-1, H-2, H-3 | H-1, H-2, H-3 | — |
+| Phase 02 ↔ 03 | inter-phase handoff | H-4 (ASTER/KOMPSAT support gap) | H-4 | — |
 | Doc vs reality | docs vs the real Drive archive | 7/11/9 taxonomy · 78/79 · `0. Raw Data` name · #23 EULA | all reconciled | — |
 | Intra-doc | Doc A filename vs body | v6-filename / v5-body | n/a (noted) | — |
 
@@ -222,6 +225,45 @@ formula-complete method notes for the tool-bound Sentinel/ASTER/KOMPSAT steps.
 
 ---
 
+## Phase 03 — Geological, Metallogenic & CMCS Synthesis (master Doc A §03 vs the Phase-3 QGIS guide)
+
+The detailed Phase-3 QGIS guide (`docs/phase_03`, a later deep-dive like Doc B for Phase 1 and the
+`docs/phase_02` guides for Phase 2) introduces three disagreements against Doc A §03. **None are scientific** —
+both agree on the **#1-8 + #53-72** inputs, the **6 candidate deposit models**, the identical **100-pt scoring
+rubric** and thresholds (≥70 / 50-69 / 30-49 / <30), the **CMCS 5/10/20 km** rings, and the **historical-only
+support** framing. The conflicts are structure, folder labels and an ID scheme.
+
+**03-1 — Phase-3 folder count (Doc A 9 vs guide 12).** Doc A §03 lists **9** subfolders
+(`01_Tectonic_Terrane_Context … 09_Geological_Evidence_GPKG`, deposit model at
+`07_Preliminary_Deposit_Model_Preparation`); the guide §03.3 lists **12**
+(`01_Input_Working_Copy … 12_Phase3_QAQC_and_Handover`). The guide is a **finer superset**: adds
+`01_Input_Working_Copy`, splits occurrence-QA/QC (07), scoring/data-gap (11) and QA/QC-handover (12) into their
+own folders, and folds Doc A's standalone CMCS-screening folder into the buffer + evidence folders — every
+Doc A concept is present. **Resolved 2026-07-01 — follow the guide's 12-folder superset** (same rule as
+01-1 / 02-2), as `phase03 custom_subfolders` under Doc A's long name
+`03_Phase_3_Geological_Metallogenic_and_CMCS_Synthesis`.
+
+**03-2 — Deposit-model folder label.** Doc A's `07_Preliminary_Deposit_Model_Preparation` and the guide's
+`10_Preliminary_Deposit_Model_03A` are the **same 03A sub-workflow**, different label. **Resolved 2026-07-01 —
+use the guide's `10_Preliminary_Deposit_Model_03A`** (consistent with 03-1).
+
+**03-3 — Feature-ID naming standard (Doc A defines it; the guide omits it).** Doc A **Appendix A** defines
+Feature-ID prefixes — `geology_units_50k→BUD-GEO50`, `…_200k→BUD-GEO200`, `structures_faults→BUD-STR`,
+`mineral_occurrences→BUD-MIN`, `prospectivity_target_zones→BUD-TGT`, `source_material_observation→BUD-OBS`,
+`…_route→BUD-RTE`, `metallogenic_zones→BUD-MET`, `heavy_mineral_anomaly→BUD-HM-AN`,
+`stream_sediment_anomaly→BUD-SS-AN`, `data_gap_register→BUD-GAP` — generated via
+`concat('BUD-MIN-', lpad(@row_number,4,'0'))` (Appendix B); the guide names layers by filename only.
+**Resolved 2026-07-01 — adopt the `BUD-…` scheme as a `feature_id` column, alongside the guide's 14 mandatory
+provenance fields.** **Caveat:** the `BUD-STR-001` tokens elsewhere in the master are Phase-7/8 field **sample
+IDs** (BUD-RC/CH/SOIL/STR/HM) — a different namespace, not these feature-ID prefixes. `BUD-HM-AN` / `BUD-SS-AN`
+are reserved for Phase-8/9 anomaly layers (not digitized in Phase 3).
+
+*(Non-conflicts: the inputs, the 6 models, the 100-pt rubric/thresholds, the CMCS rings and the support-only
+framing all agree. Deliverable naming differs cosmetically — guide `v01`/`XV023222` data form vs Doc A
+unversioned/`XV-023222` admin form — consistent with the repo's `core.naming` `data_name`/`register_name` split.)*
+
+---
+
 ## Phase 01 ↔ Phase 02 handoff (what each expects from the other)
 
 Phase 02 is the first phase that *consumes another phase's outputs*, so the sources also have to
@@ -256,6 +298,25 @@ AOIs (DEM = 5 km, Sentinel = licence, basemap = 1 km) — a clean producer→con
 
 Everything else lines up: the AOIs Phase 02 clips to are exactly the layers Phase 01 writes, read
 back by **filename via `core.naming`**, so the two phases agree on the names without hard-coding.
+
+## Phase 02 ↔ Phase 03 handoff (03A remote-sensing support)
+
+**H-4 — Sentinel/ASTER/KOMPSAT/DEM as 03A support, but ASTER/KOMPSAT are method-note-only from Phase 02.**
+Both Doc A (03A.2) and the guide (Step-1 readiness) expect Phase 2's Sentinel/ASTER/KOMPSAT/DEM derivatives in
+03A as **support evidence**. But Phase 02 emits ASTER (#73) and KOMPSAT (#24/28/32/36/40) as **method-note
+only** — a note row, not a produced layer (RPC ortho / HDF extraction are external SNAP/ILWIS steps).
+**Resolved 2026-07-01 — real but non-blocking; record in the data-gap register and proceed:** (a) all remote
+sensing is support / "not ore proof"; (b) it is worth only **10/100 pts** in scoring, so an absent
+ASTER/KOMPSAT layer cannot fail a threshold; and (c) the master handover table's Phase-3 required-layers row
+lists only *geology, structures, metallogenic zones, occurrence context* — remote sensing is **not even a
+required Phase-3 handover layer**. Phase 03 logs the gap in `Phase3_DataGap_and_Validation_Priority.xlsx`.
+
+**Georeferencing straddle (links 01-7 / the open BMP item).** The guide's Step-1 readiness assumes Phase 01
+already logged each scan's GCP/residual/scale/confidence, yet the guide **does the actual georeferencing
+in-phase** (Steps 3-5: #70/#53/#57/#55); Doc A assigns georef ownership + the Georeferencer SOP to Phase 1
+(Appendix E). **Resolution:** Phase 03 owns the actual georeferencing of the geology/metallogenic/
+mineral-resources scans; the georef QA/QC log carries forward. This is where the **BMP-as-`.jpg`** MUGZ
+tectonic files finally get characterized on georeferencing.
 
 ---
 
@@ -310,6 +371,22 @@ authority (as Doc B was for Phase 1):
 **Net:** Phase 02 is master-faithful + follows the Phase-2 guides, and ran **go/go on the real
 data** — most recently `v0.2.1`, 00→02 end-to-end on the local archive.
 
+### Phase 03 (planned — decided 2026-07-01; implementation pending)
+
+Same rule — master = truth; the `docs/phase_03` guide honoured as the more-specific Phase-3 authority:
+
+| Discrepancy | What we chose for Phase 03 | Where |
+|---|---|---|
+| 03-1 folder tree (9 vs 12) | The guide's **12-folder** superset (adds input-working-copy; splits occurrence-QAQC / scoring / QAQC-handover) — superset of Doc A's 9. | `phase03 custom_subfolders` (planned) |
+| 03-2 deposit-model folder | The guide's `10_Preliminary_Deposit_Model_03A` (= Doc A's `07_…_Preparation`). | `phase03` folder tree |
+| 03-3 feature-ID scheme | Adopt Doc A **Appendix A** `BUD-…` as a `feature_id` column + the guide's 14 provenance fields. | evidence-GPKG schema (planned) |
+| H-4 ASTER/KOMPSAT support gap | Non-blocking; recorded in the data-gap register (RS = 10/100 pts, not a required handover layer). | `Phase3_DataGap` register (planned) |
+| georef straddle | Phase 03 owns the actual georeferencing of the geology/metallogenic scans; Phase 01 scaffolds the log. | `phase03` steps 3-5 |
+
+**Net:** Phase 03 is fully planned in `PHASE_03_PLAN.md` (ORCHESTRATE: scaffold 12 folders + templates + the
+17-layer evidence GPKG + #68 XLSX→points + CMCS buffer + human-layer ingest); module implementation is the
+next build.
+
 ## Still open (later phases / documentation)
 
 - **KOMPSAT EULA** — source the file, or keep it as a permanent documented gap.
@@ -318,12 +395,14 @@ data** — most recently `v0.2.1`, 00→02 end-to-end on the local archive.
 
 *(01-7 and 02-1 / H-1 were **resolved 2026-06-30** — see above: follow Doc A's Phase 3/4 folder names,
 and treat the Phase-2 guide's 25 km buffer as an artefact (add-on-demand). The standalone Phase-1 PDF is
-superseded for folder structure per 01-7.)*
+superseded for folder structure per 01-7. **03-1/2/3 + H-4 were decided 2026-07-01** during Phase-3 planning —
+see `PHASE_03_PLAN.md`; the BMP-as-`.jpg` files get characterized when Phase 03 georeferences them.)*
 
 ---
 
 *Generated from analysis of the master methodology PDF (repo root), the Phase-1 deep-dive
-(`docs/phase_01`) and the four Phase-2 guides (`docs/phase_02`), against the `src/buduunkhad` +
-`config/` implementation (first drafted 2026-06-23, extended for Phase 02 on 2026-06-26). Phase
-0–1 resolutions verified at `v0.1.0`; Phase 02 at `v0.2.0`. The master methodology remains the
-stated source of truth per `CLAUDE.md`.*
+(`docs/phase_01`), the four Phase-2 guides (`docs/phase_02`) and the Phase-3 guide (`docs/phase_03`),
+against the `src/buduunkhad` + `config/` implementation (first drafted 2026-06-23, extended for Phase 02
+on 2026-06-26 and Phase 03 planning on 2026-07-01). Phase 0–1 resolutions verified at `v0.1.0`; Phase 02
+at `v0.2.0` / `v0.2.1`; Phase 03 decided-by-plan (`PHASE_03_PLAN.md`), implementation pending. The master
+methodology remains the stated source of truth per `CLAUDE.md`.*

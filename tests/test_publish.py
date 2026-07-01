@@ -27,6 +27,16 @@ def _make_output(root: Path) -> None:
     deriv = p02 / "04_Terrain_Derivatives"
     deriv.mkdir(parents=True)
     (deriv / "XV023222_Buduunkhad_DEM_Hillshade_EPSG32647_v01.tif").write_bytes(b"II*\x00cog")
+    # phase 03 evidence GPKG -> published, grouped under Phase03/
+    p03 = (
+        root
+        / "03_Phase_3_Geological_Metallogenic_and_CMCS_Synthesis"
+        / "09_Geological_Evidence_Layers_GPKG"
+    )
+    p03.mkdir(parents=True)
+    (p03 / "XV023222_Buduunkhad_Geological_Evidence_Layers_v01.gpkg").write_bytes(
+        b"SQLite format 3\x00"
+    )
 
 
 def test_collect_excludes_working_copies(tmp_path):
@@ -38,6 +48,7 @@ def test_collect_excludes_working_copies(tmp_path):
     assert "big_raster.tif" not in names  # raw working copy excluded
     assert "meta.txt" not in names  # non-deliverable extension excluded
     assert "XV023222_Buduunkhad_DEM_Hillshade_EPSG32647_v01.tif" in names  # derived COG included
+    assert "XV023222_Buduunkhad_Geological_Evidence_Layers_v01.gpkg" in names  # phase 03 included
 
 
 def test_publish_copies_versioned_with_index(tmp_path):
@@ -54,3 +65,12 @@ def test_publish_copies_versioned_with_index(tmp_path):
     assert "XV-023222_Buduunkhad_Master_GIS_Database.gpkg" in copied
     assert "XV023222_Buduunkhad_DEM_Hillshade_EPSG32647_v01.tif" in copied  # derived COG published
     assert "big_raster.tif" not in copied  # never publish raw working copies
+
+    # deliverables are grouped by two-digit phase prefix into PhaseNN/ (short, reader-friendly)
+    assert (result.dest / "Phase01" / "XV-023222_Buduunkhad_Master_GIS_Database.gpkg").exists()
+    assert (
+        result.dest / "Phase02" / "XV023222_Buduunkhad_DEM_Hillshade_EPSG32647_v01.tif"
+    ).exists()
+    assert (
+        result.dest / "Phase03" / "XV023222_Buduunkhad_Geological_Evidence_Layers_v01.gpkg"
+    ).exists()

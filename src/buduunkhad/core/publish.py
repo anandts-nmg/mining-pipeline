@@ -51,14 +51,14 @@ def _is_working_copy(rel: Path) -> bool:
 
 
 def _phase_tag(rel: Path) -> str:
-    """Shallow phase grouping for the published package (keeps paths short, reader-friendly)."""
+    """Shallow phase grouping for the published package (keeps paths short, reader-friendly).
+
+    Phase folders are named ``<NN>_<...>``; group everything by the two-digit prefix into
+    ``PhaseNN`` (so ``03_Phase_3_Geological_...`` publishes under ``Phase03/``, not its long name).
+    """
     top = rel.parts[0] if rel.parts else ""
-    if top.startswith("00_"):
-        return "Phase00"
-    if top.startswith("01_"):
-        return "Phase01"
-    if top.startswith("02_"):
-        return "Phase02"
+    if len(top) >= 3 and top[:2].isdigit() and top[2] == "_":
+        return f"Phase{top[:2]}"
     return top or "misc"
 
 

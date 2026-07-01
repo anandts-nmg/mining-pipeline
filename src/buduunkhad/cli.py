@@ -118,10 +118,11 @@ def publish_deliverables(
         None, "--label", help="Version label for the published folder (default: timestamp)."
     ),
 ) -> None:
-    """Copy Phase 0-1 deliverables (not raw working copies) to BUDUUNKHAD_PUBLISH_ROOT.
+    """Copy every built phase's deliverables (not raw working copies) to BUDUUNKHAD_PUBLISH_ROOT.
 
-    Point BUDUUNKHAD_PUBLISH_ROOT at a destination folder (e.g. a Google
-    Drive-for-Desktop path); deliverables are copied into a versioned subfolder there.
+    Walks the whole output_root and publishes deliverables under a ``PhaseNN/`` folder each,
+    excluding raw working copies. Point BUDUUNKHAD_PUBLISH_ROOT at a destination folder (e.g. a
+    Google Drive-for-Desktop path); deliverables are copied into a versioned subfolder there.
     """
     cfg, _register = load_project(config)
     publish_root = os.environ.get("BUDUUNKHAD_PUBLISH_ROOT")

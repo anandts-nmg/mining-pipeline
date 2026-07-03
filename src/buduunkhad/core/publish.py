@@ -90,6 +90,35 @@ def latest_run_manifest(runs_root: Path) -> Path | None:
     return manifests[-1] if manifests else None
 
 
+def latest_gate_per_phase(runs_root: Path) -> dict[str, dict[str, object]]:
+    """Most-recent **real** (non-dry) gate per phase across all run manifests.
+
+    The published package spans phases run at different times, so a single latest manifest
+    (which may be a dry run or cover only some phases) can't describe every PhaseNN folder.
+    Iterate manifests in ascending (timestamp) order so the last real gate seen per phase wins.
+    """
+    runs_root = Path(runs_root)
+    out: dict[str, dict[str, object]] = {}
+    if not runs_root.exists():
+        return out
+    for man in sorted(runs_root.glob("*/run_manifest.json")):
+        try:
+            data = json.loads(man.read_text(encoding="utf-8"))
+        except (ValueError, OSError):  # pragma: no cover - defensive
+            continue
+        if data.get("dry_run"):
+            continue
+        for p in data.get("phases", []):
+            gate = p.get("gate", {})
+            if gate.get("status"):
+                out[p["phase_id"]] = {
+                    "status": gate["status"],
+                    "provisional": gate.get("provisional", False),
+                    "run_id": data.get("run_id", ""),
+                }
+    return out
+
+
 def publish(
     output_root: Path,
     publish_root: Path,
@@ -141,12 +170,17 @@ def publish(
         shutil.copy2(manifest, dest / "run_manifest.json")
         copied.append(dest / "run_manifest.json")
 
-    _write_index(dest, output_root, copied, label, manifest)
+    gates = latest_gate_per_phase(runs_root) if runs_root is not None else {}
+    _write_index(dest, output_root, copied, label, gates)
     return PublishResult(dest=dest, files=copied, skipped_working_copies=skipped)
 
 
 def _write_index(
-    dest: Path, output_root: Path, copied: list[Path], label: str, manifest: Path | None
+    dest: Path,
+    output_root: Path,
+    copied: list[Path],
+    label: str,
+    gates: dict[str, dict[str, object]],
 ) -> Path:
     lines = [
         f"# Buduunkhad XV-023222 — Deliverables ({label})",
@@ -155,18 +189,16 @@ def _write_index(
         "copies are excluded — those are duplicates of the read-only Drive archive.",
         "",
     ]
-    if manifest is not None and manifest.exists():
-        try:
-            data = json.loads(manifest.read_text(encoding="utf-8"))
-            lines.append(f"**Run:** {data.get('run_id', '?')}  ")
-            gates = ", ".join(
-                f"{p['phase_id']}={p.get('gate', {}).get('status', '?')}"
-                for p in data.get("phases", [])
-            )
-            lines.append(f"**Gates:** {gates}")
-            lines.append("")
-        except (ValueError, KeyError):  # pragma: no cover - manifest shape guard
-            pass
+    if gates:
+        parts = []
+        for pid in sorted(gates):
+            g = gates[pid]
+            tag = f"{pid}={g['status']}"
+            if g.get("provisional"):
+                tag += " (provisional)"
+            parts.append(tag)
+        lines.append(f"**Gates (most recent real run per phase):** {', '.join(parts)}")
+        lines.append("")
     lines.append("## Files")
     lines.append("")
     for p in copied:

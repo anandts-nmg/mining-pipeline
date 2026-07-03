@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
-from buduunkhad.core.publish import PublishError, collect_deliverables, publish
+from buduunkhad.core.publish import (
+    PublishError,
+    collect_deliverables,
+    latest_gate_per_phase,
+    publish,
+)
 
 
 def _make_output(root: Path) -> None:
@@ -87,6 +93,38 @@ def test_publish_refuses_existing_nonempty_label(tmp_path):
     # re-publishing the same label would silently merge/overwrite -> must refuse
     with pytest.raises(PublishError):
         publish(out, drive, "v1")
+
+
+def _write_manifest(runs_root, run_id, dry_run, phases):
+    d = runs_root / run_id
+    d.mkdir(parents=True)
+    (d / "run_manifest.json").write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "dry_run": dry_run,
+                "phases": [
+                    {"phase_id": pid, "gate": {"status": st, "provisional": prov}}
+                    for pid, st, prov in phases
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_latest_gate_per_phase_ignores_dry_and_takes_most_recent(tmp_path):
+    runs = tmp_path / "runs"
+    # ascending timestamps: an early real run, then a dry run, then a newer real run for 02/03
+    _write_manifest(runs, "20260101T000000", False, [("00", "go", False), ("01", "go", False)])
+    _write_manifest(runs, "20260102T000000", True, [("02", "go", False)])  # dry -> ignored
+    _write_manifest(runs, "20260103T000000", False, [("02", "go", True), ("03", "go", True)])
+
+    gates = latest_gate_per_phase(runs)
+    assert set(gates) == {"00", "01", "02", "03"}
+    assert gates["00"]["status"] == "go" and not gates["00"]["provisional"]
+    assert gates["02"]["provisional"] is True  # from the real run, not the dry one
+    assert gates["02"]["run_id"] == "20260103T000000"
 
 
 def test_publish_detects_name_collision(tmp_path):

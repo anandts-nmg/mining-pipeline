@@ -73,6 +73,7 @@ class PhaseOutcome:
     gate_status: str = ""
     gate_reason: str = ""
     gate_overridden: bool = False
+    gate_provisional: bool = False
     error: str = ""
 
     def as_dict(self) -> dict[str, object]:
@@ -87,6 +88,7 @@ class PhaseOutcome:
                 "status": self.gate_status,
                 "reason": self.gate_reason,
                 "overridden": self.gate_overridden,
+                "provisional": self.gate_provisional,
             },
             "error": self.error,
         }
@@ -103,6 +105,9 @@ class RunManifest:
     warnings: list[str] = field(default_factory=list)
     stopped_at: str = ""
     finished_at: str = ""
+    #: Set when the run aborts during startup checks (before/at the phase loop) — records the
+    #: error so even a failed run leaves a machine-readable manifest.
+    error: str = ""
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -113,6 +118,7 @@ class RunManifest:
             "override": self.override,
             "selected_phases": self.selected_phases,
             "stopped_at": self.stopped_at,
+            "error": self.error,
             "warnings": self.warnings,
             "phases": [p.as_dict() for p in self.phases],
         }
@@ -132,16 +138,24 @@ def select_phases(
 ) -> list[Phase]:
     """Filter the registry by --only or the --from/--to range (inclusive)."""
     if only:
-        wanted = {p.zfill(2) for p in only}
+        # Reject empty/whitespace tokens: '' .zfill(2) == '00' would silently select Phase 00.
+        cleaned = [p.strip() for p in only if p.strip()]
+        if not cleaned:
+            raise SelectionError("--only was given but contained no phase ids")
+        wanted = {p.zfill(2) for p in cleaned}
         unknown = wanted - set(PHASE_ORDER)
         if unknown:
-            raise ValueError(f"Unknown phase id(s): {sorted(unknown)}")
+            raise SelectionError(f"Unknown phase id(s): {sorted(unknown)}")
         return [p for p in registry if p.id in wanted]
 
+    if from_ and from_.zfill(2) not in PHASE_ORDER:
+        raise SelectionError(f"Unknown phase id: --from {from_}")
+    if to and to.zfill(2) not in PHASE_ORDER:
+        raise SelectionError(f"Unknown phase id: --to {to}")
     start = PHASE_ORDER.index(from_.zfill(2)) if from_ else 0
     end = PHASE_ORDER.index(to.zfill(2)) if to else len(PHASE_ORDER) - 1
     if start > end:
-        raise ValueError(f"--from {from_} comes after --to {to}")
+        raise SelectionError(f"--from {from_} comes after --to {to}")
     selected_ids = PHASE_ORDER[start : end + 1]
     return [p for p in registry if p.id in selected_ids]
 
@@ -160,6 +174,13 @@ class MissingRawDataError(RuntimeError):
 
 class PathTooLongError(RuntimeError):
     """Raised on a real run when generated paths would exceed the Windows limit."""
+
+
+class SelectionError(ValueError):
+    """Raised when --only/--from/--to name an unknown or empty phase id.
+
+    Subclasses ValueError so existing ``pytest.raises(ValueError)`` callers still match.
+    """
 
 
 def _acknowledged_absent(config: ProjectConfig) -> set[str]:
@@ -332,11 +353,15 @@ def run_pipeline(
 ) -> RunManifest:
     """Execute the selected phases and return the run manifest."""
     run_id = run_id or datetime.now().strftime("%Y%m%dT%H%M%S")
+
+    # Validate the phase selection BEFORE creating the run dir/logger, so a bad --only/--from/--to
+    # fails without leaving an orphan run directory (C3).
+    registry = build_registry()
+    selected = select_phases(registry, from_=from_, to=to, only=only)
+
     run_dir = config.runs_root / run_id
     logger = _setup_logger(run_dir)
 
-    registry = build_registry()
-    selected = select_phases(registry, from_=from_, to=to, only=only)
     manifest = RunManifest(
         run_id=run_id,
         started_at=datetime.now().isoformat(timespec="seconds"),
@@ -353,92 +378,106 @@ def run_pipeline(
         manifest.selected_phases,
     )
 
-    # Path-length pre-flight (warns in dry-run, blocks a real run when long paths
-    # are disabled). Runs in both modes so dry-run surfaces the risk early.
-    manifest.warnings.extend(
-        preflight_path_lengths(config, register, dry_run=dry_run, logger=logger)
-    )
-
-    # Real runs require raw data + an unchanged read-only archive; dry runs do not.
-    if not dry_run:
-        present_names = (
-            {p.name for p in raw_guard.iter_files(config.raw_root)}
-            if config.raw_root.exists()
-            else set()
+    # The body runs under try/finally so a startup abort (path pre-flight, missing raw, integrity
+    # drift) still leaves a machine-readable run_manifest.json, not just run.log (C1).
+    try:
+        # Path-length pre-flight (warns in dry-run, blocks a real run when long paths
+        # are disabled). Runs in both modes so dry-run surfaces the risk early.
+        manifest.warnings.extend(
+            preflight_path_lengths(config, register, dry_run=dry_run, logger=logger)
         )
-        missing = [r.filename for r in register if r.filename not in present_names]
-        if missing:
-            acknowledged = _acknowledged_absent(config)
-            unexpected = [m for m in missing if m not in acknowledged]
-            ack = [m for m in missing if m in acknowledged]
-            if ack:
-                logger.warning(
-                    "%d acknowledged data gap(s) (manifest-flagged absent): %s",
-                    len(ack),
-                    ", ".join(ack[:10]),
+
+        # Real runs require raw data + an unchanged read-only archive; dry runs do not.
+        if not dry_run:
+            present_names = (
+                {p.name for p in raw_guard.iter_files(config.raw_root)}
+                if config.raw_root.exists()
+                else set()
+            )
+            missing = [r.filename for r in register if r.filename not in present_names]
+            if missing:
+                acknowledged = _acknowledged_absent(config)
+                unexpected = [m for m in missing if m not in acknowledged]
+                ack = [m for m in missing if m in acknowledged]
+                if ack:
+                    logger.warning(
+                        "%d acknowledged data gap(s) (manifest-flagged absent): %s",
+                        len(ack),
+                        ", ".join(ack[:10]),
+                    )
+                    manifest.warnings.append(
+                        f"{len(ack)} acknowledged data gap(s): {', '.join(ack)}"
+                    )
+                if unexpected:
+                    msg = _missing_raw_message(unexpected, register, present_names, config)
+                    logger.error(msg)
+                    raise MissingRawDataError(msg)
+            verify_raw_integrity(config, override=override, logger=logger)
+
+        # Always ensure the full tree exists so handoffs have somewhere to land.
+        paths.build_full_tree(config.output_root)
+
+        ctx = RunContext(
+            config=config,
+            register=register,
+            run_id=run_id,
+            dry_run=dry_run,
+            override=override,
+            logger=logger,
+        )
+
+        for phase in selected:
+            outcome = PhaseOutcome(
+                phase_id=phase.id, name=phase.name, mode=phase.mode, status="pending"
+            )
+            try:
+                phase.prepare(ctx)
+                result = phase.run(ctx)
+                outcome.status = result.status
+                outcome.outputs = [str(p) for p in result.outputs]
+                report = phase.qaqc(ctx)
+                _write_phase_qaqc(ctx, phase, report)
+                outcome.qaqc_passed = report.passed
+                decision = phase.gate(report, ctx)
+                outcome.gate_status = decision.status.value
+                outcome.gate_reason = decision.reason
+                outcome.gate_overridden = decision.overridden
+                outcome.gate_provisional = decision.provisional
+                for msg in result.messages:
+                    logger.info("Phase %s: %s", phase.id, msg)
+                logger.info(
+                    "Phase %s gate: %s (%s)", phase.id, decision.status.value, decision.reason
                 )
-                manifest.warnings.append(f"{len(ack)} acknowledged data gap(s): {', '.join(ack)}")
-            if unexpected:
-                msg = _missing_raw_message(unexpected, register, present_names, config)
-                logger.error(msg)
-                raise MissingRawDataError(msg)
-        verify_raw_integrity(config, override=override, logger=logger)
+            except NotImplementedError as exc:
+                outcome.status = "not-implemented"
+                outcome.error = str(exc)
+                manifest.phases.append(outcome)
+                manifest.stopped_at = phase.id
+                logger.warning("Phase %s not implemented: %s", phase.id, exc)
+                break
+            except Exception as exc:  # noqa: BLE001 - record + stop the run
+                outcome.status = "error"
+                outcome.error = f"{type(exc).__name__}: {exc}"
+                manifest.phases.append(outcome)
+                manifest.stopped_at = phase.id
+                logger.exception("Phase %s errored", phase.id)
+                break
 
-    # Always ensure the full tree exists so handoffs have somewhere to land.
-    paths.build_full_tree(config.output_root)
-
-    ctx = RunContext(
-        config=config,
-        register=register,
-        run_id=run_id,
-        dry_run=dry_run,
-        override=override,
-        logger=logger,
-    )
-
-    for phase in selected:
-        outcome = PhaseOutcome(
-            phase_id=phase.id, name=phase.name, mode=phase.mode, status="pending"
-        )
-        try:
-            phase.prepare(ctx)
-            result = phase.run(ctx)
-            outcome.status = result.status
-            outcome.outputs = [str(p) for p in result.outputs]
-            report = phase.qaqc(ctx)
-            _write_phase_qaqc(ctx, phase, report)
-            outcome.qaqc_passed = report.passed
-            decision = phase.gate(report, ctx)
-            outcome.gate_status = decision.status.value
-            outcome.gate_reason = decision.reason
-            outcome.gate_overridden = decision.overridden
-            for msg in result.messages:
-                logger.info("Phase %s: %s", phase.id, msg)
-            logger.info("Phase %s gate: %s (%s)", phase.id, decision.status.value, decision.reason)
-        except NotImplementedError as exc:
-            outcome.status = "not-implemented"
-            outcome.error = str(exc)
             manifest.phases.append(outcome)
-            manifest.stopped_at = phase.id
-            logger.warning("Phase %s not implemented: %s", phase.id, exc)
-            break
-        except Exception as exc:  # noqa: BLE001 - record + stop the run
-            outcome.status = "error"
-            outcome.error = f"{type(exc).__name__}: {exc}"
-            manifest.phases.append(outcome)
-            manifest.stopped_at = phase.id
-            logger.exception("Phase %s errored", phase.id)
-            break
 
-        manifest.phases.append(outcome)
+            if not dry_run and not _can_advance(decision):
+                manifest.stopped_at = phase.id
+                logger.warning(
+                    "Phase %s gate blocked advance; stopping (use --override).", phase.id
+                )
+                break
+    except Exception as exc:  # startup abort — record it in the manifest, then re-raise
+        manifest.error = f"{type(exc).__name__}: {exc}"
+        raise
+    finally:
+        manifest.finished_at = datetime.now().isoformat(timespec="seconds")
+        _write_manifest(run_dir, manifest)
 
-        if not dry_run and not _can_advance(decision):
-            manifest.stopped_at = phase.id
-            logger.warning("Phase %s gate blocked advance; stopping (use --override).", phase.id)
-            break
-
-    manifest.finished_at = datetime.now().isoformat(timespec="seconds")
-    _write_manifest(run_dir, manifest)
     return manifest
 
 

@@ -20,7 +20,7 @@ crs:
   source_geographic_epsg: 4326
 
 paths:
-  # Root of the read-only raw archive (the 78 inputs). The pipeline NEVER writes
+  # Root of the read-only raw archive (the 79 inputs). The pipeline NEVER writes
   # here. Point this at the synced Google Drive folder once it is available
   # locally. Relative paths resolve against the repo root.
   raw_root: "data/00_Raw_Files_Archive"

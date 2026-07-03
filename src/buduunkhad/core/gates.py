@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from buduunkhad.core.qaqc import QAQCReport
+from buduunkhad.core.qaqc import Decision, QAQCReport
 
 
 class GateStatus(StrEnum):
@@ -27,6 +27,9 @@ class GateDecision:
     status: GateStatus
     reason: str
     overridden: bool = False
+    #: GO reached with QA/QC items still PENDING human completion (orchestrate phases): the
+    #: automated scaffold/ingest is done but the phase is not yet methodologically complete.
+    provisional: bool = False
 
     @property
     def can_advance(self) -> bool:
@@ -39,6 +42,7 @@ class GateDecision:
             "status": self.status.value,
             "reason": self.reason,
             "overridden": self.overridden,
+            "provisional": self.provisional,
         }
 
 
@@ -51,7 +55,7 @@ def evaluate_gate(
     """Derive a :class:`GateDecision` from a QA/QC report.
 
     - any failed item                 -> BLOCKED (or GO if ``override``)
-    - items present, none failed       -> GO
+    - items present, none failed       -> GO (``provisional`` if any item is PENDING)
     - no items recorded                -> BLOCKED (nothing was checked)
     """
     if qaqc.has_failures:
@@ -70,6 +74,12 @@ def evaluate_gate(
                 qaqc.phase_id, GateStatus.GO, f"OVERRIDDEN - {reason}", overridden=True
             )
         return GateDecision(qaqc.phase_id, GateStatus.BLOCKED, reason)
+
+    pending = [i.item for i in qaqc.items if i.decision is Decision.PENDING]
+    if pending:
+        base = condition or "All automated QA/QC checks passed"
+        reason = f"{base}; {len(pending)} item(s) PENDING human completion."
+        return GateDecision(qaqc.phase_id, GateStatus.GO, reason, provisional=True)
 
     reason = condition or "All QA/QC checks passed."
     return GateDecision(qaqc.phase_id, GateStatus.GO, reason)

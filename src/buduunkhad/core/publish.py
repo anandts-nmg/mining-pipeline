@@ -39,6 +39,10 @@ WORKING_COPY_DIRS: frozenset[str] = frozenset(
 )
 
 
+class PublishError(RuntimeError):
+    """Raised when a publish would silently overwrite (label reuse) or clobber (name collision)."""
+
+
 @dataclass(frozen=True)
 class PublishResult:
     dest: Path
@@ -92,16 +96,36 @@ def publish(
     label: str,
     *,
     runs_root: Path | None = None,
+    overwrite: bool = False,
 ) -> PublishResult:
-    """Copy deliverables into ``publish_root/BuduunKhad_..._<label>/`` with an INDEX.md."""
+    """Copy deliverables into ``publish_root/BuduunKhad_..._<label>/`` with an INDEX.md.
+
+    Raises :class:`PublishError` if the label dir already exists and is non-empty (unless
+    ``overwrite=True``) or if two source files would flatten to the same published path — both
+    would otherwise silently overwrite, so we fail loudly per the repo's philosophy.
+    """
     output_root = Path(output_root)
     dest = Path(publish_root) / f"Buduunkhad_Deliverables_{label}"
+    if dest.exists() and any(dest.iterdir()) and not overwrite:
+        raise PublishError(
+            f"Publish destination already exists and is not empty: {dest}. "
+            "Choose a new --label or remove that folder first."
+        )
     dest.mkdir(parents=True, exist_ok=True)
 
-    copied: list[Path] = []
+    # Map each source to its flattened PhaseNN/<filename> target, failing on any collision (two
+    # distinct sources -> same published path) rather than silently overwriting.
+    targets: dict[Path, Path] = {}
     for src in collect_deliverables(output_root):
-        # flatten into PhaseNN/<filename> — shallow, reader-friendly, MAX_PATH-safe
         target = dest / _phase_tag(src.relative_to(output_root)) / src.name
+        if target in targets:
+            raise PublishError(
+                f"Publish name collision: {targets[target]} and {src} both map to {target}"
+            )
+        targets[target] = src
+
+    copied: list[Path] = []
+    for target, src in targets.items():
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, target)
         copied.append(target)

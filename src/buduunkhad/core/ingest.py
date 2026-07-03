@@ -61,6 +61,9 @@ def load_manifest(path: Path | str) -> dict[str, ManifestEntry]:
             filename = (row.get("filename") or "").strip()
             if not filename:
                 continue
+            if filename in out:
+                # basename-keyed resolution would silently last-wins otherwise.
+                raise ValueError(f"Raw manifest has duplicate filename: {filename}")
             no_raw = (row.get("no") or "").strip()
             size_raw = (row.get("drive_size_bytes") or "").strip()
             out[filename] = ManifestEntry(

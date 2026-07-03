@@ -93,7 +93,7 @@ which phases ran, their gate decisions, and their outputs.
 ## The cloud-data caveat (important)
 
 The 79 raw inputs live in a **Google Drive folder (cloud-only by default)**. The pipeline runs on
-real data once that archive is synced/copied to a local folder — Phases 00–02 have been run
+real data once that archive is synced/copied to a local folder — Phases 00–03 have been run
 end-to-end against a local copy (gates GO). The design keeps the data decoupled from the code:
 
 - The raw archive path is a config value (`config/project.yaml → paths.raw_root`); nothing is
@@ -129,24 +129,26 @@ filenames breach the 260-char `MAX_PATH` limit, and they would bloat the working
 **short path outside the repo** via `BUDUUNKHAD_OUTPUT_ROOT` (e.g. `C:\bk\out`). The committed
 default `outputs/` is only for dry-runs/tests, or when Windows long paths are enabled. Run logs
 and `run_manifest.json` land under `runs/` (also git-ignored). Because the real Drive path is
-very deep, point `raw_root` at a short path too — e.g. a junction:
-`cmd /c mklink /J C:\bk\raw "G:\…\0. Raw Data"`. Final *deliverables* can be published to the
+very deep, point `raw_root` at a short path too. Prefer a **real local copy** (e.g.
+`robocopy "G:\…\0. Raw Data" C:\bk\rawdata /E`) over a Drive-for-Desktop junction: the
+virtual filesystem can under-enumerate files under `rglob`, so a run may see only some
+inputs. Final *deliverables* can be published to the
 project Google Drive separately so teammates can see them:
 
 ```powershell
 # Publish ONLY the deliverables (not the 1.8 GiB raw working copies) to a Drive folder:
 $env:BUDUUNKHAD_OUTPUT_ROOT  = "C:\bk\out"
 $env:BUDUUNKHAD_PUBLISH_ROOT = "G:\My Drive\Buduunkhad_Deliverables"   # a Drive-for-Desktop folder
-buduunkhad publish --label v0.2.0
+buduunkhad publish --label v0.3.1
 ```
 
 This copies the GIS layers, registers, logs and reports into a versioned `PhaseNN/` folder with
 an `INDEX.md` + the run manifest; raw working copies are excluded. Then **share that folder in
 Google Drive** to give teammates access (Drive for Desktop uploads it automatically).
 
-> The filenames in `config/input_register.csv` were seeded from the methodology PDF and should
-> be reconciled against the real archive once synced — the register is plain editable config,
-> and `buduunkhad validate` reports any mismatches.
+> The `config/input_register.csv` filenames were reconciled against the real archive on
+> 2026-06-30 (see `REGISTER_RECONCILIATION.md`): validated with 0 edits. The register is plain
+> editable config, and `buduunkhad validate` reports any manifest mismatches.
 
 ## Run-start safety checks (real runs)
 
@@ -177,7 +179,7 @@ Otherwise keep `paths.output_root` shallow (e.g. `C:\bk\outputs`). `core.winpath
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs ruff (lint + format), mypy and pytest on Python 3.11 and 3.12.
+`.github/workflows/ci.yml` runs ruff (lint + format), mypy, pyright and pytest on Python 3.11 and 3.12.
 
 ## Layout
 
@@ -200,6 +202,7 @@ pytest          # tests on synthetic fixtures
 ruff check .    # lint
 ruff format .   # format
 mypy            # type-check (src/)
+pyright         # type-check (CI gate); or: npx pyright --pythonpath .venv/Scripts/python.exe
 pre-commit install && pre-commit run --all-files
 ```
 

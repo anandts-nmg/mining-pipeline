@@ -79,6 +79,15 @@ EVIDENCE_LAYERS: list[tuple[str, str, str]] = [
 # The layer the validated #68 mineralized points are ingested into.
 _MINERALIZED_LAYER = "mineralized_points_point"
 
+# Column aliases used to map the #68 register's source attributes into the occurrence registers.
+# Includes the real Mongolian headers (Цэгийн дугаар = point id, Агуулга/элемент = content/element)
+# alongside English fallbacks; matched case-insensitively. Coordinate columns are consumed by the
+# geometry, and everything not otherwise mapped is preserved verbatim in the cross-reference note.
+_OCC_NAME_KEYS = ("цэгийн дугаар", "occurrence_name", "occurrence", "name", "point", "цэг", "id")
+_OCC_COMMODITY_KEYS = ("агуулга / элемент", "commodity", "element", "агуулга", "элемент", "mineral")
+_OCC_LON_KEYS = ("уртраг", "lon", "long", "longitude", "x", "easting", "east")
+_OCC_LAT_KEYS = ("өргөрөг", "lat", "latitude", "y", "northing", "north")
+
 # 6 candidate deposit models (03A) pre-seeded into the evidence table.
 DEPOSIT_MODELS: list[tuple[str, str]] = [
     ("Au-Cu hydrothermal vein", "High / Moderate / Low"),
@@ -239,6 +248,9 @@ class Phase03GeologySynthesis(Phase):
     _notes: list[str]
     _buffer_ok: bool
     _templates: list[Path]
+    _occurrence_rows: list[dict[str, object]]
+    _coord_qaqc_rows: list[dict[str, object]]
+    _xref_rows: list[dict[str, object]]
 
     def __init__(self) -> None:
         self._evidence_layers = []
@@ -248,6 +260,9 @@ class Phase03GeologySynthesis(Phase):
         self._notes = []
         self._buffer_ok = False
         self._templates = []
+        self._occurrence_rows = []
+        self._coord_qaqc_rows = []
+        self._xref_rows = []
 
     # ------------------------------------------------------------------ #
 
@@ -255,9 +270,18 @@ class Phase03GeologySynthesis(Phase):
         pdir = ctx.phase_dir(self.id)
         result = PhaseResult(self.id, status="dry-run" if ctx.dry_run else "ok")
 
-        # ---- templates / registers / schema (dry-run AND real run) ----
-        self._emit_templates(ctx, pdir, result)
+        # The evidence GPKG schema is created first (the #68 ingest appends into it). On a real run
+        # we ingest #68 BEFORE emitting the registers so the occurrence registers are populated
+        # from the ingested points rather than shipped as empty templates (dry-run keeps them empty).
         evidence_path = self._emit_evidence_schema(ctx, pdir, result)
+
+        if not ctx.dry_run:
+            self._build_cmcs_buffer(ctx, pdir, evidence_path, result)
+            self._ingest_mineralized_points(ctx, pdir, evidence_path, result)
+            self._ingest_human_layers(ctx, evidence_path)
+
+        # ---- templates / registers (dry-run AND real run; occurrence registers now populated) ----
+        self._emit_templates(ctx, pdir, result)
 
         if ctx.dry_run:
             self._notes.append("dry-run: templates + empty 17-layer evidence GPKG schema only")
@@ -268,10 +292,6 @@ class Phase03GeologySynthesis(Phase):
             self._write_qaqc_log(ctx, pdir, result)
             return result
 
-        # ---- real run: buffer, ingest #68, populate evidence GPKG, ingest human layers ----
-        self._build_cmcs_buffer(ctx, pdir, evidence_path, result)
-        self._ingest_mineralized_points(ctx, pdir, evidence_path, result)
-        self._ingest_human_layers(ctx, evidence_path)
         self._write_qaqc_log(ctx, pdir, result)
         result.log(
             f"CMCS rings={self._cmcs_rings}; mineralized points ingested={self._mineralized_points}; "
@@ -372,20 +392,23 @@ class Phase03GeologySynthesis(Phase):
             self._notes.append("#68 mineralized-point XLSX not in register; skipped")
             return
         wc = ctx.phase_dir("00") / rec.evidence_group / rec.filename
-        gdf = vector_io.xlsx_points_to_gdf(
+        raw_gdf = vector_io.xlsx_points_to_gdf(
             wc,
             source_epsg=cfg.crs.source_geographic_epsg,
             target_epsg=cfg.target_epsg,
         )
-        if gdf is None:
+        if raw_gdf is None:
             self._notes.append(
                 f"#68 XLSX ingest skipped (missing working copy or no detectable coordinate "
                 f"columns): {rec.filename}"
             )
             return
 
+        # The evidence GPKG keeps its fixed 14-column shared schema (geometry-only in), but the
+        # #68 source attributes (occurrence id, commodity, rock, mineralization, ...) are preserved
+        # into the occurrence registers rather than discarded.
         gdf = self._prepare_evidence_gdf(
-            gdf[["geometry"]].copy(),
+            raw_gdf[[raw_gdf.geometry.name]].copy(),
             _MINERALIZED_LAYER,
             target_epsg=cfg.target_epsg,
             input_no=str(rec.no),
@@ -395,6 +418,7 @@ class Phase03GeologySynthesis(Phase):
             source_group=rec.evidence_group,
         )
         self._mineralized_points = len(gdf)
+        self._build_occurrence_rows(raw_gdf, gdf, rec)
 
         validated_name = naming.data_name(
             cfg.data_prefix,
@@ -407,6 +431,88 @@ class Phase03GeologySynthesis(Phase):
         vector_io.write_layer(gdf, validated_path, layer="Validated_Historical_Occurrence_Points")
         result.add_output(validated_path)
         vector_io.write_layer(gdf, evidence_path, layer=_MINERALIZED_LAYER, mode="a")
+
+    def _build_occurrence_rows(self, raw_gdf, evidence_gdf, rec) -> None:  # type: ignore[no-untyped-def]
+        """Map #68 source attributes into the occurrence/coordinate/cross-reference register rows.
+
+        The minted feature ids and reprojected coordinates come from ``evidence_gdf`` (positionally
+        aligned with ``raw_gdf``); ``occurrence_name`` and ``commodity`` are picked from the source
+        columns by alias, and every remaining source column is preserved verbatim in the
+        cross-reference note so nothing from #68 is lost.
+        """
+        lower = {str(c).strip().lower(): c for c in raw_gdf.columns}
+
+        def pick(keys: tuple[str, ...]) -> str | None:
+            return next((lower[k] for k in keys if k in lower), None)
+
+        name_col = pick(_OCC_NAME_KEYS)
+        commodity_col = pick(_OCC_COMMODITY_KEYS)
+        lon_col, lat_col = pick(_OCC_LON_KEYS), pick(_OCC_LAT_KEYS)
+        consumed = {c for c in (name_col, commodity_col, lon_col, lat_col) if c}
+        consumed.add(raw_gdf.geometry.name)
+        extra_cols = [c for c in raw_gdf.columns if c not in consumed and str(c).strip() != "№"]
+
+        feature_ids = list(evidence_gdf["feature_id"])
+        reps = evidence_gdf.geometry.representative_point()
+        xs, ys = list(reps.x), list(reps.y)
+        raw = raw_gdf.reset_index(drop=True)
+
+        def cell(row, col: str | None) -> str:  # type: ignore[no-untyped-def]
+            if not col:
+                return ""
+            val = row[col]
+            text = "" if val is None else str(val).strip()
+            return "" if text.lower() == "nan" else text
+
+        occ, coord, xref = [], [], []
+        for i, fid in enumerate(feature_ids):
+            row = raw.iloc[i]
+            east, north = round(xs[i], 2), round(ys[i], 2)
+            commodity = cell(row, commodity_col)
+            extras = "; ".join(f"{c}={cell(row, c)}" for c in extra_cols if cell(row, c))
+            occ.append(
+                {
+                    "feature_id": fid,
+                    "occurrence_name": cell(row, name_col),
+                    "commodity": commodity,
+                    "easting_32647": east,
+                    "northing_32647": north,
+                    "source_scale": "1:50k",
+                    "source_raw_input_no": rec.no,
+                    "source_raw_filename": rec.filename,
+                    "validation_status": HISTORICAL_VALIDATION,
+                    "confidence": "Needs verification",
+                    "limitation": HISTORICAL_LIMITATION,
+                    "reviewer": "",
+                }
+            )
+            raw_ll = f"{cell(row, lon_col)}, {cell(row, lat_col)}" if (lon_col and lat_col) else ""
+            coord.append(
+                {
+                    "feature_id": fid,
+                    "raw_lon_lat_or_xy": raw_ll,
+                    "detected_crs": "geographic (WGS84) -> reprojected",
+                    "reprojected_epsg32647": f"{east}, {north}",
+                    "in_license_or_buffer": "",
+                    "duplicate_check": "",
+                    "decision": "Pass",
+                    "note": "Auto-ingested from #68; verify against #66 text / #67 register.",
+                }
+            )
+            xref.append(
+                {
+                    "feature_id": fid,
+                    "in_66_text": "",
+                    "in_67_register": "",
+                    "in_68_xlsx": "yes",
+                    "coordinate_match": "",
+                    "commodity_code": commodity,
+                    "duplicate_flag": "",
+                    "confidence_flag": "",
+                    "note": extras,
+                }
+            )
+        self._occurrence_rows, self._coord_qaqc_rows, self._xref_rows = occ, coord, xref
 
     # ------------------------------------------------------------------ #
     # Step 8 — ingest any human-digitized layers found in the phase folders
@@ -595,7 +701,7 @@ class Phase03GeologySynthesis(Phase):
             (
                 pdir / "05_Local_Geology_Occurrence_1M50K" / reg("Mineral_Occurrences_Register"),
                 _OCCURRENCE_REGISTER_COLUMNS,
-                [],
+                self._occurrence_rows,
                 "Mineral Occurrences",
             ),
             (
@@ -603,7 +709,7 @@ class Phase03GeologySynthesis(Phase):
                 / "07_Occurrence_Register_and_Coordinate_QAQC"
                 / reg("Occurrence_CrossReference"),
                 _OCCURRENCE_XREF_COLUMNS,
-                [],
+                self._xref_rows,
                 "Occurrence XRef",
             ),
             (
@@ -611,7 +717,7 @@ class Phase03GeologySynthesis(Phase):
                 / "07_Occurrence_Register_and_Coordinate_QAQC"
                 / reg("Occurrence_Coordinate_QAQC_Log"),
                 _COORDINATE_QAQC_COLUMNS,
-                [],
+                self._coord_qaqc_rows,
                 "Coordinate QAQC",
             ),
             (
@@ -662,8 +768,12 @@ class Phase03GeologySynthesis(Phase):
         result.add_output(docx_path)
         self._templates.append(docx_path)
 
-        # method note (guide framing + BUD- scheme + evidence rule)
-        note_path = pdir / "01_Input_Working_Copy" / f"{cfg.register_prefix}_Phase3_Method_Note.md"
+        # method note (guide framing + BUD- scheme + evidence rule). Written into the handover
+        # folder (NOT 01_Input_Working_Copy, which publish excludes as a working-copy dir) so the
+        # note ships in the published deliverable package.
+        note_path = (
+            pdir / "12_Phase3_QAQC_and_Handover" / f"{cfg.register_prefix}_Phase3_Method_Note.md"
+        )
         note_path.parent.mkdir(parents=True, exist_ok=True)
         note_path.write_text(_PHASE3_NOTE, encoding="utf-8")
         result.add_output(note_path)

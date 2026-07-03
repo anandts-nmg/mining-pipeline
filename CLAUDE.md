@@ -98,9 +98,10 @@ missing files. Dry runs skip that check. Build and test against synthetic fixtur
 
 ## Working style
 
-- Match surrounding code; keep functions small and typed. Run `ruff` + `mypy` + `pytest`
-  before declaring done.
+- Match surrounding code; keep functions small and typed. Run `ruff` + `mypy` + `pyright`
+  + `pytest` before declaring done (all four are CI gates). If `pyright` is not in the venv,
+  run `npx pyright --pythonpath .venv/Scripts/python.exe`.
 - When unsure about a phase's exact inputs/outputs/QA-QC, follow the methodology document,
   not assumptions.
-- Filenames in `config/input_register.csv` were seeded from the methodology PDF and should
-  be reconciled against the real archive once it is synced (the register is editable config).
+- The `config/input_register.csv` filenames were reconciled against the real archive on
+  2026-06-30 (see `REGISTER_RECONCILIATION.md`): validated, 0 edits. It remains editable config.

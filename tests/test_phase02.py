@@ -87,6 +87,48 @@ def test_phase02_real_run(raw_archive):
     assert decision.status is GateStatus.GO, decision.reason
 
 
+def test_phase02_sentinel_clip_margins_flagged_nodata(raw_archive):
+    """#74/#77 Sentinel composites have no source nodata; the licence clip must flag margins
+    with a nodata value (not leave them as valid 0.0). Regression for the v0.3.1 fix."""
+    import numpy as np
+    from rasterio.transform import from_origin
+
+    config, register, _raw = raw_archive
+    ctx = _ctx(config, register)
+    Phase00Archive().run(ctx)
+    p1 = Phase01DataAudit()
+    p1.prepare(ctx)
+    p1.run(ctx)
+
+    # overwrite the #74/#77 working copies with float32 rasters that declare NO nodata
+    for no in (74, 77):
+        rec = ctx.record_by_no(no)
+        wc = paths.phase_dir(config.output_root, "00") / rec.evidence_group / rec.filename
+        wc.parent.mkdir(parents=True, exist_ok=True)
+        profile = {
+            "driver": "GTiff",
+            "height": 24,
+            "width": 24,
+            "count": 1,
+            "dtype": "float32",
+            "crs": "EPSG:4326",
+            "transform": from_origin(96.35, 45.65, 0.01, 0.01),
+        }
+        with rasterio.open(wc, "w", **profile) as ds:
+            ds.write(np.zeros((24, 24), dtype="float32"), 1)
+
+    phase = Phase02RemoteSensing()
+    phase.prepare(ctx)
+    phase.run(ctx)
+
+    out_by_no = {r["no"]: r.get("output", "") for r in phase._rows}
+    for no in (74, 77):
+        matches = [p for p in phase._outputs if p.name == out_by_no.get(no)]
+        assert matches, f"no export produced for Sentinel #{no}"
+        with rasterio.open(matches[0]) as ds:
+            assert ds.nodata == -9999.0, f"Sentinel #{no} clip margin not flagged nodata"
+
+
 def test_phase02_dry_run(project):
     config, register, _tmp = project
     ctx = _ctx(config, register, dry_run=True)

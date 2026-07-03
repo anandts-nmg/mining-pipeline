@@ -9,7 +9,8 @@
 The exploration data lives in a Google Drive mine-lifecycle workspace, ~700 GB total and
 growing daily. Inspection (metadata-only) established:
 
-- The **canonical 78-input raw archive** (`0. Raw Data`) is only **~1.8 GiB** — it fits locally.
+- The **canonical raw archive** (`0. Raw Data`, 79 inputs = 78 methodology + the reconciled SAS
+  hand-interpreted 1:25k scan) is only **~1.8 GiB** — it fits locally.
 - The **700 GB is the drone survey** (`5. Drone`, daily LiDAR/orthophoto flights) = methodology
   **Phase 05**, irrelevant to Phases 00–04.
 - The wider drive has heavy **duplication** and even **other licences** (XV-022905, L08718) and a

@@ -41,7 +41,11 @@ Buduun khad/
 ```
 (The 6 non-acquisition Exploration-Stage folders were mapped at the top level only.)
 
-## Canonical size census (78 files present in `0. Raw Data`; the EULA #23 is absent)
+## Canonical size census (78 registered inputs present in `0. Raw Data`; the EULA #23 is absent)
+
+> On-disk the archive holds **79 physical files**: the #61 metallogenic scheme is byte-duplicated
+> across folders `05` and `07` (counted once below, pinned to folder 07). See
+> `REGISTER_RECONCILIATION.md`.
 
 | Theme | Files | Size |
 |---|--:|--:|
@@ -69,14 +73,15 @@ Google basemaps 185 MB (0.15 m) + 105 MB (2.4 m). Everything else is small scans
 | 02_DEM_ALOS_ASTERGDEM (14) | `10_DEM_Topography_and_Terrain` (14) |
 | 03_KOMPSAT2_MSC_L1G (24) | `09…/9.4 Kompsat2` (23) — **EULA pdf absent** |
 | 04_HeavyMineral_StreamSediment_Field (6) | `06_Geochemistry…` (4) + `08_Field_Observation…` (2) |
-| 05_Geology_Mineral_Prospectivity (16) | `02_Regional_Geology` + `03_Detailed_Geology` + `04_Mineral_Occurrences` + `07_Metallogeny_Prospectivity` |
+| 05_Geology_Mineral_Prospectivity (17) | `02_Regional_Geology` + `03_Detailed_Geology` + `04_Mineral_Occurrences` + `07_Metallogeny_Prospectivity` (incl. the SAS #79 scan) |
 | 06_Regional_Metallogenic_L47B (4) | `05_Regional_Metallogeny` (4) |
 | 07_Basemap_Sentinel2_ASTER (6) | `09…/9.1 Aster (2) + 9.2 Sentinel (2) + 9.3 Google (2)` |
 
 ## Reconciliation results (see `config/raw_manifest.csv`)
 
 - The register holds **79 inputs**; **78 of 79 are present** in `0. Raw Data` and matched to a
-  canonical Drive file ID, **size-verified (0 mismatches)**.
+  canonical Drive file ID, **size-verified (0 mismatches** — re-verified 2026-07-03 after the
+  #56 manifest size pin was corrected back to 1,898,113 B; see `REGISTER_RECONCILIATION.md`**)**.
 - **1 missing:** `#23 KOMPSATEULAForm_3.1.pdf` (KOMPSAT licence/EULA — provenance only). Recorded
   as an **acknowledged data gap** — it is logged and flows to the data-gap register, and does
   **not** block the run.

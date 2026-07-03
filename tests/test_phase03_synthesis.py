@@ -242,6 +242,82 @@ def test_phase03_xlsx_ingest_mongolian_dms(raw_archive):
     assert (coords["x"].abs() < 1e7).all() and (coords["y"].abs() < 1e7).all()
 
 
+def test_phase03_occurrence_register_populated_from_68(raw_archive):
+    """#68 source attributes are preserved into the occurrence registers (not discarded): the
+    Mineral_Occurrences_Register carries name/commodity/coords, and unmapped columns (e.g. rock)
+    survive in the cross-reference note."""
+    import openpyxl as pyxl
+
+    config, register, _raw = raw_archive
+    ctx = _ctx(config, register)
+    Phase00Archive().run(ctx)
+    p1 = Phase01DataAudit()
+    p1.prepare(ctx)
+    p1.run(ctx)
+
+    rec = ctx.record_by_no(68)
+    wc = paths.phase_dir(config.output_root, "00") / rec.evidence_group / rec.filename
+    wc.parent.mkdir(parents=True, exist_ok=True)
+    wb = pyxl.Workbook()
+    ws = wb.active
+    assert ws is not None
+    ws.append(["name", "commodity", "lon", "lat", "rock"])
+    ws.append(["OccA", "Au", 96.50, 45.50, "granite"])
+    ws.append(["OccB", "Cu", 96.55, 45.52, "diorite"])
+    wb.save(wc)
+
+    phase = Phase03GeologySynthesis()
+    phase.prepare(ctx)
+    phase.run(ctx)
+
+    pdir = paths.phase_dir(config.output_root, "03")
+    reg_files = list(
+        (pdir / "05_Local_Geology_Occurrence_1M50K").glob("*Mineral_Occurrences_Register*.xlsx")
+    )
+    assert reg_files, "occurrence register not emitted"
+    ws2 = openpyxl.load_workbook(reg_files[0]).active
+    assert ws2 is not None
+    rows = list(ws2.iter_rows(values_only=True))
+    header, data = rows[0], rows[1:]
+    assert len(data) == 2, "occurrence register should carry the 2 ingested #68 points"
+    by_name = {r[header.index("occurrence_name")]: r for r in data}
+    assert set(by_name) == {"OccA", "OccB"}
+    assert by_name["OccA"][header.index("commodity")] == "Au"
+    assert int(str(by_name["OccA"][header.index("source_raw_input_no")])) == 68
+    assert by_name["OccA"][header.index("validation_status")] == "Historical only"
+    # eastings are metre-scale UTM, not lon/lat degrees
+    assert float(str(by_name["OccA"][header.index("easting_32647")])) > 1000
+
+    # the unmapped 'rock' column is preserved verbatim in the cross-reference note
+    xref_files = list(
+        (pdir / "07_Occurrence_Register_and_Coordinate_QAQC").glob(
+            "*Occurrence_CrossReference*.xlsx"
+        )
+    )
+    assert xref_files
+    wsx = openpyxl.load_workbook(xref_files[0]).active
+    assert wsx is not None
+    xrows = list(wsx.iter_rows(values_only=True))
+    xheader, xdata = xrows[0], xrows[1:]
+    notes = " ".join(str(r[xheader.index("note")]) for r in xdata)
+    assert "rock=granite" in notes and "rock=diorite" in notes
+    assert all(r[xheader.index("in_68_xlsx")] == "yes" for r in xdata)
+
+
+def test_phase03_method_note_published_location(raw_archive):
+    """The Phase 3 method note is written into the handover folder (not the publish-excluded
+    01_Input_Working_Copy) so it ships in the deliverable package."""
+    from buduunkhad.core.publish import collect_deliverables
+
+    config, register, _raw = raw_archive
+    _ctx_, _phase, _result = _run_real(config, register)
+    pdir = paths.phase_dir(config.output_root, "03")
+    note_name = f"{config.register_prefix}_Phase3_Method_Note.md"
+    assert (pdir / "12_Phase3_QAQC_and_Handover" / note_name).exists()
+    assert not (pdir / "01_Input_Working_Copy" / note_name).exists()
+    assert note_name in {p.name for p in collect_deliverables(config.output_root)}
+
+
 def test_phase03_ingest_human_layer(raw_archive):
     """A human-digitized layer dropped into a phase folder is ingested into the evidence GPKG."""
     import geopandas as gpd

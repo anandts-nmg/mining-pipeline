@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from buduunkhad.core.publish import collect_deliverables, publish
+import pytest
+
+from buduunkhad.core.publish import PublishError, collect_deliverables, publish
 
 
 def _make_output(root: Path) -> None:
@@ -74,3 +76,25 @@ def test_publish_copies_versioned_with_index(tmp_path):
     assert (
         result.dest / "Phase03" / "XV023222_Buduunkhad_Geological_Evidence_Layers_v01.gpkg"
     ).exists()
+
+
+def test_publish_refuses_existing_nonempty_label(tmp_path):
+    out = tmp_path / "out"
+    out.mkdir()
+    _make_output(out)
+    drive = tmp_path / "drive"
+    publish(out, drive, "v1")
+    # re-publishing the same label would silently merge/overwrite -> must refuse
+    with pytest.raises(PublishError):
+        publish(out, drive, "v1")
+
+
+def test_publish_detects_name_collision(tmp_path):
+    out = tmp_path / "out"
+    # two distinct files under the same phase prefix with the same basename -> flatten collision
+    (out / "01_a").mkdir(parents=True)
+    (out / "01_a" / "dup.gpkg").write_bytes(b"SQLite format 3\x00a")
+    (out / "01_b").mkdir(parents=True)
+    (out / "01_b" / "dup.gpkg").write_bytes(b"SQLite format 3\x00b")
+    with pytest.raises(PublishError):
+        publish(out, tmp_path / "drive", "v1")

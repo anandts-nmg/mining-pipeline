@@ -35,6 +35,62 @@ def test_select_phases_range_and_only():
         select_phases(reg, from_="05", to="02")
 
 
+def test_only_ignores_empty_trailing_token():
+    # A trailing comma in --only yields an empty id; it must be dropped, NOT resolved to Phase 00.
+    reg = build_registry()
+    assert [p.id for p in select_phases(reg, only=["02", ""])] == ["02"]
+    # an all-empty selection is a hard error rather than a silent no-op
+    with pytest.raises(ValueError):
+        select_phases(reg, only=[""])
+
+
+def test_unknown_from_to_raises():
+    reg = build_registry()
+    with pytest.raises(ValueError):
+        select_phases(reg, from_="77")
+    with pytest.raises(ValueError):
+        select_phases(reg, to="88")
+
+
+def test_bad_selection_creates_no_run_dir(project):
+    # An invalid selection must fail before the run dir/logger are created (no orphan dir).
+    config, register, _tmp = project
+    with pytest.raises(ValueError):
+        run_pipeline(config, register, only=["77"], dry_run=True)
+    assert not list(config.runs_root.glob("*")), "orphan run dir created on bad selection"
+
+
+def test_manifest_written_on_startup_abort(project):
+    # A real run with no data aborts, but must still leave a machine-readable manifest.
+    import json as _json
+
+    config, register, _tmp = project  # raw_root empty
+    with pytest.raises(MissingRawDataError):
+        run_pipeline(config, register, only=["00"], dry_run=False)
+    manifests = list(config.runs_root.glob("*/run_manifest.json"))
+    assert manifests, "no run_manifest.json written on aborted run"
+    data = _json.loads(manifests[-1].read_text(encoding="utf-8"))
+    assert data["error"], "startup error not recorded in manifest"
+
+
+def test_gate_provisional_on_pending():
+    report = new_report("03", "Test")
+    report.add("done", "ok", decision=Decision.PASS)
+    report.add("todo", "human completes", decision=Decision.PENDING)
+    decision = evaluate_gate(report)
+    assert decision.status is GateStatus.GO
+    assert decision.provisional
+    assert "PENDING" in decision.reason
+
+
+def test_gate_not_provisional_when_all_pass():
+    report = new_report("00", "Test")
+    report.add("done", "ok", decision=Decision.PASS)
+    decision = evaluate_gate(report)
+    assert decision.status is GateStatus.GO
+    assert not decision.provisional
+
+
 def test_dry_run_builds_full_tree_and_manifest(project):
     config, register, _tmp = project
     manifest = run_pipeline(config, register, dry_run=True)

@@ -21,13 +21,14 @@ from buduunkhad.pipeline import (
     PHASE_CLASSES,
     MissingRawDataError,
     PathTooLongError,
+    SelectionError,
     load_project,
     run_pipeline,
     validate_raw_inputs,
 )
 
 # Run-start failures that should surface as a clean red message + non-zero exit.
-_RUN_ERRORS = (MissingRawDataError, PathTooLongError, RawIntegrityError)
+_RUN_ERRORS = (MissingRawDataError, PathTooLongError, RawIntegrityError, SelectionError)
 
 app = typer.Typer(
     add_completion=False,
@@ -45,8 +46,12 @@ def _echo_manifest(manifest) -> None:  # type: ignore[no-untyped-def]
     typer.echo("-" * 72)
     for p in manifest.phases:
         gate = p.gate_status or "-"
-        line = f"  {p.phase_id}  {p.status:<16} gate={gate:<8} {p.name}"
+        if p.gate_provisional:
+            gate = f"{gate} (provisional)"
+        line = f"  {p.phase_id}  {p.status:<16} gate={gate:<20} {p.name}"
         typer.echo(line)
+        if p.gate_provisional and p.gate_reason:
+            typer.echo(f"        · {p.gate_reason}")
         if p.error:
             typer.echo(f"        ! {p.error}")
     for w in manifest.warnings:
@@ -103,12 +108,33 @@ def validate(config: Path = _CONFIG_OPT) -> None:
     if not missing:
         typer.secho(f"OK: all {len(register)} raw inputs present under {cfg.raw_root}", fg="green")
         raise typer.Exit(0)
+
+    # Partition into acknowledged gaps (manifest-flagged absent, e.g. #23 EULA) vs unexpected
+    # ones, mirroring run_pipeline: acknowledged -> yellow + exit 0; unexpected -> red + exit 1.
+    acknowledged: set[str] = set()
+    if cfg.manifest_path and cfg.manifest_path.exists():
+        from buduunkhad.core.ingest import acknowledged_absent, load_manifest
+
+        acknowledged = acknowledged_absent(load_manifest(cfg.manifest_path))
+    ack = [m for m in missing if m in acknowledged]
+    unexpected = [m for m in missing if m not in acknowledged]
+
+    if ack:
+        typer.secho(f"{len(ack)} acknowledged data gap(s) (manifest-flagged absent):", fg="yellow")
+        for name in ack:
+            typer.echo(f"  ~ {name}")
+    if unexpected:
+        typer.secho(
+            f"MISSING {len(unexpected)} / {len(register)} raw inputs under {cfg.raw_root}:",
+            fg="red",
+        )
+        for name in unexpected:
+            typer.echo(f"  - {name}")
+        raise typer.Exit(1)
     typer.secho(
-        f"MISSING {len(missing)} / {len(register)} raw inputs under {cfg.raw_root}:", fg="red"
+        f"OK: all raw inputs present or acknowledged-absent under {cfg.raw_root}", fg="green"
     )
-    for name in missing:
-        typer.echo(f"  - {name}")
-    raise typer.Exit(1)
+    raise typer.Exit(0)
 
 
 @app.command("publish")
@@ -133,10 +159,15 @@ def publish_deliverables(
             fg="red",
         )
         raise typer.Exit(2)
+    from buduunkhad.core.publish import PublishError
     from buduunkhad.core.publish import publish as do_publish
 
     label = label or datetime.now().strftime("%Y%m%dT%H%M%S")
-    result = do_publish(cfg.output_root, Path(publish_root), label, runs_root=cfg.runs_root)
+    try:
+        result = do_publish(cfg.output_root, Path(publish_root), label, runs_root=cfg.runs_root)
+    except PublishError as exc:
+        typer.secho(str(exc), fg="red")
+        raise typer.Exit(2) from exc
     typer.secho(f"Published {len(result.files)} deliverable(s) to:", fg="green")
     typer.echo(f"  {result.dest}")
     typer.echo(f"  (skipped {result.skipped_working_copies} raw working-copy file(s) by design)")
@@ -158,7 +189,7 @@ def run(
 ) -> None:
     """Run the pipeline over the selected phases."""
     cfg, register = load_project(config)
-    only_list = [s.strip() for s in only.split(",")] if only else None
+    only_list = [s.strip() for s in only.split(",") if s.strip()] if only else None
     try:
         manifest = run_pipeline(
             cfg, register, from_=from_, to=to, only=only_list, dry_run=dry_run, override=override

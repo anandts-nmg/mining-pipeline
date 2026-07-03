@@ -39,7 +39,7 @@ reorganization warranted.
 
 | # | Item | Finding | Severity | Action |
 |---|---|---|---|---|
-| 1 | **#56 size mismatch** | `raw_manifest` pins 1,898,113 B; on disk 2,281,723 B (same size as #53). **SHA-256 proves #56 ≠ #53** (`6e6e…` vs `b689…`) → **not a content swap**, just a coincidental size. | Low | Update `raw_manifest.csv` `#56 drive_size_bytes → 2281723` (stale pin). No register change. |
+| 1 | **#56 size (CORRECTED 2026-07-03)** | The original `raw_manifest` pin **1,898,113 B was correct** — it matches the on-disk file, the live Drive file, and the Phase 00 SHA-256 baseline (all `6e6eb583…`). The 2026-06-30 "stale pin" fix (commit `b17d3e2`) was itself an **error**: it changed the pin to `2,281,723` (which is **#53's** size), producing a false size mismatch in `buduunkhad validate`. A single SHA-256 cannot correspond to two sizes. | — | **Reverted** `#56 drive_size_bytes → 1898113`. No register change. |
 | 2 | **MUGZ500 #3–#6** | Confirmed **BMP** (magic `42 4d`) mislabelled `.jpg`; **SHA-256 confirms 4 distinct pages** (not copies). | Low | Treat as BMP on the **working copy** in Phase 03 (raw is read-only). Resolves the open ADR-0001 follow-up. |
 | 3 | **#23 KOMPSAT EULA** | Absent from the archive; `raw_manifest` already marks `MISSING_in_0_Raw_Data`. Master Register spells it with spaces (`KOMPSAT EULA Form_3.1.pdf`) vs the register's spaceless form. | Known gap | Keep the row; reconcile spacing **if/when** the file is synced. Procurement/sync item. |
 | 4 | **#61 Metallogenogram** | Byte-identical (7,759,874 B) in archive folders 05 **and** 07. Register correctly lists it **once** (group 05); manifest pins folder 07. | Low | No register change. Treat the folder-07 copy as canonical; note the redundant 05 copy. |
@@ -49,7 +49,7 @@ reorganization warranted.
 
 ```
 #53  1987_..._GeologicalMap_1-200000_..._raw-scan.jpg            b6895275ab73a155...  (2,281,723 B)
-#56  2013_..._GeologicalMap_Legend_1-50000_..._raw-scan.jpg      6e6eb583e76ae908...  (2,281,723 B)  -> DIFFERENT => no swap
+#56  2013_..._GeologicalMap_Legend_1-50000_..._raw-scan.jpg      6e6eb583e76ae908...  (1,898,113 B)  -> DIFFERENT hash AND size => no swap
 
 MUGZ500 ... Page11   2a290709b9a6a981...
 MUGZ500 ... Page08   9c05be414d4630c0...   } 4 distinct hashes => 4 distinct pages
@@ -60,6 +60,6 @@ MUGZ500 ... Page10   73fcd5484c18ad68...
 ## Recommendation
 
 - **No edits to `input_register.csv`** — it is validated against reality.
-- Applied: `raw_manifest.csv` `#56 drive_size_bytes` corrected to `2281723` (verified on disk; commit `b17d3e2`).
+- `raw_manifest.csv` `#56 drive_size_bytes` = **1898113** (the original, correct pin). Commit `b17d3e2` wrongly changed it to `2281723` (#53's size); reverted 2026-07-03 — `buduunkhad validate` now reports 0 size mismatches.
 - Phase 03 should read inputs #3–#6 as **BMP** on the working copy (extension says `.jpg`).
 - The remaining items (#23 EULA spacing, #61 canonical copy) resolve when the archive is fully synced/curated.

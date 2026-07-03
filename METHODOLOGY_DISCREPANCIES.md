@@ -1,13 +1,14 @@
 # Methodology Document Discrepancies — XV-023222 / Buduunkhad
 
 This note records where the methodology documents **disagree with each other**, focused on
-the phases the pipeline implements end-to-end (**Phase 00**, **Phase 01** and **Phase 02**).
-It also records what the code currently implements, for reference.
+the phases the pipeline implements end-to-end (**Phase 00**, **Phase 01**, **Phase 02** and
+**Phase 03**). It also records what the code currently implements, for reference.
 
 > Per `CLAUDE.md`, the **master methodology document is the ultimate source of truth.**
-> Where the sources conflict, the code follows the master. **The Phase 0–2 conflicts are now
-> resolved & implemented** — see "Resolutions" below (verified at tags `v0.1.0` / `v0.2.0` / `v0.2.1`);
-> only later-phase / documentation items (KOMPSAT EULA, BMP-as-`.jpg`) remain open.
+> Where the sources conflict, the code follows the master. **The Phase 0–3 conflicts are now
+> resolved & implemented** — see "Resolutions" below (verified at tags `v0.1.0` / `v0.2.0` /
+> `v0.2.1` / `v0.3.1`); only later-phase / documentation items (KOMPSAT EULA, BMP-as-`.jpg`)
+> remain open.
 
 ## Sources
 
@@ -28,7 +29,8 @@ vocabulary **High / Medium / Low / Needs verification**). The disagreements belo
 **15 explicitly-numbered conflicts** (Phase 00: 3 · Phase 01: 7 · Phase 02: 2 · Phase 03: 3), plus ~4
 doc-vs-reality reconciliations and 1 intra-document version drift. **All 15 are resolved (by decision)** —
 01-7 and 02-1 / H-1 were decided 2026-06-30; the Phase-03 items (03-1/2/3 + handoff H-4) were decided
-2026-07-01 during Phase-3 planning (`PHASE_03_PLAN.md`). Phase 03 module implementation is pending.
+2026-07-01 during Phase-3 planning (`PHASE_03_PLAN.md`). **Phase 03 is now implemented and run
+(v0.3.1).**
 
 | Group | Comparison | IDs | Resolved | Open |
 |---|---|---|---|---|
@@ -253,8 +255,8 @@ Feature-ID prefixes — `geology_units_50k→BUD-GEO50`, `…_200k→BUD-GEO200`
 `…_route→BUD-RTE`, `metallogenic_zones→BUD-MET`, `heavy_mineral_anomaly→BUD-HM-AN`,
 `stream_sediment_anomaly→BUD-SS-AN`, `data_gap_register→BUD-GAP` — generated via
 `concat('BUD-MIN-', lpad(@row_number,4,'0'))` (Appendix B); the guide names layers by filename only.
-**Resolved 2026-07-01 — adopt the `BUD-…` scheme as a `feature_id` column, alongside the guide's 14 mandatory
-provenance fields.** **Caveat:** the `BUD-STR-001` tokens elsewhere in the master are Phase-7/8 field **sample
+**Resolved 2026-07-01 — adopt the `BUD-…` scheme as a `feature_id` column, alongside the guide's 13 mandatory
+provenance fields (14 columns total).** **Caveat:** the `BUD-STR-001` tokens elsewhere in the master are Phase-7/8 field **sample
 IDs** (BUD-RC/CH/SOIL/STR/HM) — a different namespace, not these feature-ID prefixes. `BUD-HM-AN` / `BUD-SS-AN`
 are reserved for Phase-8/9 anomaly layers (not digitized in Phase 3).
 
@@ -369,23 +371,23 @@ authority (as Doc B was for Phase 1):
 | H-2 Sentinel 46N→47N | Reprojected in **Phase 2** (per Doc A). | `phase02` Sentinel path |
 
 **Net:** Phase 02 is master-faithful + follows the Phase-2 guides, and ran **go/go on the real
-data** — most recently `v0.2.1`, 00→02 end-to-end on the local archive.
+data** — most recently `v0.3.1`, 00→03 end-to-end on the local archive.
 
-### Phase 03 (planned — decided 2026-07-01; implementation pending)
+### Phase 03 (decided 2026-07-01; implemented + run — v0.3.1)
 
 Same rule — master = truth; the `docs/phase_03` guide honoured as the more-specific Phase-3 authority:
 
 | Discrepancy | What we chose for Phase 03 | Where |
 |---|---|---|
-| 03-1 folder tree (9 vs 12) | The guide's **12-folder** superset (adds input-working-copy; splits occurrence-QAQC / scoring / QAQC-handover) — superset of Doc A's 9. | `phase03 custom_subfolders` (planned) |
+| 03-1 folder tree (9 vs 12) | The guide's **12-folder** superset (adds input-working-copy; splits occurrence-QAQC / scoring / QAQC-handover) — superset of Doc A's 9. | `phase03 custom_subfolders` (implemented) |
 | 03-2 deposit-model folder | The guide's `10_Preliminary_Deposit_Model_03A` (= Doc A's `07_…_Preparation`). | `phase03` folder tree |
-| 03-3 feature-ID scheme | Adopt Doc A **Appendix A** `BUD-…` as a `feature_id` column + the guide's 14 provenance fields. | evidence-GPKG schema (planned) |
-| H-4 ASTER/KOMPSAT support gap | Non-blocking; recorded in the data-gap register (RS = 10/100 pts, not a required handover layer). | `Phase3_DataGap` register (planned) |
+| 03-3 feature-ID scheme | Adopt Doc A **Appendix A** `BUD-…` as a `feature_id` column + the guide's 13 provenance fields (14 columns). | evidence-GPKG schema (implemented) |
+| H-4 ASTER/KOMPSAT support gap | Non-blocking; recorded in the data-gap register (RS = 10/100 pts, not a required handover layer). | `Phase3_DataGap` register (implemented) |
 | georef straddle | Phase 03 owns the actual georeferencing of the geology/metallogenic scans; Phase 01 scaffolds the log. | `phase03` steps 3-5 |
 
-**Net:** Phase 03 is fully planned in `PHASE_03_PLAN.md` (ORCHESTRATE: scaffold 12 folders + templates + the
-17-layer evidence GPKG + #68 XLSX→points + CMCS buffer + human-layer ingest); module implementation is the
-next build.
+**Net:** Phase 03 is implemented per `PHASE_03_PLAN.md` (ORCHESTRATE: scaffold 12 folders + templates + the
+17-layer evidence GPKG + #68 XLSX→points with source attributes into the occurrence registers + CMCS buffer
++ human-layer ingest) and run end-to-end on the local archive (gate GO, 7 mineralized points ingested).
 
 ## Still open (later phases / documentation)
 
@@ -404,5 +406,5 @@ see `PHASE_03_PLAN.md`; the BMP-as-`.jpg` files get characterized when Phase 03 
 (`docs/phase_01`), the four Phase-2 guides (`docs/phase_02`) and the Phase-3 guide (`docs/phase_03`),
 against the `src/buduunkhad` + `config/` implementation (first drafted 2026-06-23, extended for Phase 02
 on 2026-06-26 and Phase 03 planning on 2026-07-01). Phase 0–1 resolutions verified at `v0.1.0`; Phase 02
-at `v0.2.0` / `v0.2.1`; Phase 03 decided-by-plan (`PHASE_03_PLAN.md`), implementation pending. The master
-methodology remains the stated source of truth per `CLAUDE.md`.*
+at `v0.2.0` / `v0.2.1`; Phase 03 implemented + run at `v0.3.1`. The master methodology remains the stated
+source of truth per `CLAUDE.md`.*

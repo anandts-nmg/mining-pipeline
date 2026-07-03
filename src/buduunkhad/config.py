@@ -227,11 +227,42 @@ def _validate_register(records: list[InputRecord]) -> None:
         missing = sorted(set(range(1, n + 1)) - set(numbers))
         dupes = sorted({x for x in numbers if numbers.count(x) > 1})
         raise ValueError(f"Register numbering broken (missing={missing}, duplicates={dupes})")
-    names = {r.filename for r in records}
+    filenames = [r.filename for r in records]
+    dup_names = sorted({f for f in filenames if filenames.count(f) > 1})
+    if dup_names:
+        # All raw resolution is basename-keyed, so a duplicate filename would silently alias two
+        # registered inputs to one physical file.
+        raise ValueError(f"Register has duplicate filename(s): {dup_names}")
+    names = set(filenames)
     for r in records:
         if r.is_sidecar and r.parent_file and r.parent_file not in names:
             raise ValueError(
                 f"Input #{r.no} sidecar '{r.filename}' references missing parent '{r.parent_file}'"
+            )
+
+
+def _validate_register_groups(records: list[InputRecord], groups: list[EvidenceGroup]) -> None:
+    """Cross-check the register's evidence-group names + per-group counts against project.yaml.
+
+    ``evidence_group`` is load-bearing (archive folder, working-copy resolution, support-vs-decision
+    role), so a typo'd or miscounted group must fail loudly rather than silently mis-classify.
+    """
+    from collections import Counter
+
+    counts = Counter(r.evidence_group for r in records)
+    declared = {g.name: g.count for g in groups}
+    reg_names, dec_names = set(counts), set(declared)
+    if reg_names != dec_names:
+        raise ValueError(
+            "Register evidence_group names do not match project.yaml "
+            f"(only-in-register={sorted(reg_names - dec_names)}, "
+            f"only-in-config={sorted(dec_names - reg_names)})"
+        )
+    for name, cnt in declared.items():
+        if counts[name] != cnt:
+            raise ValueError(
+                f"evidence_group '{name}' count mismatch: register has {counts[name]}, "
+                f"project.yaml declares {cnt}"
             )
 
 
@@ -249,4 +280,9 @@ def load_config(config_path: Path | str = "config/project.yaml") -> ProjectConfi
 
     base_dir = config_path.resolve().parent.parent
     data["base_dir"] = base_dir
-    return ProjectConfig.model_validate(data)
+    config = ProjectConfig.model_validate(data)
+    # When the register is present, cross-check its group names/counts against project.yaml so a
+    # divergence between the two editable config files fails loudly at load time.
+    if config.register_path.exists():
+        _validate_register_groups(load_register(config.register_path), config.evidence_groups)
+    return config

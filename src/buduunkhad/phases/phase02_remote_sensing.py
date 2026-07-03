@@ -80,6 +80,13 @@ _SUPPORT_NODATA_FALLBACK: dict[int, float] = {10: 255.0}
 # reconciliation: bands 4-8 are raw reflectance DN, not part of the lithology index.)
 _SENTINEL_BAND_SUBSET: dict[int, tuple[int, ...]] = {78: (1, 2, 3)}
 
+# The Sentinel composites (#74, #77) are float32 with NO source nodata, so clipping to the
+# (non-rectangular) licence boundary fills ~36% out-of-licence margin with 0.0 that then reads as
+# valid reflectance. Flag the margin with -9999.0 (far outside any reflectance/index/RGB range) so
+# it is recorded as nodata — same fix class as #10 above. #78 already carries its own source nodata
+# and is left untouched (no entry here -> .get() returns None -> source nodata preserved).
+_SENTINEL_NODATA_FALLBACK: dict[int, float] = {74: -9999.0, 77: -9999.0}
+
 # tokens stripped from a raw filename stem when building a clean output description
 _STRIP_TOKENS = re.compile(r"_(raw|received_?raw|v\d{2})$", re.IGNORECASE)
 
@@ -227,6 +234,7 @@ class Phase02RemoteSensing(Phase):
                         compress="DEFLATE",
                         categorical=False,
                         band_subset=_SENTINEL_BAND_SUBSET.get(rec.no),
+                        nodata_fallback=_SENTINEL_NODATA_FALLBACK.get(rec.no),
                     )
                 )
             elif rec.no in _BASEMAP_NOCLIP:

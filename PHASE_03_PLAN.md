@@ -26,7 +26,7 @@ runs the QA/QC + gate. Dry-run = templates + schema only (no raw data needed).
 |---|---|
 | **Doc A (master)** §03 (folder tree, inputs, expected outputs, CMCS step, gate) | Structure/schema authority; 9-folder tree; expected-output list |
 | **Doc A (master)** §03A (deposit-model sub-workflow) + **Appendix A/B** | 6 candidate models, 100-pt rubric, `BUD-…` Feature-ID standard, QGIS field-calculator expressions |
-| **Phase-3 guide** §03.2 (inputs), §03.3 (folder tree), §03.4 (steps 1–12), Decision gate | Per-step operator detail, the **12-folder** superset, the **17-layer GPKG**, the **14 mandatory fields**, the **6 exit conditions** |
+| **Phase-3 guide** §03.2 (inputs), §03.3 (folder tree), §03.4 (steps 1–12), Decision gate | Per-step operator detail, the **12-folder** superset, the **17-layer GPKG**, the **13 mandatory fields + `feature_id` (14 columns)**, the **6 exit conditions** |
 
 ## Locked decisions
 
@@ -37,7 +37,7 @@ runs the QA/QC + gate. Dry-run = templates + schema only (no raw data needed).
    folders, and merges Doc A's standalone "CMCS Screening" folder into the buffer + evidence folders.
    Follows the Phase-1/Phase-2 precedent (01-1, 02-2) of honouring the deep-dive's richer structure.
 2. **Feature IDs = adopt the master's Appendix A `BUD-…` scheme** as a `feature_id` column, **alongside** the
-   guide's 14 mandatory provenance fields (03-3). The guide names layers by filename only and omits any ID
+   guide's 13 mandatory provenance fields (03-3). The guide names layers by filename only and omits any ID
    convention; Doc A's Appendix A supplies it. Prefix per layer below.
 3. **Inputs = #1-8 + #53-72** (widen the current stub's `[1-7, 53-72]` to add #8 the licence boundary and
    #53-72 in full — both docs agree on this span; 03-4). The 03A sub-workflow additionally *pulls in* the
@@ -98,7 +98,7 @@ runs the QA/QC + gate. Dry-run = templates + schema only (no raw data needed).
 | 5 Local 1:50k | Emit empty GPKG layer schemas; **#68 XLSX → validated point layer** (clean, coordinate-validate, 4326→32647) | Georef #55, digitize lithology/contact/fault/vein/prospectivity/source-material vectors |
 | 6 Coordinate QA/QC | Emit `Occurrence_Coordinate_QAQC_Log` + `Occurrence_CrossReference` templates; run duplicate/CRS checks on ingested points | Reconcile #66/#67/#68, set confidence flags, commodity coding |
 | 7 CMCS buffer | **Build 5/10/20 km buffers off #8** → `CMCS_MRPAM_Buffer_..._EPSG32647.gpkg`; emit nearest-deposit register template stamped "Context only" | Populate register from CMCS/MRPAM; classify by distance/rank; make context map PDF |
-| 8 Evidence GPKG | **Build the 17-layer `Geological_Evidence_Layers_v01.gpkg`** with the 14 mandatory fields + `feature_id`; **ingest human-digitized layers** into it | Digitize the vector content (the pipeline provides the schema + ingests) |
+| 8 Evidence GPKG | **Build the 17-layer `Geological_Evidence_Layers_v01.gpkg`** with the 13 mandatory provenance fields + `feature_id` (= 14 columns); **ingest human-digitized layers** into it | Digitize the vector content (the pipeline provides the schema + ingests) |
 | 9 Deposit model 03A | Emit `Preliminary_Deposit_Model.docx` template + `preliminary_deposit_model_evidence_table.xlsx` (6 rows pre-seeded) | Write the deposit model; fill supporting/missing evidence, validation work, preliminary confidence |
 | 10 Scoring | Emit `deposit_model_candidate_score_matrix.xlsx` (8 criteria × 6 models, weighted) | Score each model, assign confidence class |
 | 11 QA/QC + data-gap | Emit `Phase3_QAQC_Log.xlsx` (9 acceptance items) + `Phase3_DataGap_and_Validation_Priority.xlsx` | Review, sign off (reviewer/date/decision) |
@@ -171,7 +171,7 @@ register.
 (Appendix A also defines `BUD-HM-AN` / `BUD-SS-AN` for heavy-mineral / stream-sediment anomaly polygons —
 **not digitized in Phase 3** (those are Phase 8/9 scope); the prefixes are reserved for those later layers.)
 
-### The 14 mandatory fields (on every layer) + `feature_id`
+### The 13 mandatory provenance fields + `feature_id` (14 columns, on every layer)
 
 Per guide §03.4 Step 8, plus the adopted `feature_id`:
 
@@ -252,7 +252,7 @@ richer tree). Implemented as `custom_subfolders` under Doc A's long folder name 
 content, different number/label. We use the guide's `10_Preliminary_Deposit_Model_03A`.
 
 **03-3 — Feature-ID scheme (Doc A has it, guide omits it).** **Resolved — adopt Doc A's Appendix A `BUD-…`
-scheme as a `feature_id` column, alongside the guide's 14 fields.** The guide names layers by filename only and
+scheme as a `feature_id` column, alongside the guide's 13 provenance fields (14 columns total).** The guide names layers by filename only and
 has no ID table; Doc A Appendix A defines `BUD-GEO50 / BUD-GEO200 / BUD-STR / BUD-MIN / BUD-TGT / BUD-OBS /
 BUD-RTE / BUD-MET / BUD-HM-AN / BUD-SS-AN / BUD-GAP`, generated via
 `concat('BUD-MIN-', lpad(@row_number,4,'0'))` (Appendix B). **Caveat:** the `BUD-STR-001` tokens elsewhere in
@@ -300,10 +300,10 @@ CMCS register + metallogenic context map + deposit model .docx + score matrix + 
   **`[*range(1, 9), *range(53, 73)]`** (add #8 the licence boundary; #53-72 already covered). (03-4.)
 - **New helper — `xlsx → validated points`** (Step 5, #68): read the mineralized-point XLSX, clean, detect
   coordinate format (WGS84 lat/long / UTM / local grid), validate + transform EPSG:4326→EPSG:32647, write a
-  point GPKG with the 14 mandatory fields + `feature_id`. Likely `core/points_io.py` (or extend
+  point GPKG with the 13 mandatory provenance fields + `feature_id` (= 14 columns). Likely `core/points_io.py` (or extend
   `core/vector_io.py`). Reuse `core.crs` for the transform.
 - **New helper — evidence-GPKG builder** (Step 8): create the 17-layer GPKG with the correct geometry type +
-  the 14 mandatory fields + `feature_id` per layer, ingest human-digitized layers (validating schema on
+  the 13 mandatory provenance fields + `feature_id` (= 14 columns) per layer, ingest human-digitized layers (validating schema on
   ingest), and stamp `validation_status="Historical only"` where empty. Likely extend `core/vector_io.py`;
   wire `feature_id` generation to the Appendix-A prefix map (a small `{layer: prefix}` dict in the phase
   module).
@@ -319,7 +319,7 @@ CMCS register + metallogenic context map + deposit model .docx + score matrix + 
 - **Dry-run** — templates + the 17-layer GPKG schema (empty) + empty registers only; no raw data needed; stop
   short of ingest/buffer/merge.
 - **Tests — `tests/test_phase03_synthesis.py`** (new) — synthetic fixtures: assert the 12 folders scaffold;
-  the 17-layer GPKG schema has exactly the 14 mandatory fields + `feature_id` per layer with correct geometry;
+  the 17-layer GPKG schema has exactly the 13 mandatory provenance fields + `feature_id` (= 14 columns) per layer with correct geometry;
   `BUD-…` IDs generate per the prefix map; #68 XLSX→points validates + reprojects to 32647; CMCS 5/10/20 km
   buffer geometry; ingest of a human-digitized layer; the 9 QA/QC items + 6-condition gate; dry-run emits
   schema/templates only.

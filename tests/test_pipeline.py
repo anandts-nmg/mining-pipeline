@@ -39,9 +39,11 @@ def test_only_ignores_empty_trailing_token():
     # A trailing comma in --only yields an empty id; it must be dropped, NOT resolved to Phase 00.
     reg = build_registry()
     assert [p.id for p in select_phases(reg, only=["02", ""])] == ["02"]
-    # an all-empty selection is a hard error rather than a silent no-op
+    # an all-empty selection is a hard error rather than a silent no-op / full run
     with pytest.raises(ValueError):
         select_phases(reg, only=[""])
+    with pytest.raises(ValueError):
+        select_phases(reg, only=[])  # e.g. `--only ,` -> [] must NOT leak into a full run
 
 
 def test_unknown_from_to_raises():

@@ -137,8 +137,10 @@ def select_phases(
     only: list[str] | None = None,
 ) -> list[Phase]:
     """Filter the registry by --only or the --from/--to range (inclusive)."""
-    if only:
-        # Reject empty/whitespace tokens: '' .zfill(2) == '00' would silently select Phase 00.
+    if only is not None:
+        # `only is not None` (not `if only`): an explicitly-empty list — e.g. `--only ,` which the
+        # CLI reduces to [] — must error, not fall through to the full-range branch (which would
+        # silently run every phase). Reject empty/whitespace tokens too ('' .zfill(2) == '00').
         cleaned = [p.strip() for p in only if p.strip()]
         if not cleaned:
             raise SelectionError("--only was given but contained no phase ids")

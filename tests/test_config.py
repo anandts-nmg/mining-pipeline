@@ -18,7 +18,7 @@ def test_config_loads(project):
     assert config.data_prefix == "XV023222_Buduunkhad"
     assert config.register_prefix == "XV-023222_Buduunkhad"
     assert config.boundary.input_no == 8
-    assert config.boundary.buffers_m == [500, 1000, 5000, 10000, 20000]
+    assert config.boundary.buffers_m == [500, 1000, 5000, 10000, 20000, 25000]
 
 
 def test_register_is_complete(project):

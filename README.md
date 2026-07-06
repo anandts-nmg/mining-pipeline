@@ -18,7 +18,7 @@ end-to-end**, and every later phase registered as a stub behind a uniform interf
 | 00 | Raw Files Archive | build | **implemented** — inventory, SHA-256 integrity, readme, working copies, raw read-only verification |
 | 01 | Data Audit & Master GIS Setup | build | **implemented** — KMZ→GeoPackage boundary (EPSG:32647), buffers, raster CRS audit, master GPKG schema, confidence ranking, QGIS project |
 | 02 | Remote Sensing Preprocessing | build | **implemented** — per-product clip (DEM 5 km / Sentinel licence / basemap 1 km) → reproject to EPSG:32647 → Cloud-Optimized GeoTIFF; DEM terrain derivatives (multi-azimuth hillshade, slope, aspect, TRI, profile/plan curvature, flow); Sentinel indices / ASTER-HDF / KOMPSAT-ortho as formula-complete method notes. See `PHASE_02_PLAN.md` |
-| 03/03A | Geology / Metallogenic / CMCS Synthesis + Deposit Model | orchestrate | **implemented** — 12-folder scaffold; 17-layer evidence GPKG (13 provenance fields + `BUD-` feature IDs); CMCS 5/10/20 km context buffer; #68 mineralized-point XLSX→validated points; human-layer ingest; 03A deposit-model template + 6-model evidence table + 100-pt scoring; all outputs stamped *Historical only*. See `PHASE_03_PLAN.md` |
+| 03/03A | Geology / Metallogenic / CMCS Synthesis + Deposit Model | orchestrate | **implemented** — 12-folder scaffold; 17-layer evidence GPKG (13 provenance fields + `BUD-` feature IDs); CMCS 5/10/20/25 km context buffer; #68 mineralized-point XLSX→validated points; human-layer ingest; 03A deposit-model template + 6-model evidence table + 100-pt scoring; all outputs stamped *Historical only*. See `PHASE_03_PLAN.md` |
 | 04 | Preliminary Prospect Delineation & Ranking | build | stub |
 | 05 | DJI Matrice 400 Drone / LiDAR / Photogrammetry | orchestrate | stub |
 | 06 | Recon Mapping & Portable XRF | orchestrate | stub |
@@ -39,7 +39,7 @@ Stubs create their folders and a method/status note during `--dry-run`, and rais
 - **79 raw inputs** in 7 evidence groups (8, 14, 24, 6, 17, 4, 6) — `config/input_register.csv`
   (78 from the methodology + the reconciled SAS hand-interpreted 1:25k scan; see `DRIVE_MAP.md`)
 - **Boundary input:** №8 license-boundary KMZ
-- **Buffers:** 500 m, 1 km, 5 km, 10 km, 20 km
+- **Buffers:** 500 m, 1 km, 5 km, 10 km, 20 km, 25 km (25 km per methodology v8/v9)
 
 ## Setup
 

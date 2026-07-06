@@ -15,7 +15,7 @@ GeoTIFF; DEM terrain derivatives (multi-azimuth hillshade, slope, aspect, TRI, p
 curvature, flow); a terrain-derivatives index + QA/QC report; and formula-complete method
 notes for the external SNAP/ILWIS/ASTER-HDF/KOMPSAT-ortho steps. Phase 03 (ORCHESTRATE) follows
 `docs/phase_03` / `PHASE_03_PLAN.md`: scaffold the 12-folder tree, emit registers/templates + the
-Preliminary Deposit Model, build the CMCS 5/10/20 km buffer, ingest the #68 mineralized-point XLSX +
+Preliminary Deposit Model, build the CMCS 5/10/20/25 km buffer, ingest the #68 mineralized-point XLSX +
 human-digitized layers into a 17-layer evidence GPKG (all *Historical only* support evidence). Phase 04
 and later phases are registered stubs unless their module explicitly implements real work.
 
@@ -26,7 +26,7 @@ and later phases are registered stubs unless their module explicitly implements 
 - 79 raw inputs in 7 evidence groups (8, 14, 24, 6, 17, 4, 6) — 78 from the methodology
   + the reconciled SAS hand-interpreted 1:25k geology scan (#79). See `DRIVE_MAP.md`.
 - Primary boundary input: **№8** `MN_BuduunKhad_L23222_LicenseBoundary_WGS84_v01_raw.kmz`
-- Buffers: **500 m, 1 km, 5 km, 10 km, 20 km**.
+- Buffers: **500 m, 1 km, 5 km, 10 km, 20 km, 25 km** (25 km added per methodology v8/v9 — Phase 3 Step 7/7A near-occurrence coverage buffer).
 
 ## Non-negotiable invariants (enforced in `core/`, not just docs)
 

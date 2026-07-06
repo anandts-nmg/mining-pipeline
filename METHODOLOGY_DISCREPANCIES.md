@@ -7,8 +7,15 @@ the phases the pipeline implements end-to-end (**Phase 00**, **Phase 01**, **Pha
 > Per `CLAUDE.md`, the **master methodology document is the ultimate source of truth.**
 > Where the sources conflict, the code follows the master. **The Phase 0–3 conflicts are now
 > resolved & implemented** — see "Resolutions" below (verified at tags `v0.1.0` / `v0.2.0` /
-> `v0.2.1` / `v0.3.1`); only later-phase / documentation items (KOMPSAT EULA, BMP-as-`.jpg`)
-> remain open.
+> `v0.2.1` / `v0.3.1` / `v0.3.2`); only later-phase / documentation items (KOMPSAT EULA,
+> BMP-as-`.jpg`) remain open.
+>
+> **Methodology version note (2026-07-06):** the repo's master is the **v6** matrix (repo root).
+> A newer **v8/v9** edition exists (`…78Inputs_v9_25km_Clickable_TOC_PageNumbers`, a full 00–99
+> "v6 update" in the human workflow folder — see `DRIVE_MAP.md`). It **formally establishes the
+> 25 km buffer** (Phase 3 Step 7 / Step 7A), which supersedes the earlier "25 km = artefact" call
+> in **02-1 / H-1**. That ring is now **adopted** (`boundary.buffers_m += 25000`, v0.3.2). The
+> scoring rubric, 6 deposit models, and thresholds are unchanged between v6 and v8/v9.
 
 ## Sources
 
@@ -18,7 +25,7 @@ the phases the pipeline implements end-to-end (**Phase 00**, **Phase 01**, **Pha
 | **Doc B** (standalone) | `XV-023222_Buduunkhad_Phase1_Methodology.docx.pdf` | **Phase 1 only**, QGIS-focused | 16 pp. Reads as a later, separately-authored deep-dive that was **not reconciled back** into Doc A; it even references "existing 11 (or 12) thematic folders" on disk. |
 
 Both agree on the project constants (license **XV-023222 / L23222**, CRS **EPSG:32647**,
-the **7 evidence groups**, buffers **500 m / 1 / 5 / 10 / 20 km**, and the confidence
+the **7 evidence groups**, buffers **500 m / 1 / 5 / 10 / 20 km** (v8/v9 adds a **25 km** ring — see 02-1), and the confidence
 vocabulary **High / Medium / Low / Needs verification**). The disagreements below are about
 **structure, ownership of work, deliverables, and naming**.
 
@@ -30,7 +37,8 @@ vocabulary **High / Medium / Low / Needs verification**). The disagreements belo
 doc-vs-reality reconciliations and 1 intra-document version drift. **All 15 are resolved (by decision)** —
 01-7 and 02-1 / H-1 were decided 2026-06-30; the Phase-03 items (03-1/2/3 + handoff H-4) were decided
 2026-07-01 during Phase-3 planning (`PHASE_03_PLAN.md`). **Phase 03 is now implemented and run
-(v0.3.1).**
+(v0.3.1).** **02-1 / H-1 were re-decided 2026-07-06** — the 25 km buffer is *adopted* (per the newer
+v8/v9 methodology), superseding the earlier "artefact" call; implemented at v0.3.2.
 
 | Group | Comparison | IDs | Resolved | Open |
 |---|---|---|---|---|
@@ -185,23 +193,21 @@ PDF). It generates the buffers (per Doc B / the № 8 register action).
 The four detailed QGIS-4.0.2 guides under `docs/phase_02/` (a later, deeper deep-dive, like
 Doc B was for Phase 1) introduce two disagreements against the core methodology and Phase 01:
 
-**02-1 — A 25 km buffer that no other source defines.** The Phase-2 master guide's
-prerequisites list (§2.1) expects
+**02-1 — the 25 km buffer.** The Phase-2 master guide's prerequisites list (§2.1) expects
 `XV023222_Buduunkhad_Project_Buffer_500m_1km_5km_10km_20km_25km_EPSG32647.gpkg` — i.e. a **25 km**
-ring in addition to the five. But both root methodology PDFs (Doc A / Doc B) state the buffers as
-**500 m / 1 / 5 / 10 / 20 km** (no 25 km), and Phase 01 (`config/project.yaml → boundary.buffers_m`)
-produced only those five. So the Phase-2 guide is the *only* source mentioning 25 km.
+ring in addition to the five. The v5/v6 root PDFs state the buffers as **500 m / 1 / 5 / 10 / 20 km**
+(no 25 km), so this originally looked like a lone Phase-2-guide artefact.
 
-**Code status:** non-blocking. Phase 02's actual clips use the licence boundary and the 1 km / 5 km
-buffers (DEM = 5 km, Sentinel = licence, basemap = 1 km), none of which need a 25 km ring, so Phase 02
-runs go/go without it.
+**Superseded 2026-07-06 — the 25 km is real; adopt it.** The newer **v8/v9** methodology (see the
+version note up top) formally defines the ring in **Phase 3**: *Step 7* makes the CMCS/MRPAM
+contextual check **5 / 10 / 20 / 25 km**, and *Step 7A* uses 25 km as the **near-occurrence coverage
+buffer** — with the documented rationale that "the 20 km buffer did not include all near-occurrence
+points, while the 25 km buffer did." (It is still explicitly **not** a mineralization-proof
+boundary.) So the earlier "copy-paste slip" reading was based on the older v5/v6 doc set only.
 
-**Resolved 2026-06-30 — treat the 25 km as a documentation artefact (do not add it).** It is named in
-exactly one source (the Phase-2 guide's prerequisite filename), contradicted by both root methodology
-PDFs, consumed by no processing step, and breaks the 500 m→1→5→10→20 km pattern — i.e. a copy-paste slip,
-not a deliberate ring. `boundary.buffers_m` stays `[500, 1000, 5000, 10000, 20000]`. **Add-on-demand:**
-if a 25 km regional-context ring is ever genuinely wanted, it is a one-line config change + a Phase-01
-re-run.
+**Implemented (v0.3.2):** `boundary.buffers_m = [500, 1000, 5000, 10000, 20000, 25000]` (Phase 01
+now emits the 25 km ring); Phase 03's `CMCS_RINGS_M = [5000, 10000, 20000, 25000]` and the CMCS
+folder/layer carry the `_25km` suffix. Phase 02 is unaffected (its clips use licence / 1 km / 5 km).
 
 **02-2 — Phase-2 folder structure (Doc A vs the detailed guide).** Doc A's Phase 02 tree (master,
 p.39) is **6 folders**: `01_Sentinel2_SNAP13 / 02_ASTER_Workflow_v5 / 03_KOMPSAT2_ILWIS368_QGIS /
@@ -232,7 +238,7 @@ formula-complete method notes for the tool-bound Sentinel/ASTER/KOMPSAT steps.
 The detailed Phase-3 QGIS guide (`docs/phase_03`, a later deep-dive like Doc B for Phase 1 and the
 `docs/phase_02` guides for Phase 2) introduces three disagreements against Doc A §03. **None are scientific** —
 both agree on the **#1-8 + #53-72** inputs, the **6 candidate deposit models**, the identical **100-pt scoring
-rubric** and thresholds (≥70 / 50-69 / 30-49 / <30), the **CMCS 5/10/20 km** rings, and the **historical-only
+rubric** and thresholds (≥70 / 50-69 / 30-49 / <30), the **CMCS 5/10/20 km** rings (v8/v9 adds a 25 km ring — 02-1), and the **historical-only
 support** framing. The conflicts are structure, folder labels and an ID scheme.
 
 **03-1 — Phase-3 folder count (Doc A 9 vs guide 12).** Doc A §03 lists **9** subfolders
@@ -276,17 +282,17 @@ already exist from Phase 1:
 |---|---|---|
 | Master GIS database (`Master_GIS_Database.gpkg`) | ✅ yes | `01_.../06_Master_GeoPackage_Schema` |
 | Licence boundary (EPSG:32647 gpkg) | ✅ yes | `01_.../05_KMZ_KML_to_GPKG` |
-| Project buffers gpkg | ⚠️ partial — 500 m–20 km, **no 25 km** (H-1) | `01_.../05_KMZ_KML_to_GPKG` |
+| Project buffers gpkg | ✅ yes — 500 m–25 km (25 km added per v8/v9, H-1) | `01_.../05_KMZ_KML_to_GPKG` |
 | CRS / georeference QA/QC log | ✅ yes | `01_.../03_CRS_Check` |
 | Data confidence ranking | ✅ yes | `01_.../07_Data_Confidence_Ranking` |
 | Master QGIS project (`.qgz`) | ✅ yes | `01_.../08_Master_QGIS_Project_Setup` |
 
 Three interface points (all resolved):
 
-**H-1 — the 25 km buffer (= 02-1).** The Phase-2 guide's prerequisite filename includes a 25 km
-ring; Phase 01 produced only 500 m–20 km. **Resolved 2026-06-30 — treated as a guide artefact (not
-added)**, the same decision as 02-1 (not double-counted). Non-blocking (Phase 02 clips to licence /
-1 km / 5 km only); `boundary.buffers_m` stays the five rings 500 m–20 km, add-on-demand if ever needed.
+**H-1 — the 25 km buffer (= 02-1).** The Phase-2 guide's prerequisite filename includes a 25 km ring.
+**Re-decided 2026-07-06 — adopted** (same call as 02-1, not double-counted): the v8/v9 methodology
+formally defines it in Phase 3 (Step 7/7A), so Phase 01 now emits six rings **500 m–25 km**. Phase 02
+is unaffected (it clips to licence / 1 km / 5 km only).
 
 **H-2 — who reprojects the Sentinel UTM46N tile.** Doc B's *Phase 1* flags that the Sentinel
 T46 tile may be UTM46N (EPSG:32646) and cautions to reproject; Doc A assigns the *actual*
@@ -351,7 +357,7 @@ producing its extra deliverables (a superset); and physical reality is reconcile
 | 01-3 deliverable count (4 vs 8) | **Superset** — Doc A's 4 core + Doc B's 4 extras + a Phase-2-ready list (11 artifacts). | Phase 01 outputs |
 | 01-4 inventory ID scheme | Doc A's **№ 1–79** numbering (not Doc B's `BK-P1-xxx`). | `input_register.csv` |
 | 01-5 master GPKG schema | Doc A's **13 named layers** (polygon layers written as MultiPolygon). | `project.yaml master_gpkg_layers` |
-| 01-6 buffer ownership | Buffers built in **Phase 1** (per Doc B + the №8 register action) — 5 rings 500 m–20 km. | Phase 01 output |
+| 01-6 buffer ownership | Buffers built in **Phase 1** (per Doc B + the №8 register action) — 6 rings 500 m–25 km (25 km added per v8/v9, v0.3.2). | Phase 01 output |
 
 **Net:** Phases 0–1 are master-methodology-faithful, also emit Doc B's deliverables, and ran
 **go/go on the real data** (`v0.1.0`).

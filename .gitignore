@@ -21,6 +21,8 @@ runs/
 # Generated registers / logs (regenerate from the pipeline)
 *.xlsx
 *.docx
+# ...but track the authoritative methodology doc (source of truth), like the v6 PDF at repo root
+!XV-023222_Buduunkhad_Exploration_Workflow_Methodology_78Inputs_v9_25km_Clickable_TOC_PageNumbers.docx
 SHA-256_Checksum_Register.csv
 !config/*.csv          # keep the curated input register under version control
 

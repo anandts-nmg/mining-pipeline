@@ -45,7 +45,8 @@ boundary:
   # Primary spatial boundary input (the license polygon).
   input_no: 8
   # Buffer rings (metres) generated around the license boundary in Phase 01.
-  buffers_m: [500, 1000, 5000, 10000, 20000]
+  # 25 km added per methodology v8/v9 (Phase 3 Step 7/7A near-occurrence coverage buffer).
+  buffers_m: [500, 1000, 5000, 10000, 20000, 25000]
 
 evidence_groups:
   - { group_no: 1, name: "01_Tectonic_Terrane_KMZ", count: 8 }

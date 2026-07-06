@@ -4,7 +4,7 @@ ORCHESTRATE. The heavy lifting — georeferencing scan maps, digitizing litholog
 structure / occurrence vectors, writing the deposit model, doing the scoring — is human
 work in QGIS / Excel / Word. This module scaffolds the 12-folder tree, emits every
 register / template / schema, ingests the machine-tractable inputs (the #68 mineralized-
-point XLSX and any human-digitized layers), builds the CMCS 5/10/20 km context buffer off
+point XLSX and any human-digitized layers), builds the CMCS 5/10/20/25 km context buffer off
 the Phase 01 licence boundary, assembles the authoritative 17-layer evidence GPKG, and
 runs the QA/QC + 6-condition gate.
 
@@ -31,8 +31,12 @@ HISTORICAL_LIMITATION = (
 )
 CMCS_LIMITATION = "Context only — not proof of mineralization inside license"
 
-# CMCS/MRPAM context screening rings (guide §03.4 Step 7).
-CMCS_RINGS_M = [5000, 10000, 20000]
+# CMCS/MRPAM context screening rings (guide §03.4 Step 7). Methodology v8/v9 adds the 25 km ring:
+# Step 7 makes the contextual check 5/10/20/25 km, and Step 7A uses 25 km as the near-occurrence
+# coverage buffer (the 20 km ring did not include all near-occurrence points).
+CMCS_RINGS_M = [5000, 10000, 20000, 25000]
+_CMCS_FOLDER = "08_CMCS_MRPAM_Buffer_Check_5km_10km_20km_25km"
+_CMCS_BUFFER_LAYER = "buffer_5km_10km_20km_25km"
 
 # The evidence-layer attribute schema: the 13 provenance fields (guide §03.4 Step 8) plus the
 # adopted Appendix-A feature_id = 14 columns total. Ordered; feature_id leads as the primary key.
@@ -58,7 +62,7 @@ EVIDENCE_FIELDS: dict[str, str] = {
 # layers). PHASE_03_PLAN.md §"The authoritative evidence GPKG — 17-layer schema".
 EVIDENCE_LAYERS: list[tuple[str, str, str]] = [
     ("license_boundary", "MultiPolygon", ""),
-    ("buffer_5km_10km_20km", "MultiPolygon", ""),
+    (_CMCS_BUFFER_LAYER, "MultiPolygon", ""),
     ("tectonic_terrane_context_polygon", "MultiPolygon", ""),
     ("metallogenic_zones_polygon", "MultiPolygon", "BUD-MET"),
     ("ore_district_node_context_polygon", "MultiPolygon", ""),
@@ -221,7 +225,7 @@ class Phase03GeologySynthesis(Phase):
     input_numbers = [*range(1, 9), *range(53, 73)]
     gate_condition = (
         "Geology/structure/occurrence/prospectivity/metallogenic context from #1-8,#53-72 in "
-        "Master GIS; occurrence coordinate QA/QC done; CMCS 5/10/20 km buffer register ready; "
+        "Master GIS; occurrence coordinate QA/QC done; CMCS 5/10/20/25 km buffer register ready; "
         "Preliminary Deposit Model.docx + score matrix ready; all evidence stamped "
         "'Historical only'; 17-layer geological evidence package ready for Phase 4 ranking."
     )
@@ -233,7 +237,7 @@ class Phase03GeologySynthesis(Phase):
         "05_Local_Geology_Occurrence_1M50K",
         "06_Source_Materials_and_Prospectivity",
         "07_Occurrence_Register_and_Coordinate_QAQC",
-        "08_CMCS_MRPAM_Buffer_Check_5km_10km_20km",
+        _CMCS_FOLDER,
         "09_Geological_Evidence_Layers_GPKG",
         "10_Preliminary_Deposit_Model_03A",
         "11_Evidence_Scoring_and_DataGap",
@@ -331,7 +335,7 @@ class Phase03GeologySynthesis(Phase):
         return vector_io.read_layer(path, "license_boundary")
 
     # ------------------------------------------------------------------ #
-    # Step 7 — CMCS/MRPAM 5/10/20 km buffer
+    # Step 7 — CMCS/MRPAM 5/10/20/25 km buffer
     # ------------------------------------------------------------------ #
 
     def _build_cmcs_buffer(
@@ -350,24 +354,24 @@ class Phase03GeologySynthesis(Phase):
 
         buffer_name = naming.data_name(
             cfg.data_prefix,
-            "CMCS_MRPAM_Buffer_5km_10km_20km",
+            "CMCS_MRPAM_Buffer_5km_10km_20km_25km",
             crs_or_param=naming.epsg_tag(cfg.target_epsg),
             version=1,
             ext="gpkg",
         )
-        buffer_path = pdir / "08_CMCS_MRPAM_Buffer_Check_5km_10km_20km" / buffer_name
+        buffer_path = pdir / _CMCS_FOLDER / buffer_name
         vector_io.write_layer(rings, buffer_path, layer="cmcs_mrpam_buffer")
         result.add_output(buffer_path)
 
         # populate the evidence GPKG's buffer + license_boundary layers (schema-aligned, 32647)
         ring_geom = self._prepare_evidence_gdf(
             rings[["geometry"]].copy(),
-            "buffer_5km_10km_20km",
+            _CMCS_BUFFER_LAYER,
             target_epsg=cfg.target_epsg,
             evidence_type="buffer",
             limitation=CMCS_LIMITATION,
         )
-        vector_io.write_layer(ring_geom, evidence_path, layer="buffer_5km_10km_20km", mode="a")
+        vector_io.write_layer(ring_geom, evidence_path, layer=_CMCS_BUFFER_LAYER, mode="a")
 
         boundary_geom = self._prepare_evidence_gdf(
             boundary[[boundary.geometry.name]].copy(),
@@ -536,7 +540,7 @@ class Phase03GeologySynthesis(Phase):
             except Exception:
                 continue
             for layer in present & layer_names:
-                if layer in {"buffer_5km_10km_20km", _MINERALIZED_LAYER}:
+                if layer in {_CMCS_BUFFER_LAYER, _MINERALIZED_LAYER}:
                     continue  # pipeline-built layers, already populated
                 try:
                     gdf = vector_io.read_layer(src, layer)
@@ -721,9 +725,7 @@ class Phase03GeologySynthesis(Phase):
                 "Coordinate QAQC",
             ),
             (
-                pdir
-                / "08_CMCS_MRPAM_Buffer_Check_5km_10km_20km"
-                / reg("CMCS_Nearest_Deposit_Register"),
+                pdir / _CMCS_FOLDER / reg("CMCS_Nearest_Deposit_Register"),
                 _CMCS_NEAREST_COLUMNS,
                 [],
                 "CMCS Nearest Deposit",
@@ -869,7 +871,7 @@ class Phase03GeologySynthesis(Phase):
             ),
         )
         report.add(
-            "CMCS/MRPAM 5/10/20 km buffer register ready",
+            "CMCS/MRPAM 5/10/20/25 km buffer register ready",
             RECORDED_ACCEPTANCE,
             decision=Decision.PASS if self._buffer_ok else Decision.FAIL,
             note=(
@@ -985,7 +987,7 @@ def _write_deposit_model_docx(path: Path, ctx: RunContext) -> Path:
 _PHASE3_NOTE = (
     "# Phase 03 / 03A — Geological, Metallogenic & CMCS Synthesis (orchestrated)\n\n"
     "The pipeline scaffolds the 12-folder tree, emits every register/template/schema, builds\n"
-    "the CMCS 5/10/20 km context buffer off the Phase 01 licence boundary, ingests the #68\n"
+    "the CMCS 5/10/20/25 km context buffer off the Phase 01 licence boundary, ingests the #68\n"
     "mineralized-point XLSX (4326->32647) and any human-digitized layers, and assembles the\n"
     "authoritative 17-layer `Geological_Evidence_Layers_v01.gpkg`.\n\n"
     "**Evidence rule (non-negotiable):** every Phase 03 output is historical / contextual /\n"

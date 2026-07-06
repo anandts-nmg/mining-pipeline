@@ -45,7 +45,7 @@ runs the QA/QC + gate. Dry-run = templates + schema only (no raw data needed).
    inputs and are not handover deliverables.
 4. **The authoritative evidence GPKG** is Phase 03's `Geological_Evidence_Layers_v01.gpkg` (17 scale-specific
    layers, listed below). This is the package Phase 04 ranks against.
-5. **6 candidate deposit models, one 100-pt rubric, three CMCS rings (5/10/20 km).** Both docs agree
+5. **6 candidate deposit models, one 100-pt rubric, four CMCS rings (5/10/20/25 km).** Both docs agree
    verbatim (03-4) — no scientific conflict to resolve.
 6. **Gate = the guide's 6 exit conditions** (below).
 
@@ -59,7 +59,7 @@ runs the QA/QC + gate. Dry-run = templates + schema only (no raw data needed).
 | **#53-54, #57-58** | 1:200k geology map (#53) + legend (#54); mineral-resources map (#57) + legend (#58) | Step 4 — georef, digitize geology polygons + structure lines, occurrence/mineralized points | `04_Regional_Geology_Mineral_1M200K` |
 | **#55-56, #60, #63-68** | 1:50k geology map (#55) + legend (#56); occurrence points (#60); prospectivity polygons (#63); route/observation/trench (#64); source-material dictionary (#65); gold occurrence text (#66); PDF register (#67); **XLSX mineralized-point table (#68)** | Step 5 — the most important local-scale evidence; digitize all vectors; **#68 XLSX → validated points (automatable)** | `05_Local_Geology_Occurrence_1M50K`, `06_Source_Materials_and_Prospectivity` |
 | **#66, #67, #68** cross-check | Occurrence/mineralized point reconciliation | Step 6 — coordinate + attribute QA/QC (CRS 4326→32647, duplicate, commodity coding, map-register match, confidence flag) | `07_Occurrence_Register_and_Coordinate_QAQC` |
-| **#8** (buffer) + CMCS/MRPAM | 5/10/20 km context screening | Step 7 — **buffer build (automatable)** + nearest-deposit register + context map | `08_CMCS_..._Buffer_Check` |
+| **#8** (buffer) + CMCS/MRPAM | 5/10/20/25 km context screening | Step 7 — **buffer build (automatable)** + nearest-deposit register + context map | `08_CMCS_..._Buffer_Check` |
 | all Phase-3 vectors | 17-layer merge | Step 8 — authoritative evidence GPKG | `09_Geological_Evidence_Layers_GPKG` |
 | #1-8 + #53-72 + 03A support (#9-46/#47-78) | 6 candidate models | Steps 9-10 — 03A deposit model + evidence table + 100-pt scoring | `10_Preliminary_Deposit_Model_03A` |
 | all Phase-3 outputs | scoring + data-gap | Steps 10-11 — score matrix + data-gap / validation-priority register | `11_Evidence_Scoring_and_DataGap` |
@@ -76,7 +76,7 @@ runs the QA/QC + gate. Dry-run = templates + schema only (no raw data needed).
 ├ 05_Local_Geology_Occurrence_1M50K
 ├ 06_Source_Materials_and_Prospectivity
 ├ 07_Occurrence_Register_and_Coordinate_QAQC
-├ 08_CMCS_MRPAM_Buffer_Check_5km_10km_20km
+├ 08_CMCS_MRPAM_Buffer_Check_5km_10km_20km_25km
 ├ 09_Geological_Evidence_Layers_GPKG
 ├ 10_Preliminary_Deposit_Model_03A
 ├ 11_Evidence_Scoring_and_DataGap
@@ -97,7 +97,7 @@ runs the QA/QC + gate. Dry-run = templates + schema only (no raw data needed).
 | 4 Geology 1:200k | Emit legend-dictionary template + empty GPKG layer schemas | Georef #53/#57, digitize geology polygons + structure lines + occurrence points |
 | 5 Local 1:50k | Emit empty GPKG layer schemas; **#68 XLSX → validated point layer** (clean, coordinate-validate, 4326→32647) | Georef #55, digitize lithology/contact/fault/vein/prospectivity/source-material vectors |
 | 6 Coordinate QA/QC | Emit `Occurrence_Coordinate_QAQC_Log` + `Occurrence_CrossReference` templates; run duplicate/CRS checks on ingested points | Reconcile #66/#67/#68, set confidence flags, commodity coding |
-| 7 CMCS buffer | **Build 5/10/20 km buffers off #8** → `CMCS_MRPAM_Buffer_..._EPSG32647.gpkg`; emit nearest-deposit register template stamped "Context only" | Populate register from CMCS/MRPAM; classify by distance/rank; make context map PDF |
+| 7 CMCS buffer | **Build 5/10/20/25 km buffers off #8** → `CMCS_MRPAM_Buffer_..._EPSG32647.gpkg`; emit nearest-deposit register template stamped "Context only" | Populate register from CMCS/MRPAM; classify by distance/rank; make context map PDF |
 | 8 Evidence GPKG | **Build the 17-layer `Geological_Evidence_Layers_v01.gpkg`** with the 13 mandatory provenance fields + `feature_id` (= 14 columns); **ingest human-digitized layers** into it | Digitize the vector content (the pipeline provides the schema + ingests) |
 | 9 Deposit model 03A | Emit `Preliminary_Deposit_Model.docx` template + `preliminary_deposit_model_evidence_table.xlsx` (6 rows pre-seeded) | Write the deposit model; fill supporting/missing evidence, validation work, preliminary confidence |
 | 10 Scoring | Emit `deposit_model_candidate_score_matrix.xlsx` (8 criteria × 6 models, weighted) | Score each model, assign confidence class |
@@ -131,7 +131,7 @@ Phase 01.
 `prospectivity_target_zones_polygons`, `source_material_observation_points`, `source_material_route_lines`,
 `source_material_trench_pit_points`, `Validated_Historical_Occurrence_Points` (all `_EPSG32647_v01.gpkg`).
 
-**Pipeline-built:** `CMCS_MRPAM_Buffer_5km_10km_20km_EPSG32647_v01.gpkg` (Step 7),
+**Pipeline-built:** `CMCS_MRPAM_Buffer_5km_10km_20km_25km_EPSG32647_v01.gpkg` (Step 7),
 `Validated_Historical_Occurrence_Points` from #68 (Step 5), and the authoritative merged GPKG (Step 8):
 
 **`XV023222_Buduunkhad_Geological_Evidence_Layers_v01.gpkg`** — the authoritative evidence GPKG.
@@ -151,7 +151,7 @@ register.
 | # | Layer | Geometry | Feature-ID prefix (Appendix A) |
 |---|---|---|---|
 | 1 | `license_boundary` | polygon | — (inherited from Phase 01) |
-| 2 | `buffer_5km_10km_20km` | polygon | — |
+| 2 | `buffer_5km_10km_20km_25km` | polygon | — |
 | 3 | `tectonic_terrane_context_polygon` | polygon | — |
 | 4 | `metallogenic_zones_polygon` | polygon | `BUD-MET` |
 | 5 | `ore_district_node_context_polygon` | polygon | — |
@@ -231,7 +231,7 @@ Phase 3 is complete when:
 1. Geology, structure, occurrence, prospectivity & metallogenic context from **#1-8, #53-72** are in the
    Master GIS.
 2. Occurrence / mineralized-point **coordinate QA/QC** done.
-3. **CMCS/MRPAM 5/10/20 km buffer register** ready.
+3. **CMCS/MRPAM 5/10/20/25 km buffer register** ready.
 4. **Preliminary Deposit Model.docx** and **score matrix** ready.
 5. All historical evidence stamped **`validation_status = "Historical only"`**.
 6. The **geological evidence package** for Phase 4's A/B/C prospect ranking is ready.
@@ -260,7 +260,7 @@ the master are **Phase-7/8 field SAMPLE IDs** (BUD-RC/CH/SOIL/STR/HM sample conv
 namespace* — do not conflate them with these Appendix-A feature-ID prefixes.
 
 *(03-4 and 03-5 are non-conflicts: both docs agree on the #1-8+#53-72 inputs, the same 6 candidate models, the
-identical 100-pt rubric and thresholds, the CMCS 5/10/20 km rings, and the historical-only support framing.
+identical 100-pt rubric and thresholds, the CMCS 5/10/20/25 km rings, and the historical-only support framing.
 Both also expect Sentinel/ASTER/KOMPSAT/DEM as 03A support — see Handoffs.)*
 
 ## Handoffs
@@ -307,7 +307,7 @@ CMCS register + metallogenic context map + deposit model .docx + score matrix + 
   ingest), and stamp `validation_status="Historical only"` where empty. Likely extend `core/vector_io.py`;
   wire `feature_id` generation to the Appendix-A prefix map (a small `{layer: prefix}` dict in the phase
   module).
-- **New helper — CMCS buffer builder** (Step 7): 5/10/20 km multi-ring buffer off #8 licence boundary →
+- **New helper — CMCS buffer builder** (Step 7): 5/10/20/25 km multi-ring buffer off #8 licence boundary →
   `CMCS_MRPAM_Buffer_..._EPSG32647.gpkg`. Reuse the Phase-01 buffer primitive if one exists; otherwise a thin
   `shapely` multi-ring wrapper. Stamp the "Context only — not proof of mineralization inside license"
   limitation.
@@ -320,7 +320,7 @@ CMCS register + metallogenic context map + deposit model .docx + score matrix + 
   short of ingest/buffer/merge.
 - **Tests — `tests/test_phase03_synthesis.py`** (new) — synthetic fixtures: assert the 12 folders scaffold;
   the 17-layer GPKG schema has exactly the 13 mandatory provenance fields + `feature_id` (= 14 columns) per layer with correct geometry;
-  `BUD-…` IDs generate per the prefix map; #68 XLSX→points validates + reprojects to 32647; CMCS 5/10/20 km
+  `BUD-…` IDs generate per the prefix map; #68 XLSX→points validates + reprojects to 32647; CMCS 5/10/20/25 km
   buffer geometry; ingest of a human-digitized layer; the 9 QA/QC items + 6-condition gate; dry-run emits
   schema/templates only.
 

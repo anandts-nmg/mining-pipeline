@@ -85,7 +85,7 @@ class RawManifestConfig(BaseModel):
 
 class BoundaryConfig(BaseModel):
     input_no: int = 8
-    buffers_m: list[int] = Field(default_factory=lambda: [500, 1000, 5000, 10000, 20000])
+    buffers_m: list[int] = Field(default_factory=lambda: [500, 1000, 5000, 10000, 20000, 25000])
 
 
 class EvidenceGroup(BaseModel):

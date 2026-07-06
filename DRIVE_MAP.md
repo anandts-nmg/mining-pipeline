@@ -19,7 +19,7 @@ Drive connector on 2026-06-23. The authoritative per-file pin is `config/raw_man
   boundary gpkg ×40+); other licences (XV-022905, L08718 Suujiin Bulag) and a stray
   EPSG:32649 boundary also live in the drive — so we **pin file IDs**, never match by name.
 - **Verified end-to-end:** Phases 00–03 ran **go/go on this real data** (tag `v0.3.1`) — the
-  79-input archive checksummed, boundary → EPSG:32647 + 5 buffers, 13-layer master GeoPackage,
+  79-input archive checksummed, boundary → EPSG:32647 + 6 buffers (500 m–25 km), 13-layer master GeoPackage,
   Phase-02 COGs + terrain derivatives, and the 17-layer Phase-03 evidence GPKG; the EULA gap was
   recorded (not fatal).
 

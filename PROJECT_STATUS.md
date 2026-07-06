@@ -34,7 +34,7 @@ waiting on either the next build increment or on field/lab work.
 - **A secured, verified raw-data archive** — every one of the 79 source inputs checksummed
   and locked read-only, so nothing is accidentally altered.
 - **A master GIS database** — all layers standardized to the project coordinate system
-  (UTM 47N), with the licence boundary and the 500 m–20 km buffers.
+  (UTM 47N), with the licence boundary and the 500 m–25 km buffers.
 - **Processed satellite & terrain products** — clipped, reprojected, cloud-optimized imagery
   and DEM derivatives, with QA/QC.
 - **A geological evidence package** — a 17-layer database including the **7 historical

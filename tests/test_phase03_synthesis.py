@@ -138,20 +138,20 @@ def test_phase03_score_matrix_shape(project):
     assert ws.max_row == 1 + 9
 
 
-def test_phase03_cmcs_buffer_three_rings(raw_archive):
+def test_phase03_cmcs_buffer_four_rings(raw_archive):
     config, register, _raw = raw_archive
     ctx, phase, result = _run_real(config, register)
     assert result.status == "ok"
-    assert phase._cmcs_rings == 3
+    assert phase._cmcs_rings == 4  # v8/v9 Step 7 adds the 25 km ring
 
     pdir = paths.phase_dir(config.output_root, "03")
     buffers = list(
-        (pdir / "08_CMCS_MRPAM_Buffer_Check_5km_10km_20km").glob("*CMCS_MRPAM_Buffer*.gpkg")
+        (pdir / "08_CMCS_MRPAM_Buffer_Check_5km_10km_20km_25km").glob("*CMCS_MRPAM_Buffer*.gpkg")
     )
     assert buffers, "CMCS buffer gpkg not written"
     gdf = vector_io.read_layer(buffers[0], "cmcs_mrpam_buffer")
-    assert len(gdf) == 3
-    assert sorted(gdf["distance_m"]) == [5000, 10000, 20000]
+    assert len(gdf) == 4
+    assert sorted(gdf["distance_m"]) == [5000, 10000, 20000, 25000]
     assert (gdf["validation_status"] == "Historical only").all()
 
 
@@ -358,7 +358,7 @@ def test_phase03_qaqc_items_and_gate_go(raw_archive):
     items = [i.item for i in report.items]
     assert any("Master GIS" in i for i in items)
     assert any("coordinate QA/QC" in i for i in items)
-    assert any("CMCS/MRPAM 5/10/20 km buffer" in i for i in items)
+    assert any("CMCS/MRPAM 5/10/20/25 km buffer" in i for i in items)
     assert any("Preliminary Deposit Model" in i for i in items)
     assert any("Historical only" in i for i in items)
     assert any("ready for Phase 4" in i for i in items)

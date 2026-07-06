@@ -16,37 +16,42 @@ human folder `4. Phase_04/` (Drive) is a comparison reference, not ground truth.
 `01_Evidence_Overlay` · `02_Prospect_Polygon_Delineation` · `03_Scoring_Matrix` ·
 `04_Confidence_DataGap_NextAction` · `05_A_B_C_D_Field_Priority`.
 
-## Scoring — v9 §5 weighted matrix (sum 100)
-geology 20 · historical geochem 15 · ASTER/Sentinel 15 · structure 15 · field/pXRF 15 · drone 8 ·
-CMCS 7 · access 5. Classes **A ≥75 · B 55–74 · C 35–54 · D <35**. (This is a *separate* framework
-from Phase 03's `SCORING_CRITERIA`, the 03A deposit-model rubric ≥70/50/30 — that scores deposit
-*models*; this scores prospect *polygons*. Phase 04 consumes the former as `model_confidence` /
-`validation_priority`.)
+## Scoring — Phase-4 guide §6 desktop matrix (sum 100; conflict 04-1, adopted v0.6.0)
+geology 20 · occurrence 15 · geochem 20 · RS 15 · structure 10 · deposit-model fit 10 · access 5 ·
+confidence 5. Classes **A ≥75 · B 55–74 · C 35–54 · D <35**. Desktop-only — no field/drone
+criteria, so a well-evidenced desktop prospect can reach **A** (the v9 §5 *lifecycle* matrix, which
+adds field-pXRF 15 + drone 8, is used at Phase 10 final ranking — see METHODOLOGY_DISCREPANCIES
+04-1). Model-fit (§6.7) is scored from the Phase 03 03A score matrix once human-completed
+(pending → 0 + data gap); confidence (§6.9) grades evidence completeness across the other seven
+criteria (≥6 available → 5, 4–5 → 3, 2–3 → 1). This framework is *separate* from Phase 03's
+`SCORING_CRITERIA` (the 03A deposit-model rubric, which scores deposit *models*).
 
 ## Algorithm (auto-grid, mirrors the human 250 m-grid method, methodology-scored)
 1. **Evidence overlay** — copy the non-empty Phase 03 evidence layers into one overlay GPKG (01).
 2. **Score grid** — a `GRID_CELL_M`=250 m fishnet over the boundary + `CONTEXT_BUFFER_M`=1000 m; each
-   cell scores a criterion's full §5 weight when its evidence is present (occurrence proximity
-   `OCCURRENCE_NEAR_M`=750 m, access `ACCESS_NEAR_M`=1500 m). **Discriminating rules:** geology scores
-   near unit *contacts* (polygon boundaries + intrusive contacts), not blanket interiors; CMCS scores
-   *localized* nearest-deposit/metallogenic context, not the whole filled 25 km buffer — otherwise
-   those two criteria flag ~100% of cells and the result saturates into one blob. Written as
-   `Evidence_Score_Grid` (03).
-3. **Delineate** — dissolve contiguous cells scoring ≥ `SCORE_THRESHOLD`=35 (the C floor) into
-   candidate polygons; per polygon: `max_score`/`mean_score`, area, centroid, nearest-feature
-   distances, per-criterion evidence flags, `BUD-PSP-####` id, rank. Written as `Prospect_Polygons`
-   (02).
-4. **Class + deposit-model wiring** — `classify(max_score)` → A/B/C/D; add `dominant_deposit_model`,
-   `model_confidence` (pending 03A human completion), `missing_model_evidence`, `validation_priority`.
+   cell scores a criterion's §6 weight when its evidence is present (occurrence proximity
+   `OCCURRENCE_NEAR_M`=750 m, access `ACCESS_NEAR_M`=1500 m); model-fit/confidence apply as graded
+   run-level points. **Discriminating rule:** geology scores near unit *contacts* (polygon
+   boundaries + intrusive contacts), not blanket interiors — otherwise it flags ~100% of cells and
+   the result saturates into one blob. Written as `Evidence_Score_Grid` (03).
+3. **Delineate per class band** — contiguous **A** cells dissolve into discrete A prospects,
+   likewise B and C (D = below the 35 C-floor, not a prospect; a single ≥35 dissolve would merge
+   the evidence-rich zone into one blob). Per polygon: `max_score`/`mean_score`, area, centroid,
+   nearest-feature distances, per-criterion scores, `BUD-PSP-####` id, global rank. Written as
+   `Prospect_Polygons` (02).
+4. **Class + deposit-model wiring** — the polygon's band = its class; add `dominant_deposit_model` +
+   `model_confidence` (from the 03A matrix when human-completed), `missing_model_evidence`,
+   `validation_priority`.
 5. **Registers** — `Prospect_Ranking_Table.xlsx` (03), `Go_NoGo_Desktop_Decision_Matrix.xlsx` (05),
    `Prospect_DataGap_and_NextAction.xlsx` (04). The `Preliminary_Prospect_Ranking_Map.pdf` is a QGIS
    print layout (human) — see the phase method note.
 
-## Desktop data gaps (invariant #8)
-Three §5 criteria are unavailable at desktop Phase 04 and score **0**, recorded in the data-gap
-register: **ASTER/Sentinel** (Phase 02 method-note, H-4), **field/pXRF** (Phase 06+), **drone**
-(Phase 05+). All outputs stamped *"Preliminary — not ore proof."* Desktop prospects therefore land
-B/C; the gate pushes A/B into the field phases to upgrade.
+## Data gaps (invariant #8)
+Criteria without evidence score **0** and are recorded in the data-gap register: `rs` without fed
+focused alteration (Phase 02 emits ASTER as a method-note — H-4), `model_fit` until the human
+completes the 03A score matrix, `access` without a roads layer. All outputs stamped *"Preliminary —
+not ore proof"* — class A means field/lab follow-up priority, never a confirmed deposit. Field/pXRF
+and drone evidence enter at Phases 05–06 and are scored by the v9 §5 lifecycle matrix at Phase 10.
 
 ## Prospect schema (`prospect_candidate_areas`, mirrors the human Layer A)
 `candidate_id, rank, prospect_class, area_ha, max_score, mean_score, centroid_E/N,` the 8
@@ -63,16 +68,16 @@ layers dropped under the Phase 03/04 dirs (whitelisted by keyword — pipeline o
 - **geochem-anomaly** polygons drive `geochem` and populate each prospect's `elements` from the
   anomaly's element attribute.
 
-## Status note
-Three states, all honest:
-- **Bare Phase 03 templates** (7 #68 points + CMCS buffer + boundary): grid tops out at 22/100 → **0
-  candidates** — correct; no geology/structure/alteration digitized yet.
-- **Geometry evidence fed** (digitized geology/faults/dykes/occurrences via Phase 03 human-layer
-  ingest): **6 discrete C-class** prospects (matches the human's 6 PCA count), max 50/100.
-- **+ attribute evidence** (hand-digitized alteration + geochem-anomaly, done 2026-07-06):
-  **10 discrete prospects — 2 B-class + 8 C-class** (`BUD-PSP-0001..0010`, max 65/100), each carrying
-  `elements` (Au/Cu/Mo/Ba/Co/Ni/…) from the anomaly. **B is the desktop ceiling** — reaching the
-  human's **A** needs `field/pXRF` (Phase 06) + `drone` (Phase 05), which score 0 here by design.
+## Status note (v0.6.0, guide §6 matrix)
+States, all honest:
+- **Bare Phase 03 templates** (7 #68 points + CMCS buffer + boundary): sparse scores → few/no
+  candidates — correct; no geology/structure/alteration digitized yet.
+- **Full evidence fed** (digitized geology/faults/dykes/occurrences + hand-digitized alteration +
+  geochem-anomaly via Phase 03 human-layer + attribute paths, 2026-07-06): **47 discrete prospects —
+  7 A (83/100, 6–31 ha) + 15 B + 25 C** — delineated per class band, each carrying `elements`
+  (Au/Cu/Mo/Ba/Co/Ni/…). Directly comparable to the human reference's **6 A-class PCAs** (6–450 ha).
+  Remaining data gaps: `model_fit` (03A matrix pending human completion → +up to 10) and `access`
+  (no roads layer → +up to 5).
 
 The pixel-broad ASTER masks (`Advanced_argillic`/`Porphyry`/`Ch_Ep_halo`, thousands of polygons)
 are district-scale context and saturate presence-based `rs` into one blob — so the target-defining

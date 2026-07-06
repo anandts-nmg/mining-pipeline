@@ -398,25 +398,47 @@ Same rule — master = truth; the `docs/phase_03` guide honoured as the more-spe
 17-layer evidence GPKG + #68 XLSX→points with source attributes into the occurrence registers + CMCS buffer
 + human-layer ingest) and run end-to-end on the local archive (gate GO, 7 mineralized points ingested).
 
-## Phase 04 — Preliminary Prospect Delineation & Ranking (implemented v0.4.0)
+## Phase 04 — Preliminary Prospect Delineation & Ranking (implemented v0.4.0; guide reconciled v0.6.0)
 
-No per-phase QGIS guide exists (`docs/phase_04` is absent — the v9 methodology doc is the only spec),
-so there are **no doc-vs-guide conflicts** to reconcile; Phase 04 follows the methodology directly
-(`PHASE_04_PLAN.md`). Two points worth recording:
-- **Two 100-pt scoring frameworks (both intentional).** Phase 03's `SCORING_CRITERIA` scores *deposit
-  models* (03A rubric; ≥70/50-69/30-49/<30). Phase 04's `PROSPECT_CRITERIA` (v9 §5: geology 20 /
-  geochem 15 / RS 15 / structure 15 / field 15 / drone 8 / CMCS 7 / access 5) scores *prospect
-  polygons* into **A≥75 / B55-74 / C35-54 / D<35**. Phase 04 consumes the former as each prospect's
-  `model_confidence` / `validation_priority`.
+A per-phase deep-dive guide **does** exist — `Phase_4_..._Guide_MN.docx`, updated **2026-07-01**
+(after the v9 master, and after our initial Phase 04 build from v9 §5 alone). It is now in
+`docs/phase_04/`. It confirms the 5-folder tree, the four expected outputs, the A/B/C/D bands
+(≥75 / 55-74 / 35-54 / <35) and the four per-prospect deposit-model fields — but it defines a
+different scoring matrix, giving one genuine conflict:
+
+**04-1 — prospect scoring matrix: master v9 §5 vs Phase-4 guide §6.** v9 §5 is a *lifecycle*
+matrix (geology 20 / geochem 15 / RS 15 / structure 15 / **field-pXRF 15 / drone 8** / CMCS 7 /
+access 5) — its field/drone criteria cannot score at desktop, capping desktop prospects at B.
+The guide §6 is a *desktop* matrix: **geology 20 / occurrence 15 / geochem 20 / RS 15 /
+structure 10 / deposit-model fit 10 / access 5 / confidence 5** (graded bands per criterion; no
+field/drone), so a well-evidenced desktop prospect can reach A — which matches the human
+reference's A-class PCAs. **Resolved 2026-07-06 — adopt guide §6 for Phase 04** (same rule as
+01-1 / 02-2 / 03-1: the later per-phase deep-dive guide is the phase authority); **v9 §5 remains
+the lifecycle matrix for the Phase 10 final target ranking**, where field/pXRF/drone evidence
+exists. Implemented at v0.6.0: `PROSPECT_CRITERIA` reworked; §6.7 model-fit scored from the 03A
+score matrix once human-completed (pending → 0 + data gap); §6.9 confidence graded from evidence
+completeness; prospects delineated per class band (discrete A/B/C polygons).
+
+Other points worth recording:
+- **Three 100-pt scoring frameworks (all intentional).** Phase 03's `SCORING_CRITERIA` scores
+  *deposit models* (03A rubric; ≥70/50-69/30-49/<30); Phase 04's `PROSPECT_CRITERIA` (guide §6
+  desktop matrix) scores *prospect polygons* into A/B/C/D; v9 §5 is the *lifecycle* prospect matrix
+  reserved for Phase 10. Phase 04 consumes the 03A output as `model_fit` (§6.7) +
+  `dominant_deposit_model` / `model_confidence`.
 - **Attribute-aware scoring (v0.5.0).** Beyond the geometry-only evidence GPKG, Phase 04 reads
   attribute-bearing layers dropped under the Phase 03/04 dirs: **focused alteration** activates `rs`;
   **geochem-anomaly** polygons drive `geochem` + populate `elements`. Regional chlorite-epidote
   propylitic halo is excluded as context (it would saturate `rs`).
-- **Desktop data gaps (non-blocking, invariant #8).** `field/pXRF` (Phase 06+) and `drone`
-  (Phase 05+) evidence do not exist at desktop Phase 04 → those criteria score 0 (recorded in the
-  data-gap register); `rs` is 0 too unless focused alteration is fed. So the desktop ceiling is **B**;
-  the gate advances A/B to the field phases to reach A. New feature-id prefix **`BUD-PSP`** for
-  preliminary prospects (Appendix-A defines `BUD-TGT` for prospectivity zones; prospects are distinct).
+- **Data gaps (non-blocking, invariant #8).** `rs` without fed alteration, `model_fit` until the
+  human completes the 03A matrix, and `access` without a roads layer score 0 and are recorded in the
+  data-gap register. New feature-id prefix **`BUD-PSP`** for preliminary prospects (Appendix-A
+  defines `BUD-TGT` for prospectivity zones; prospects are distinct).
+- **Doc-drift notes (2026-07-06 re-inspection).** (a) The updated Phase-3 guide's CMCS text still
+  says 5/10/20 km with the pre-25 km folder name, while v9 (and the updated Phase-2 guide's buffer
+  prerequisite) mandate the 25 km ring — ours is a superset (5/10/20/25), so both are satisfied.
+  (b) The live `0. Raw Data` archive was reorganized into subfolders (09 → 9.1-9.4;
+  the SAS scan → 03/Hand_Interpreted_Geology/) — all 79 files verified present by name/size;
+  harmless because ingest matches by basename, never path.
 
 ## Still open (later phases / documentation)
 

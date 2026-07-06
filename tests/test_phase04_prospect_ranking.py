@@ -62,7 +62,7 @@ def _write_68(ctx, config):
 
 def _inject_evidence(config):
     """Append a geology contact + a fault near the ingested #68 points so cells there score
-    geology(20, contact-proximity) + structure(15) + geochem(15) = C-class prospects."""
+    geology(20, contact-proximity) + occurrence(15) + structure(10) = C-class prospects."""
     import geopandas as gpd
     from shapely.geometry import LineString, MultiLineString, MultiPolygon
 
@@ -214,7 +214,9 @@ def test_phase04_real_run_grid_and_gate(raw_archive):
     gaps = {
         str(r[header.index("criterion")]) for r in data if "GAP" in str(r[header.index("status")])
     }
-    assert {"rs", "field_pxrf", "drone"} <= gaps
+    # on the bare synthetic archive: no alteration fed, 03A matrix still a template, no roads
+    assert {"rs", "model_fit", "access"} <= gaps
+    assert "confidence" not in gaps  # §6.9 completeness is always derivable
 
     # gate advances but is provisional (human-completion items pending)
     report = phase.qaqc(ctx)
@@ -258,7 +260,8 @@ def test_phase04_delineates_prospects(raw_archive):
 
 def test_phase04_attribute_evidence_activates_rs_and_elements(raw_archive):
     # Attribute-aware path: feeding ASTER-alteration + a geochem-anomaly (with elements) activates
-    # the rs criterion (0 -> 15), populates `elements`, and lifts a prospect to >= B.
+    # rs (0 -> 15) and geochem (0 -> 20), populates `elements`, and — per the guide §6 desktop
+    # matrix (no field/drone criteria) — lifts a well-evidenced prospect to class A at desktop.
     config, register, _raw = raw_archive
     ctx = _ctx(config, register)
     _run_to_03(ctx)
@@ -278,5 +281,8 @@ def test_phase04_attribute_evidence_activates_rs_and_elements(raw_archive):
     pp = next((pdir / "02_Prospect_Polygon_Delineation").glob("*Prospect_Polygons*.gpkg"))
     g = vector_io.read_layer(pp, "prospect_candidate_areas")
     assert (g["score_rs"] == 15).any()  # rs criterion activated on >=1 prospect
+    assert (g["score_geochem"] == 20).any()  # geochem-anomaly criterion activated
     assert g["elements"].astype(str).str.contains("Cu").any()  # elements from the anomaly attribute
-    assert int(g["max_score"].max()) >= 55  # rs lifts a prospect to >= B
+    # geology 20 + occurrence 15 + geochem 20 + rs 15 + structure 10 + confidence -> class A
+    assert int(g["max_score"].max()) >= 75
+    assert (g["prospect_class"] == "A").any()

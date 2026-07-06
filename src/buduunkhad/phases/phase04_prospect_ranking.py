@@ -1,11 +1,14 @@
 """Phase 04 — Preliminary Prospect Delineation & Ranking (BUILD).
 
 Turns the Phase 03 geological-evidence package into ranked preliminary prospects, per the
-methodology (v9 §04 / §5): build an evidence-scoring grid over the licence AOI, score each cell on
-the **8-criterion weighted matrix** (geology 20 / historical geochem 15 / ASTER-Sentinel 15 /
-structure 15 / field-pXRF 15 / drone 8 / CMCS 7 / access 5 = 100), dissolve high-score cells into
-candidate prospect polygons, assign the **A/B/C/D** field-priority class (A>=75, B 55-74, C 35-54,
-D<35), wire in the Phase 03 03A deposit-model outputs, and emit the four deliverables.
+methodology (v9 §04 + the Phase-4 guide §6 **desktop scoring matrix** — conflict 04-1): build an
+evidence-scoring grid over the licence AOI, score each cell on the 8-criterion weighted matrix
+(geology 20 / occurrence 15 / geochem 20 / RS 15 / structure 10 / deposit-model fit 10 / access 5 /
+confidence 5 = 100), dissolve high-score cells into candidate prospect polygons, assign the
+**A/B/C/D** field-priority class (A>=75, B 55-74, C 35-54, D<35), wire in the Phase 03 03A
+deposit-model outputs, and emit the four deliverables. The guide's matrix is desktop-only (no
+field/drone criteria — those belong to the v9 §5 lifecycle matrix used at Phase 10), so a
+well-evidenced desktop prospect CAN reach class A.
 
 **Attribute-aware scoring.** Beyond the Phase 03 evidence GPKG (a geometry-only shared schema),
 Phase 04 also reads *attribute-bearing* prospectivity layers dropped anywhere under the Phase 03/04
@@ -15,10 +18,10 @@ criterion, and **geochem-anomaly** polygons drive ``geochem`` and populate each 
 ``elements`` from the anomaly's element attribute. Regional chlorite-epidote *propylitic halo* is
 deliberately excluded as context — it blankets the district and would re-saturate the score.
 
-**Desktop-stage honesty (invariant #8).** ``field/pXRF`` (Phase 06+) and ``drone`` (Phase 05+)
-evidence does not exist at desktop Phase 04 → those criteria score **0**, flagged as data gaps, so
-the desktop ceiling is **B** (reaching **A** needs the field/lab/drone phases). Every output is
-stamped *"Preliminary — not ore proof."*
+**Honesty (invariant #8).** Criteria whose evidence is absent (``rs`` without fed alteration,
+``model_fit`` until the human completes the 03A score matrix, ``access`` without a roads layer)
+score **0** and are flagged as data gaps. Every output is stamped *"Preliminary — not ore proof"* —
+class A here still means "field/lab follow-up priority", never a confirmed deposit.
 """
 
 from __future__ import annotations
@@ -37,26 +40,29 @@ PROSPECT_LIMITATION = (
     "Desktop evidence-scored prospect; requires field/lab validation (drone/recon/sampling)"
 )
 
-# v9 §5 prospect ranking matrix — 8 weighted criteria summing to 100. DISTINCT from Phase 03's
-# SCORING_CRITERIA (the 03A deposit-model rubric): this scores prospect *polygons*, that scores
-# deposit *models*. `available` is False for criteria whose evidence does not exist at desktop
-# Phase 04 in this pipeline (scored 0 + recorded as a data gap).
+# Phase-4 guide §6 desktop scoring matrix — 8 weighted criteria summing to 100 (conflict 04-1:
+# adopted over the master v9 §5 lifecycle matrix, per the repo rule that the later per-phase
+# deep-dive guide is the phase authority; §5 — which adds field/pXRF/drone criteria — remains the
+# lifecycle matrix for the Phase 10 final ranking). DISTINCT from Phase 03's SCORING_CRITERIA
+# (the 03A deposit-model rubric): this scores prospect *polygons*, that scores deposit *models*.
+# The bool marks criteria whose evidence exists in-pipeline by default; availability is
+# re-derived from the actual evidence at run time.
 PROSPECT_CRITERIA: list[tuple[str, int, bool]] = [
-    ("geology", 20, True),
-    ("geochem", 15, True),
-    ("rs", 15, False),  # ASTER/Sentinel alteration — Phase 02 method-note (H-4)
-    ("structure", 15, True),
-    ("field_pxrf", 15, False),  # Phase 06+
-    ("drone", 8, False),  # Phase 05+
-    ("cmcs", 7, True),
-    ("access", 5, False),  # roads layer is a human input; absent -> gap
+    ("geology", 20, True),  # geological setting: lithology/contact/alteration (§6.2)
+    ("occurrence", 15, True),  # known occurrence / showing in or near the prospect (§6.3)
+    ("geochem", 20, True),  # stream/soil/rock/heavy-mineral anomaly (§6.4)
+    ("rs", 15, False),  # ASTER/Sentinel/KOMPSAT indication (§6.5); needs fed alteration
+    ("structure", 10, True),  # fault/shear/lineament control (§6.6)
+    ("model_fit", 10, False),  # Phase 03 03A deposit-model fit (§6.7); pending human matrix
+    ("access", 5, False),  # road/terrain/logistics (§6.8); needs a roads layer
+    ("confidence", 5, True),  # evidence completeness / traceability (§6.9); always derivable
 ]
 _CRIT_WEIGHT = {k: w for k, w, _ in PROSPECT_CRITERIA}
 
 # Grid + proximity tuning (module constants, like Phase 03's CMCS_RINGS_M).
 GRID_CELL_M = 250.0
 CONTEXT_BUFFER_M = 1000.0  # grid the licence boundary + this context margin
-SCORE_THRESHOLD = 35  # cells scoring >= this (the C floor) are promoted to candidate polygons
+SCORE_THRESHOLD = 35  # the C floor: only A/B/C-band cells become prospect polygons (D excluded)
 OCCURRENCE_NEAR_M = 750.0  # "near a known occurrence" proximity (human-ref threshold)
 ACCESS_NEAR_M = 1500.0  # "accessible" = within this of a road (human-ref threshold)
 
@@ -207,6 +213,7 @@ class Phase04ProspectRanking(Phase):
     _criteria_available: dict[str, bool]
     _notes: list[str]
     _model_wired: bool
+    _model_fit: dict[str, object]
 
     def __init__(self) -> None:
         self._n_candidates = 0
@@ -216,6 +223,12 @@ class Phase04ProspectRanking(Phase):
         self._criteria_available = {k: avail for k, _, avail in PROSPECT_CRITERIA}
         self._notes = []
         self._model_wired = False
+        self._model_fit = {
+            "score": 0,
+            "model": DEPOSIT_MODELS[0][0],
+            "label": "pending (03A score matrix not yet completed)",
+            "available": False,
+        }
 
     # ------------------------------------------------------------------ #
 
@@ -336,6 +349,69 @@ class Phase04ProspectRanking(Phase):
             "geochem_gdfs": geochem_gdfs,
         }
 
+    def _load_model_fit(self, ctx: RunContext) -> None:
+        """Score guide §6.7 (deposit-model fit, 10 pts) from the Phase 03 03A score matrix.
+
+        The 03A matrix (criterion x 6 models + a Total row) is a human-completed artifact. When
+        the human has filled numeric scores, the best model's total maps onto the §6.7 band
+        (via the 03A confidence thresholds: >=70 -> 10, 50-69 -> 7, 30-49 -> 4, else 1) and names
+        ``dominant_deposit_model``; while it is still an empty template, model_fit scores 0 and is
+        recorded as a pending data gap.
+        """
+        matrices = sorted(
+            (ctx.phase_dir("03") / "10_Preliminary_Deposit_Model_03A").glob(
+                "*deposit_model_candidate_score_matrix*.xlsx"
+            )
+        )
+        if not matrices:
+            return
+        try:
+            import openpyxl
+
+            ws = openpyxl.load_workbook(matrices[0]).active
+            if ws is None:
+                return
+            rows = list(ws.iter_rows(values_only=True))
+        except Exception:
+            return
+        if not rows:
+            return
+        header = [str(c) for c in rows[0]]
+        model_cols = [
+            i for i, h in enumerate(header) if h not in ("criterion", "max_points", "None")
+        ]
+        total_row = next((r for r in rows[1:] if str(r[0]).strip().lower() == "total"), None)
+        best_score, best_model = 0.0, ""
+        source = [total_row] if total_row is not None else rows[1:]
+        for i in model_cols:
+            vals = []
+            for r in source:
+                try:
+                    vals.append(float(str(r[i])))
+                except (TypeError, ValueError):
+                    continue
+            if not vals:
+                continue
+            score = vals[0] if total_row is not None else sum(vals)
+            if score > best_score:
+                best_score, best_model = score, header[i]
+        if best_score <= 0:
+            return  # template still empty -> stays pending
+        if best_score >= 70:
+            pts, label = 10, "High priority model"
+        elif best_score >= 50:
+            pts, label = 7, "Moderate priority model"
+        elif best_score >= 30:
+            pts, label = 4, "Low / conceptual model"
+        else:
+            pts, label = 1, "Insufficient evidence"
+        self._model_fit = {
+            "score": pts,
+            "model": best_model,
+            "label": f"{label} ({best_score:.0f}/100 in 03A)",
+            "available": True,
+        }
+
     # ------------------------------------------------------------------ #
     # scoring + delineation
     # ------------------------------------------------------------------ #
@@ -354,6 +430,7 @@ class Phase04ProspectRanking(Phase):
             return []
         ev = self._load_evidence(gpkg)
         attr = self._load_attribute_evidence(ctx)
+        self._load_model_fit(ctx)
         boundary = self._load_boundary(ctx, ev)
         if boundary is None:
             self._notes.append(
@@ -402,16 +479,28 @@ class Phase04ProspectRanking(Phase):
         vector_io.write_layer(cells, grid_path, layer=_GRID_LAYER)
         result.add_output(grid_path)
 
-        # delineate: dissolve high-score cells into contiguous candidate clusters
-        high = cells[cells["score"] >= SCORE_THRESHOLD].copy()
+        # delineate PER CLASS BAND: contiguous A cells -> discrete A prospects, B cells -> B
+        # prospects, C cells -> retained C prospects (D = below the C floor, not a prospect).
+        # A single >=threshold dissolve would merge the whole evidence-rich zone into one blob;
+        # banded dissolve yields the discrete, per-priority cores the methodology's A/B/C/D
+        # decision gate acts on (A/B -> drone/recon; C retained with data gaps).
         prospects: list[dict] = []  # type: ignore[type-arg]
-        if len(high):
-            clusters = vector_io.dissolve_adjacent(high)
+        for cls in ("A", "B", "C"):
+            sub = cells[cells["priority"] == cls].copy()
+            if not len(sub):
+                continue
+            clusters = vector_io.dissolve_adjacent(sub)
+            assert clusters is not None  # sub is non-empty, so dissolve returns a GeoDataFrame
             # "within", not "intersects": a cell belongs to exactly the cluster that covers it —
             # "intersects" would also attach it to a neighbouring cluster it merely corner-touches,
             # double-counting the cell into that cluster's max/mean scores.
-            joined = gpd.sjoin(high, clusters, predicate="within", how="left")
-            prospects = self._build_prospects(clusters, joined, ev, attr, epsg)
+            joined = gpd.sjoin(sub, clusters, predicate="within", how="left")
+            prospects.extend(self._build_prospects(clusters, joined, ev, attr, epsg))
+        # global rank + ids across all bands (score first, then size)
+        prospects.sort(key=lambda r: (r["max_score"], r["area_ha"]), reverse=True)
+        for i, r in enumerate(prospects, start=1):
+            r["rank"] = i
+            r["candidate_id"] = f"{_FEATURE_PREFIX}-{i:04d}"
 
         # write the prospect polygons gpkg (02)
         prospect_path = (
@@ -480,34 +569,6 @@ class Phase04ProspectRanking(Phase):
 
         alter_layers = [k for k in ev if "alter" in k.lower() or "aster" in k.lower()]
         road_layers = [k for k in ev if "road" in k.lower()]
-        flags = {
-            # geology: favorable-CONTACT setting — near a geology-unit contact (polygon boundary)
-            # or an intrusive contact — not merely inside any mapped unit (which blankets the map).
-            "geology": present(
-                ["geology_units_50k_polygon", "geology_units_200k_polygon"],
-                GRID_CELL_M,
-                boundary=True,
-            )
-            | present(["intrusive_contacts_line"], GRID_CELL_M),
-            # geochem: near a known occurrence OR inside an attribute-bearing geochem-anomaly polygon.
-            "geochem": present(
-                ["mineral_occurrences_point", "mineralized_points_point"], OCCURRENCE_NEAR_M
-            )
-            | hit(attr.get("geochem_union")),
-            # rs: overlaps an ASTER/alteration polygon (attribute-evidence path; the geometry-only
-            # evidence GPKG carries none, so this activates only when alteration is fed in).
-            "rs": present(alter_layers) | hit(attr.get("alteration")),
-            "structure": present(
-                ["faults_structures_line", "dyke_vein_line", "intrusive_contacts_line"], GRID_CELL_M
-            ),
-            "field_pxrf": falses,
-            "drone": falses,
-            # cmcs: localized nearest-deposit/metallogenic context, NOT the whole filled 25 km buffer
-            # (which covers the entire AOI and gives every cell a flat +7).
-            "cmcs": present(["metallogenic_zones_polygon"], GRID_CELL_M)
-            | present(["cmcs_nearest_occurrences_point"], OCCURRENCE_NEAR_M),
-            "access": present(road_layers, ACCESS_NEAR_M),
-        }
 
         def _has(layers: list[str]) -> bool:
             for x in layers:
@@ -516,8 +577,8 @@ class Phase04ProspectRanking(Phase):
                     return True
             return False
 
-        # availability = the evidence SOURCE exists (drives the data-gap register + qaqc), independent
-        # of whether any cell happened to flag it.
+        # availability = the evidence SOURCE exists (drives the data-gap register, qaqc, and the
+        # §6.9 confidence points), independent of whether any cell happened to flag it.
         self._criteria_available = {
             "geology": _has(
                 [
@@ -526,22 +587,58 @@ class Phase04ProspectRanking(Phase):
                     "intrusive_contacts_line",
                 ]
             ),
-            "geochem": _has(["mineral_occurrences_point", "mineralized_points_point"])
-            or attr.get("geochem_union") is not None,
+            "occurrence": _has(["mineral_occurrences_point", "mineralized_points_point"]),
+            "geochem": attr.get("geochem_union") is not None,
             "rs": bool(alter_layers) or attr.get("alteration") is not None,
             "structure": _has(
                 ["faults_structures_line", "dyke_vein_line", "intrusive_contacts_line"]
             ),
-            "field_pxrf": False,
-            "drone": False,
-            "cmcs": _has(["metallogenic_zones_polygon", "cmcs_nearest_occurrences_point"]),
+            "model_fit": bool(self._model_fit["available"]),
             "access": bool(road_layers),
+            "confidence": True,  # §6.9 completeness is always derivable
         }
+        # §6.9 confidence points = evidence completeness across the 7 evidence criteria.
+        n_avail = sum(1 for k, v in self._criteria_available.items() if k != "confidence" and v)
+        confidence_pts = 5 if n_avail >= 6 else 3 if n_avail >= 4 else 1 if n_avail >= 2 else 0
         self._data_gaps = [k for k in self._criteria_available if not self._criteria_available[k]]
+
+        trues = ~falses
+        flags = {
+            # geology (§6.2): favorable-CONTACT setting — near a geology-unit contact (polygon
+            # boundary) or an intrusive contact — not merely inside any mapped unit (which
+            # blankets the map).
+            "geology": present(
+                ["geology_units_50k_polygon", "geology_units_200k_polygon"],
+                GRID_CELL_M,
+                boundary=True,
+            )
+            | present(["intrusive_contacts_line"], GRID_CELL_M),
+            # occurrence (§6.3): a known occurrence / mineralized point in or near the cell.
+            "occurrence": present(
+                ["mineral_occurrences_point", "mineralized_points_point"], OCCURRENCE_NEAR_M
+            ),
+            # geochem (§6.4): inside an attribute-bearing geochem-anomaly polygon.
+            "geochem": hit(attr.get("geochem_union")),
+            # rs (§6.5): overlaps a focused ASTER/alteration polygon (attribute-evidence path).
+            "rs": present(alter_layers) | hit(attr.get("alteration")),
+            # structure (§6.6): near a fault / dyke / intrusive contact.
+            "structure": present(
+                ["faults_structures_line", "dyke_vein_line", "intrusive_contacts_line"], GRID_CELL_M
+            ),
+            # model_fit (§6.7) + confidence (§6.9) are run-level (not spatial): applied uniformly.
+            "model_fit": trues if int(str(self._model_fit["score"])) > 0 else falses,
+            "access": present(road_layers, ACCESS_NEAR_M),
+            "confidence": trues if confidence_pts > 0 else falses,
+        }
+        # per-criterion points: spatial criteria award the full §6 band weight on presence;
+        # model_fit/confidence award their derived (graded) points.
+        points = dict(_CRIT_WEIGHT)
+        points["model_fit"] = int(str(self._model_fit["score"]))
+        points["confidence"] = confidence_pts
         total = pd.Series([0] * n, index=cells.index)
         for key, _w, _a in PROSPECT_CRITERIA:
             f = flags[key].astype(bool)
-            cells[f"score_{key}"] = (f * _CRIT_WEIGHT[key]).astype(int)
+            cells[f"score_{key}"] = (f * points[key]).astype(int)
             cells[f"flag_{key}"] = f
             total = total + cells[f"score_{key}"]
         cells["score"] = total.astype(int)
@@ -600,9 +697,10 @@ class Phase04ProspectRanking(Phase):
                 "centroid_E": round(rep.x, 1),
                 "centroid_N": round(rep.y, 1),
             }
-            for key, w, _a in PROSPECT_CRITERIA:
-                any_flag = bool(members[f"flag_{key}"].any())
-                row[f"score_{key}"] = w if any_flag else 0
+            for key, _w, _a in PROSPECT_CRITERIA:
+                # the cells already carry the correct per-criterion points (graded for
+                # model_fit/confidence); the prospect takes the best member cell's value
+                row[f"score_{key}"] = int(members[f"score_{key}"].max())
             # nearest-feature distances (from the cluster geometry)
             one = pd.DataFrame({"geometry": [geom]})
             one_gdf = gpd.GeoDataFrame(one, geometry="geometry", crs=f"EPSG:{epsg}")
@@ -613,25 +711,21 @@ class Phase04ProspectRanking(Phase):
             row["elements"] = elements_for(geom)  # from geochem-anomaly attributes (data-driven)
             rows.append(row)
 
-        rows.sort(key=lambda r: r["max_score"], reverse=True)
-        for i, r in enumerate(rows, start=1):
-            r["rank"] = i
-            r["candidate_id"] = f"{_FEATURE_PREFIX}-{i:04d}"
-        return rows
+        return rows  # rank + candidate_id are minted by the caller across all class bands
 
     def _interpret(self, row: dict) -> dict:  # type: ignore[type-arg]
-        """Deposit-model wiring + interpretive text for a prospect row (v9 §04 step 5)."""
+        """Deposit-model wiring + interpretive text for a prospect row (v9 §04 step 5 / guide §6.7)."""
         self._model_wired = True
         present_crit = [k for k, _w, _a in PROSPECT_CRITERIA if row.get(f"score_{k}", 0) > 0]
         interp = (
             "Structural/alteration + geochem/occurrence target"
-            if {"geology", "structure", "geochem"} & set(present_crit)
+            if {"geology", "structure", "geochem", "occurrence"} & set(present_crit)
             else "Contextual target (sparse desktop evidence)"
         )
         return {
             "elements": "",  # overwritten by the caller from geochem-anomaly attributes (if fed)
-            "dominant_deposit_model": DEPOSIT_MODELS[0][0],  # primary candidate; refine in 03A
-            "model_confidence": "pending (see Phase 03 03A score matrix)",
+            "dominant_deposit_model": str(self._model_fit["model"]),
+            "model_confidence": str(self._model_fit["label"]),
             "missing_model_evidence": "; ".join(self._data_gaps),
             "validation_priority": _CLASS_VALIDATION_PRIORITY[row["prospect_class"]],
             "target_interpretation": interp,
@@ -701,8 +795,8 @@ class Phase04ProspectRanking(Phase):
                 "status": "AVAILABLE" if self._criteria_available.get(k) else "DATA GAP (scored 0)",
                 "acquired_in_phase": {
                     "rs": "02 (ASTER/Sentinel — external SNAP/ILWIS) or ingested alteration layer",
-                    "field_pxrf": "06 (recon mapping + pXRF)",
-                    "drone": "05 (drone LiDAR/photogrammetry)",
+                    "geochem": "ingested geochem-anomaly polygons (attribute evidence)",
+                    "model_fit": "03 (human completes the 03A deposit-model score matrix)",
                     "access": "human roads layer / field recon",
                 }.get(k, "—"),
                 "note": ""
@@ -748,22 +842,29 @@ class Phase04ProspectRanking(Phase):
         note.write_text(
             f"# Phase 04 — Preliminary Prospect Delineation & Ranking (method note)\n\n"
             f"Created {date.today().isoformat()}. All outputs are **{PROSPECT_VALIDATION}**.\n\n"
-            f"## Scoring (v9 §5, weights sum 100)\n{weights}\n\n"
+            f"## Scoring (Phase-4 guide §6 desktop matrix, weights sum 100 — conflict 04-1)\n"
+            f"{weights}\n\n"
+            f"(The master v9 §5 lifecycle matrix — which adds field/pXRF and drone criteria — is "
+            f"used at Phase 10 final ranking, not here; see METHODOLOGY_DISCREPANCIES.md 04-1.)\n\n"
             f"Grid {int(GRID_CELL_M)} m over the licence + {int(CONTEXT_BUFFER_M)} m context; each cell "
             f"scores a criterion's full weight when its evidence is present (occurrence proximity "
             f"{int(OCCURRENCE_NEAR_M)} m, access {int(ACCESS_NEAR_M)} m). Geology scores near unit "
             f"**contacts** (polygon boundaries + intrusive contacts), not blanket interiors, and CMCS "
             f"scores **localized** nearest-deposit/metallogenic context, not the whole filled buffer — "
-            f"so scores discriminate rather than saturate. Cells scoring >= {SCORE_THRESHOLD} are "
-            f"dissolved into candidate polygons; class by max score (A>=75, B 55-74, C 35-54, D<35).\n\n"
+            f"so scores discriminate rather than saturate. Cells are dissolved into candidate "
+            f"polygons PER CLASS BAND (contiguous A cells -> discrete A prospects, likewise B and C; "
+            f"D = below the {SCORE_THRESHOLD} C-floor, not a prospect); class bands A>=75, B 55-74, "
+            f"C 35-54, D<35.\n\n"
             f"## Attribute-aware evidence\n"
             f"Attribute-bearing layers dropped under the Phase 03/04 dirs are read for richer scoring: "
             f"focused alteration (argillic/porphyry/sericite/silica or hand-digitized) activates `rs`; "
             f"geochem-anomaly polygons drive `geochem` + populate `elements`. Regional chlorite-epidote "
             f"propylitic halo is excluded as context (it blankets the district).\n\n"
-            f"## Desktop data gaps (scored 0)\n"
-            f"field/pXRF (Phase 06), drone LiDAR (Phase 05) — and `rs` when no focused alteration is "
-            f"provided. Desktop ceiling is B; A needs the field/lab/drone phases.\n\n"
+            f"## Data gaps (scored 0)\n"
+            f"`rs` without fed focused alteration; `model_fit` until the 03A score matrix is "
+            f"human-completed; `access` without a roads layer. `confidence` (5) grades evidence "
+            f"completeness. Field/pXRF/drone evidence enters at Phases 05-06 and is scored by the "
+            f"v9 §5 lifecycle matrix at Phase 10.\n\n"
             f"## Ranking map\n`..._Preliminary_Prospect_Ranking_Map.pdf` is a QGIS print layout "
             f"over the prospect polygons (human deliverable); the pipeline emits the polygons, "
             f"ranking table, Go/No-Go matrix and data-gap register.\n",
@@ -819,11 +920,13 @@ class Phase04ProspectRanking(Phase):
             note=f"Data-gap register lists {len(self._data_gaps)} desktop-unavailable criterion(s).",
         )
         report.add(
-            "Deposit-model score wired from Phase 03 (03A)",
+            "Deposit-model score wired from Phase 03 (03A) — guide §6.7",
             RECORDED_ACCEPTANCE,
-            decision=Decision.PASS if self._model_wired else Decision.PENDING,
-            note="dominant_deposit_model + model_confidence/validation_priority set per prospect "
-            "(model_confidence pending human completion of the 03A score matrix).",
+            decision=Decision.PASS
+            if (self._model_wired and self._model_fit["available"])
+            else Decision.PENDING,
+            note=f"model_fit={self._model_fit['score']}/10; dominant model "
+            f"'{self._model_fit['model']}' ({self._model_fit['label']}).",
         )
         report.add(
             "Field access and safety checked",

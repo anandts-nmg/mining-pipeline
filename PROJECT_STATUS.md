@@ -1,6 +1,6 @@
 # Project Status — Buduunkhad / XV-023222 Exploration Pipeline
 
-**As of:** 2026-07-06 · **Release:** v0.3.1 · **Health:** 🟢 On track
+**As of:** 2026-07-06 · **Release:** v0.3.2 · **Health:** 🟢 On track
 
 A brief for management. One-page snapshot of what the automated exploration pipeline
 has delivered, what's next, and where the gaps are. (Technical detail lives in
@@ -12,8 +12,10 @@ has delivered, what's next, and where the gaps are. (Technical detail lives in
 
 The desk-based half of the exploration workflow is **built, tested, and delivered**.
 Phases 00–03 — from raw-data safekeeping through the geological/metallogenic synthesis —
-run end-to-end on the real project data and are published to the shared Drive as **v0.3.1**.
-Work from here on increasingly depends on **field and lab data that does not exist yet**.
+run end-to-end on the real project data and are published to the shared Drive as **v0.3.2**.
+Field and lab campaigns are already **underway** (a Phase I field program has run and produced
+data); the work from here is **extending the pipeline** to ingest and process that data through
+the later phases.
 
 ## Progress at a glance
 
@@ -27,7 +29,7 @@ waiting on either the next build increment or on field/lab work.
 | 02 | Remote Sensing (satellite/terrain) Preprocessing | ✅ Complete |
 | 03 | Geological, Metallogenic & Deposit-Model Synthesis | ✅ Complete |
 | 04 | Preliminary Prospect Ranking | ⏭️ Next to build |
-| 05–11, 99 | Drone, field sampling, soil/geochem, integration, final delivery | 🕓 Scaffolded; await build + field data |
+| 05–11, 99 | Drone, field sampling, soil/geochem, integration, final delivery | 🕓 Scaffolded; **build-limited** — field/lab data already in hand for 06–09 |
 
 ## What has been delivered (v0.3.1)
 
@@ -51,8 +53,10 @@ went through a full correctness audit with every finding fixed.
 1. **Phase 04 — Preliminary Prospect Ranking** (recommended next). Scores and ranks target
    areas using the geological evidence already assembled. This is the last major step that
    runs mostly on existing desktop data.
-2. **Phases 05–11** unlock as field campaigns happen (drone survey, mapping, sampling, lab
-   assays). The folders and templates are ready to receive that data.
+2. **Phases 06–09** are now **buildable** — the field & lab data (pXRF field readings, rock-chip
+   and soil sampling, lab assay reports) **already exists** from the Phase I program, so these
+   phases are limited by pipeline build, not by data. Drone LiDAR, geophysics and drilling data
+   are still outstanding.
 
 ## Open decisions & risks (all minor, none blocking)
 
@@ -66,13 +70,16 @@ went through a full correctness audit with every finding fixed.
 
 - **One genuinely missing file:** the KOMPSAT satellite licence form (EULA). It's logged as a
   known gap and does **not** block anything — procurement/sync item.
-- **Field & lab data not yet collected** (drone LiDAR, mapping, sampling, assays). This is
-  expected — those phases haven't started. Until then, all evidence is *supporting*
-  (historical/remote-sensing), not decision-grade ore evidence.
+- **Field & lab data — largely collected, not yet processed by the pipeline.** The Phase I field
+  program has produced pXRF field readings, rock-chip/soil sampling and lab assay reports (held in
+  the master data directory); the pipeline's later phases simply haven't been built to ingest them
+  yet. Still genuinely outstanding: **drone LiDAR, geophysics, and drilling**. Until the
+  decision-grade lab data is integrated, the *published* evidence remains supporting
+  (historical/remote-sensing).
 - **A few external imagery products** (certain ASTER/KOMPSAT/Sentinel steps) require
   specialist software and are captured as documented method-notes rather than automated output.
 
 ---
 
-*Prepared from the live repository state (branch `main`, tag `v0.3.1`). For the engineering
+*Prepared from the live repository state (branch `main`, tag `v0.3.2`). For the engineering
 detail behind any line above, see the referenced documents in the repo root.*

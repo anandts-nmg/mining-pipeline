@@ -374,6 +374,9 @@ class Phase04ProspectRanking(Phase):
                 ext="gpkg",
             )
         )
+        # Rebuild from scratch: the per-layer appends below would otherwise accumulate duplicate
+        # features into a file that survives between runs (a re-run must not double the overlay).
+        overlay_path.unlink(missing_ok=True)
         for name, g in ev.items():
             vector_io.write_layer(g.to_crs(epsg=epsg), overlay_path, layer=name, mode="a")
         if overlay_path.exists():
@@ -404,7 +407,10 @@ class Phase04ProspectRanking(Phase):
         prospects: list[dict] = []  # type: ignore[type-arg]
         if len(high):
             clusters = vector_io.dissolve_adjacent(high)
-            joined = gpd.sjoin(high, clusters, predicate="intersects", how="left")
+            # "within", not "intersects": a cell belongs to exactly the cluster that covers it —
+            # "intersects" would also attach it to a neighbouring cluster it merely corner-touches,
+            # double-counting the cell into that cluster's max/mean scores.
+            joined = gpd.sjoin(high, clusters, predicate="within", how="left")
             prospects = self._build_prospects(clusters, joined, ev, attr, epsg)
 
         # write the prospect polygons gpkg (02)
@@ -426,9 +432,10 @@ class Phase04ProspectRanking(Phase):
             gdf = gpd.GeoDataFrame(prospects, geometry=geoms, crs=f"EPSG:{epsg}")
             gdf = gdf.reindex(columns=[*_PROSPECT_COLUMNS, "geometry"])
             vector_io.write_layer(gdf, prospect_path, layer=_PROSPECT_LAYER)
+            result.add_output(prospect_path)
         else:
+            # emits the empty schema AND records the output (avoid a duplicate manifest entry)
             self._emit_prospect_schema(ctx, pdir, result, path=prospect_path)
-        result.add_output(prospect_path)
 
         self._n_candidates = len(prospects)
         counts: dict[str, int] = {}
@@ -622,7 +629,7 @@ class Phase04ProspectRanking(Phase):
             else "Contextual target (sparse desktop evidence)"
         )
         return {
-            "elements": "",  # populated when geochem-anomaly attributes are ingested (data gap)
+            "elements": "",  # overwritten by the caller from geochem-anomaly attributes (if fed)
             "dominant_deposit_model": DEPOSIT_MODELS[0][0],  # primary candidate; refine in 03A
             "model_confidence": "pending (see Phase 03 03A score matrix)",
             "missing_model_evidence": "; ".join(self._data_gaps),
@@ -826,10 +833,15 @@ class Phase04ProspectRanking(Phase):
             "human before drone/recon (desktop data gap).",
         )
         report.add(
-            "Desktop remote-sensing / field / drone criteria recorded as data gaps",
-            "RS(15)/field-pXRF(15)/drone(8) score 0 at desktop; recorded, non-blocking (invariant #8).",
+            "Desktop-unavailable criteria recorded as data gaps",
+            "Criteria without evidence at desktop Phase 04 score 0; recorded, non-blocking "
+            "(invariant #8).",
             decision=Decision.PASS,
-            note="; ".join(self._data_gaps),
+            note=(
+                f"Data gaps: {'; '.join(self._data_gaps)}."
+                if self._data_gaps
+                else "All 8 criteria have evidence sources."
+            ),
         )
         return report
 

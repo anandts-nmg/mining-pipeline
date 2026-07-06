@@ -113,7 +113,7 @@ committed):
 
 ```powershell
 # Windows PowerShell (per-machine paths via env vars; use SHORT paths — see below):
-$env:BUDUUNKHAD_RAW_ROOT    = "C:\bk\raw"   # the local/synced "0. Raw Data"
+$env:BUDUUNKHAD_RAW_ROOT    = "C:\bk\rawdata"  # a REAL local copy of "0. Raw Data" (a Drive symlink under-enumerates via Python rglob)
 $env:BUDUUNKHAD_OUTPUT_ROOT = "C:\bk\out"   # where generated outputs go
 buduunkhad validate                 # confirms inputs resolve + manifest coverage (size match)
 buduunkhad run --from 00 --to 01    # --override only if a *non-acknowledged* gap stops it

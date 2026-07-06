@@ -105,6 +105,24 @@ def _inject_evidence(config):
     )
 
 
+def _inject_attribute_evidence(config):
+    """Drop an ASTER-alteration + a geochem-anomaly (with element attribute) layer covering the
+    points, exercising Phase 04's attribute-evidence path (activates `rs` + populates `elements`)."""
+    import geopandas as gpd
+
+    p03in = _evidence_gpkg_03(config).parent.parent / "01_Input_Working_Copy"
+    p03in.mkdir(parents=True, exist_ok=True)
+    pts = vector_io.read_layer(_evidence_gpkg_03(config), "mineralized_points_point")
+    cover = pts.geometry.union_all().buffer(400)
+    epsg = config.target_epsg
+    gpd.GeoDataFrame(
+        {"alt_type": ["advanced_argillic"], "geometry": [cover]}, crs=f"EPSG:{epsg}"
+    ).to_file(p03in / "human_aster_alteration.gpkg", layer="aster_alteration_zones", driver="GPKG")
+    gpd.GeoDataFrame({"main_element": ["Cu,Mo"], "geometry": [cover]}, crs=f"EPSG:{epsg}").to_file(
+        p03in / "human_geochem_anomaly.gpkg", layer="geochem_anomaly_polygons", driver="GPKG"
+    )
+
+
 # --------------------------------------------------------------------------- #
 # unit: class bands + grid helpers
 # --------------------------------------------------------------------------- #
@@ -236,3 +254,29 @@ def test_phase04_delineates_prospects(raw_archive):
     ws = openpyxl.load_workbook(rt).active
     assert ws is not None
     assert ws.max_row == 1 + len(g)
+
+
+def test_phase04_attribute_evidence_activates_rs_and_elements(raw_archive):
+    # Attribute-aware path: feeding ASTER-alteration + a geochem-anomaly (with elements) activates
+    # the rs criterion (0 -> 15), populates `elements`, and lifts a prospect to >= B.
+    config, register, _raw = raw_archive
+    ctx = _ctx(config, register)
+    _run_to_03(ctx)
+    _write_68(ctx, config)
+    Phase03GeologySynthesis().run(ctx)
+    _inject_evidence(config)  # geology contact + fault
+    _inject_attribute_evidence(config)  # alteration + geochem-anomaly (with element attribute)
+
+    phase = Phase04ProspectRanking()
+    phase.prepare(ctx)
+    result = phase.run(ctx)
+    assert result.status == "ok"
+    assert phase._n_candidates >= 1
+    assert phase._criteria_available["rs"] is True  # alteration fed -> rs available
+
+    pdir = _p04_dir(config)
+    pp = next((pdir / "02_Prospect_Polygon_Delineation").glob("*Prospect_Polygons*.gpkg"))
+    g = vector_io.read_layer(pp, "prospect_candidate_areas")
+    assert (g["score_rs"] == 15).any()  # rs criterion activated on >=1 prospect
+    assert g["elements"].astype(str).str.contains("Cu").any()  # elements from the anomaly attribute
+    assert int(g["max_score"].max()) >= 55  # rs lifts a prospect to >= B

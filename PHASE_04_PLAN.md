@@ -54,20 +54,30 @@ per-criterion `score_*`, `dist_fault_m/dist_dyke_m/dist_occ_m/dist_min_point_m/d
 elements, dominant_deposit_model, model_confidence, missing_model_evidence, validation_priority,
 target_interpretation, recommended_followup, validation_status, limitation, source_phase`.
 
-## Status note (v0.4.0)
-Two states, both honest:
-- **Bare Phase 03 templates** (7 #68 points + CMCS buffer + boundary only): grid tops out at 22/100
-  → **0 candidates** — correct; the geology/structure/alteration layers aren't digitized yet.
-- **Human evidence fed in** (the `4. Phase_04/Input` digitized geology/faults/dykes/occurrences
-  ingested via Phase 03's human-layer path — done 2026-07-06): Phase 04 delineates **6 discrete
-  C-class prospects** (`BUD-PSP-0001..0006`, max score 50/100, 31–1288 ha) — the **same count** as
-  the human's 6 PCAs, ranked by score. They cap at **C** (not the human's A) because ASTER/field/drone
-  score 0 at desktop and the geometry-only evidence GPKG can't score favorable-lithology / geochem-
-  element / alteration *attributes* — the fuller fidelity upgrade (attribute-aware scoring +
-  ASTER) is the planned next increment.
+## Attribute-aware scoring (v0.5.0)
+Beyond the geometry-only Phase 03 evidence GPKG, Phase 04 reads *attribute-bearing* prospectivity
+layers dropped under the Phase 03/04 dirs (whitelisted by keyword — pipeline outputs never match):
+- **focused alteration** (argillic/porphyry/sericite/silica or hand-digitized) activates the `rs`
+  criterion (0 → 15). Regional chlorite-epidote *propylitic halo* is excluded as context — it
+  blankets the district and would re-saturate the score.
+- **geochem-anomaly** polygons drive `geochem` and populate each prospect's `elements` from the
+  anomaly's element attribute.
 
-Prospects populate once the Phase 03 evidence layers are digitized/ingested; the scoring rules key
-off layer presence, so an ingested ASTER/roads layer activates its criterion automatically.
+## Status note
+Three states, all honest:
+- **Bare Phase 03 templates** (7 #68 points + CMCS buffer + boundary): grid tops out at 22/100 → **0
+  candidates** — correct; no geology/structure/alteration digitized yet.
+- **Geometry evidence fed** (digitized geology/faults/dykes/occurrences via Phase 03 human-layer
+  ingest): **6 discrete C-class** prospects (matches the human's 6 PCA count), max 50/100.
+- **+ attribute evidence** (hand-digitized alteration + geochem-anomaly, done 2026-07-06):
+  **10 discrete prospects — 2 B-class + 8 C-class** (`BUD-PSP-0001..0010`, max 65/100), each carrying
+  `elements` (Au/Cu/Mo/Ba/Co/Ni/…) from the anomaly. **B is the desktop ceiling** — reaching the
+  human's **A** needs `field/pXRF` (Phase 06) + `drone` (Phase 05), which score 0 here by design.
+
+The pixel-broad ASTER masks (`Advanced_argillic`/`Porphyry`/`Ch_Ep_halo`, thousands of polygons)
+are district-scale context and saturate presence-based `rs` into one blob — so the target-defining
+alteration input is the geologist's **hand-digitized** layer, not the raw ASTER masks. Finer
+intensity/grade-thresholded scoring of the raw masks is a future calibration with the geologist.
 
 ## Reuse
 `core.vector_io.make_grid / dissolve_adjacent / nearest_distance` (added for this phase);

@@ -7,13 +7,18 @@ structure 15 / field-pXRF 15 / drone 8 / CMCS 7 / access 5 = 100), dissolve high
 candidate prospect polygons, assign the **A/B/C/D** field-priority class (A>=75, B 55-74, C 35-54,
 D<35), wire in the Phase 03 03A deposit-model outputs, and emit the four deliverables.
 
-**Desktop-stage honesty (invariant #8):** three §5 criteria are not available at desktop Phase 04 in
-this pipeline and score **0**, flagged as data gaps — **ASTER/Sentinel alteration** (Phase 02 emits it
-as a method-note, not a produced layer — H-4), **field/pXRF** (Phase 06+) and **drone LiDAR**
-(Phase 05+). Desktop prospects therefore realistically land B/C; the gate exists precisely to push
-A/B candidates into the field phases to upgrade. Every output is stamped *"Preliminary — not ore
-proof."* The scoring rules key off evidence-layer presence, so when those layers are later ingested
-(e.g. an ASTER alteration human layer) the corresponding criterion activates automatically.
+**Attribute-aware scoring.** Beyond the Phase 03 evidence GPKG (a geometry-only shared schema),
+Phase 04 also reads *attribute-bearing* prospectivity layers dropped anywhere under the Phase 03/04
+dirs (whitelisted by keyword, so pipeline outputs never match): **focused alteration**
+(argillic / porphyry / sericite / silica, or hand-digitized alteration) activates the ``rs``
+criterion, and **geochem-anomaly** polygons drive ``geochem`` and populate each prospect's
+``elements`` from the anomaly's element attribute. Regional chlorite-epidote *propylitic halo* is
+deliberately excluded as context — it blankets the district and would re-saturate the score.
+
+**Desktop-stage honesty (invariant #8).** ``field/pXRF`` (Phase 06+) and ``drone`` (Phase 05+)
+evidence does not exist at desktop Phase 04 → those criteria score **0**, flagged as data gaps, so
+the desktop ceiling is **B** (reaching **A** needs the field/lab/drone phases). Every output is
+stamped *"Preliminary — not ore proof."*
 """
 
 from __future__ import annotations
@@ -170,6 +175,15 @@ _RECOMMENDED_FOLLOWUP = (
     "rock-chip + soil/stream-sediment follow-up."
 )
 
+# Attribute-evidence roles (Phase 04 reads these WITH attributes, from any gpkg dropped under the
+# Phase 03/04 dirs, keyed by filename/layer keyword — whitelisted so pipeline outputs never match).
+# `rs` scores only FOCUSED alteration (argillic/porphyry/sericite/silica + hand-digitized alteration)
+# — the methodology's high-score indicator. Regional chlorite-epidote *propylitic halo* is deliberately
+# excluded: it blankets the district and would re-saturate the score (it's context, not a target).
+_ALTER_KEYS = ("argil", "porphyry", "sericite", "silica", "alter")
+_GEOCHEM_KEYS = ("geochem", "anomaly", "anom")
+_ELEMENT_COLS = ("main_element", "elements", "element", "element_gr", "commodity", "main_eleme")
+
 
 class Phase04ProspectRanking(Phase):
     id = "04"
@@ -190,6 +204,7 @@ class Phase04ProspectRanking(Phase):
     _class_counts: dict[str, int]
     _grid_cells: int
     _data_gaps: list[str]
+    _criteria_available: dict[str, bool]
     _notes: list[str]
     _model_wired: bool
 
@@ -198,6 +213,7 @@ class Phase04ProspectRanking(Phase):
         self._class_counts = {}
         self._grid_cells = 0
         self._data_gaps = [k for k, _, avail in PROSPECT_CRITERIA if not avail]
+        self._criteria_available = {k: avail for k, _, avail in PROSPECT_CRITERIA}
         self._notes = []
         self._model_wired = False
 
@@ -264,6 +280,62 @@ class Phase04ProspectRanking(Phase):
         path = ctx.phase_dir("01") / "05_KMZ_KML_to_GPKG" / name
         return vector_io.read_layer(path, "license_boundary") if path.exists() else None
 
+    def _load_attribute_evidence(self, ctx: RunContext) -> dict:  # type: ignore[type-arg]
+        """Load attribute-bearing prospectivity evidence dropped under the Phase 03/04 dirs.
+
+        Unlike the Phase 03 evidence GPKG (geometry-only shared schema), these keep their source
+        attributes so Phase 04 can score the methodology's real criteria: ASTER/alteration polygons
+        activate ``rs``; geochem-anomaly polygons drive ``geochem`` and populate ``elements``.
+        Whitelisted by filename/layer keyword, so the pipeline's own outputs never match. Returns
+        ``{alteration: geom|None, geochem_union: geom|None, geochem_gdfs: [gdf, ...]}``.
+        """
+        from shapely.ops import unary_union
+
+        alter_geoms: list = []  # type: ignore[type-arg]
+        geochem_gdfs: list = []  # type: ignore[type-arg]
+        seen: set[str] = set()
+        for base in (ctx.phase_dir("03"), ctx.phase_dir("04")):
+            if not base.exists():
+                continue
+            for src in sorted(base.rglob("*.gpkg")):
+                try:
+                    layers = vector_io.list_gpkg_layers(src)
+                except Exception:
+                    continue
+                for layer in layers:
+                    low = f"{src.name} {layer}".lower()
+                    is_alter = any(k in low for k in _ALTER_KEYS)
+                    is_geochem = any(k in low for k in _GEOCHEM_KEYS)
+                    key = f"{src}::{layer}"
+                    if not (is_alter or is_geochem) or key in seen:
+                        continue
+                    try:
+                        g = vector_io.read_layer(src, layer)
+                    except Exception:
+                        continue
+                    if g is None or len(g) == 0:
+                        continue
+                    seen.add(key)
+                    g = g.to_crs(epsg=ctx.config.target_epsg)
+                    (geochem_gdfs if is_geochem else alter_geoms).append(g)
+
+        def _union(gdfs):  # type: ignore[no-untyped-def]
+            parts = [
+                (
+                    h.geometry.union_all()
+                    if hasattr(h.geometry, "union_all")
+                    else h.geometry.unary_union
+                )
+                for h in gdfs
+            ]
+            return unary_union(parts) if parts else None
+
+        return {
+            "alteration": _union(alter_geoms),
+            "geochem_union": _union(geochem_gdfs),
+            "geochem_gdfs": geochem_gdfs,
+        }
+
     # ------------------------------------------------------------------ #
     # scoring + delineation
     # ------------------------------------------------------------------ #
@@ -281,6 +353,7 @@ class Phase04ProspectRanking(Phase):
             self._emit_prospect_schema(ctx, pdir, result)
             return []
         ev = self._load_evidence(gpkg)
+        attr = self._load_attribute_evidence(ctx)
         boundary = self._load_boundary(ctx, ev)
         if boundary is None:
             self._notes.append(
@@ -311,7 +384,7 @@ class Phase04ProspectRanking(Phase):
         aoi["geometry"] = aoi.geometry.buffer(CONTEXT_BUFFER_M)
         cells = vector_io.make_grid(aoi, GRID_CELL_M, epsg)
         self._grid_cells = len(cells)
-        cells = self._score_cells(cells, ev, epsg)
+        cells = self._score_cells(cells, ev, attr, epsg)
         grid_path = (
             pdir
             / "03_Scoring_Matrix"
@@ -332,7 +405,7 @@ class Phase04ProspectRanking(Phase):
         if len(high):
             clusters = vector_io.dissolve_adjacent(high)
             joined = gpd.sjoin(high, clusters, predicate="intersects", how="left")
-            prospects = self._build_prospects(clusters, joined, ev, epsg)
+            prospects = self._build_prospects(clusters, joined, ev, attr, epsg)
 
         # write the prospect polygons gpkg (02)
         prospect_path = (
@@ -364,12 +437,15 @@ class Phase04ProspectRanking(Phase):
         self._class_counts = counts
         return prospects
 
-    def _score_cells(self, cells, ev: dict, epsg: int):  # type: ignore[no-untyped-def,type-arg]
+    def _score_cells(self, cells, ev: dict, attr: dict, epsg: int):  # type: ignore[no-untyped-def,type-arg]
         """Add per-criterion score columns + total ``score`` + ``priority`` to the grid cells."""
         import pandas as pd
 
         n = len(cells)
         falses = pd.Series([False] * n, index=cells.index)
+
+        def hit(geom):  # type: ignore[no-untyped-def]
+            return cells.geometry.intersects(geom) if geom is not None else falses
 
         def present(  # type: ignore[no-untyped-def]
             layer_names: list[str], buffer_m: float = 0.0, boundary: bool = False
@@ -406,10 +482,14 @@ class Phase04ProspectRanking(Phase):
                 boundary=True,
             )
             | present(["intrusive_contacts_line"], GRID_CELL_M),
+            # geochem: near a known occurrence OR inside an attribute-bearing geochem-anomaly polygon.
             "geochem": present(
                 ["mineral_occurrences_point", "mineralized_points_point"], OCCURRENCE_NEAR_M
-            ),
-            "rs": present(alter_layers),
+            )
+            | hit(attr.get("geochem_union")),
+            # rs: overlaps an ASTER/alteration polygon (attribute-evidence path; the geometry-only
+            # evidence GPKG carries none, so this activates only when alteration is fed in).
+            "rs": present(alter_layers) | hit(attr.get("alteration")),
             "structure": present(
                 ["faults_structures_line", "dyke_vein_line", "intrusive_contacts_line"], GRID_CELL_M
             ),
@@ -421,6 +501,36 @@ class Phase04ProspectRanking(Phase):
             | present(["cmcs_nearest_occurrences_point"], OCCURRENCE_NEAR_M),
             "access": present(road_layers, ACCESS_NEAR_M),
         }
+
+        def _has(layers: list[str]) -> bool:
+            for x in layers:
+                g = ev.get(x)
+                if g is not None and len(g) > 0:
+                    return True
+            return False
+
+        # availability = the evidence SOURCE exists (drives the data-gap register + qaqc), independent
+        # of whether any cell happened to flag it.
+        self._criteria_available = {
+            "geology": _has(
+                [
+                    "geology_units_50k_polygon",
+                    "geology_units_200k_polygon",
+                    "intrusive_contacts_line",
+                ]
+            ),
+            "geochem": _has(["mineral_occurrences_point", "mineralized_points_point"])
+            or attr.get("geochem_union") is not None,
+            "rs": bool(alter_layers) or attr.get("alteration") is not None,
+            "structure": _has(
+                ["faults_structures_line", "dyke_vein_line", "intrusive_contacts_line"]
+            ),
+            "field_pxrf": False,
+            "drone": False,
+            "cmcs": _has(["metallogenic_zones_polygon", "cmcs_nearest_occurrences_point"]),
+            "access": bool(road_layers),
+        }
+        self._data_gaps = [k for k in self._criteria_available if not self._criteria_available[k]]
         total = pd.Series([0] * n, index=cells.index)
         for key, _w, _a in PROSPECT_CRITERIA:
             f = flags[key].astype(bool)
@@ -431,10 +541,28 @@ class Phase04ProspectRanking(Phase):
         cells["priority"] = cells["score"].map(classify)
         return cells
 
-    def _build_prospects(self, clusters, joined, ev: dict, epsg: int) -> list[dict]:  # type: ignore[no-untyped-def,type-arg]
+    def _build_prospects(self, clusters, joined, ev: dict, attr: dict, epsg: int) -> list[dict]:  # type: ignore[no-untyped-def,type-arg]
         """Aggregate scored cells per contiguous cluster into ranked prospect records."""
         import geopandas as gpd
         import pandas as pd
+
+        geochem_gdfs = attr.get("geochem_gdfs") or []
+
+        def elements_for(geom):  # type: ignore[no-untyped-def]
+            """Distinct commodity/element tokens from geochem-anomaly polygons the prospect overlaps."""
+            vals: set[str] = set()
+            for gg in geochem_gdfs:
+                cols = {c.lower(): c for c in gg.columns}
+                ecol = next((cols[k] for k in _ELEMENT_COLS if k in cols), None)
+                if ecol is None:
+                    continue
+                sel = gg[gg.geometry.intersects(geom)]
+                for raw in sel[ecol].dropna().astype(str):
+                    for tok in raw.replace("/", ",").replace(";", ",").split(","):
+                        t = tok.strip()
+                        if t and t.lower() != "nan":
+                            vals.add(t)
+            return ",".join(sorted(vals))
 
         # nearest-feature distance sources
         dist_src = {
@@ -475,6 +603,7 @@ class Phase04ProspectRanking(Phase):
                 d = vector_io.nearest_distance(one_gdf, src).iloc[0]
                 row[col] = None if pd.isna(d) else round(float(d), 1)
             row.update(self._interpret(row))
+            row["elements"] = elements_for(geom)  # from geochem-anomaly attributes (data-driven)
             rows.append(row)
 
         rows.sort(key=lambda r: r["max_score"], reverse=True)
@@ -562,18 +691,18 @@ class Phase04ProspectRanking(Phase):
             {
                 "criterion": k,
                 "weight": _CRIT_WEIGHT[k],
-                "status": "AVAILABLE" if avail else "DATA GAP (scored 0)",
+                "status": "AVAILABLE" if self._criteria_available.get(k) else "DATA GAP (scored 0)",
                 "acquired_in_phase": {
-                    "rs": "02 (ASTER/Sentinel — external SNAP/ILWIS method-note)",
+                    "rs": "02 (ASTER/Sentinel — external SNAP/ILWIS) or ingested alteration layer",
                     "field_pxrf": "06 (recon mapping + pXRF)",
                     "drone": "05 (drone LiDAR/photogrammetry)",
                     "access": "human roads layer / field recon",
                 }.get(k, "—"),
                 "note": ""
-                if avail
+                if self._criteria_available.get(k)
                 else "Not available at desktop Phase 04; upgrades the score once acquired.",
             }
-            for k, _w, avail in PROSPECT_CRITERIA
+            for k, _w, _a in PROSPECT_CRITERIA
         ]
 
         tables: list[tuple[Path, list[str], list[dict], str]] = [  # type: ignore[type-arg]
@@ -620,9 +749,14 @@ class Phase04ProspectRanking(Phase):
             f"scores **localized** nearest-deposit/metallogenic context, not the whole filled buffer — "
             f"so scores discriminate rather than saturate. Cells scoring >= {SCORE_THRESHOLD} are "
             f"dissolved into candidate polygons; class by max score (A>=75, B 55-74, C 35-54, D<35).\n\n"
+            f"## Attribute-aware evidence\n"
+            f"Attribute-bearing layers dropped under the Phase 03/04 dirs are read for richer scoring: "
+            f"focused alteration (argillic/porphyry/sericite/silica or hand-digitized) activates `rs`; "
+            f"geochem-anomaly polygons drive `geochem` + populate `elements`. Regional chlorite-epidote "
+            f"propylitic halo is excluded as context (it blankets the district).\n\n"
             f"## Desktop data gaps (scored 0)\n"
-            f"ASTER/Sentinel alteration (Phase 02 method-note), field/pXRF (Phase 06), drone LiDAR "
-            f"(Phase 05). Desktop prospects therefore land B/C; A/B advance to field to upgrade.\n\n"
+            f"field/pXRF (Phase 06), drone LiDAR (Phase 05) — and `rs` when no focused alteration is "
+            f"provided. Desktop ceiling is B; A needs the field/lab/drone phases.\n\n"
             f"## Ranking map\n`..._Preliminary_Prospect_Ranking_Map.pdf` is a QGIS print layout "
             f"over the prospect polygons (human deliverable); the pipeline emits the polygons, "
             f"ranking table, Go/No-Go matrix and data-gap register.\n",

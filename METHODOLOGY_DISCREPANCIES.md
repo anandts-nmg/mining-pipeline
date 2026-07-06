@@ -408,10 +408,14 @@ so there are **no doc-vs-guide conflicts** to reconcile; Phase 04 follows the me
   geochem 15 / RS 15 / structure 15 / field 15 / drone 8 / CMCS 7 / access 5) scores *prospect
   polygons* into **A≥75 / B55-74 / C35-54 / D<35**. Phase 04 consumes the former as each prospect's
   `model_confidence` / `validation_priority`.
-- **Desktop data gaps (non-blocking, invariant #8).** RS/ASTER (Phase 02 method-note, H-4),
-  field/pXRF (Phase 06+) and drone (Phase 05+) evidence do not exist at desktop Phase 04 → those
-  criteria score 0 and are recorded in the data-gap register. Desktop prospects therefore land B/C;
-  the gate advances A/B to the field phases to upgrade. New feature-id prefix **`BUD-PSP`** for
+- **Attribute-aware scoring (v0.5.0).** Beyond the geometry-only evidence GPKG, Phase 04 reads
+  attribute-bearing layers dropped under the Phase 03/04 dirs: **focused alteration** activates `rs`;
+  **geochem-anomaly** polygons drive `geochem` + populate `elements`. Regional chlorite-epidote
+  propylitic halo is excluded as context (it would saturate `rs`).
+- **Desktop data gaps (non-blocking, invariant #8).** `field/pXRF` (Phase 06+) and `drone`
+  (Phase 05+) evidence do not exist at desktop Phase 04 → those criteria score 0 (recorded in the
+  data-gap register); `rs` is 0 too unless focused alteration is fed. So the desktop ceiling is **B**;
+  the gate advances A/B to the field phases to reach A. New feature-id prefix **`BUD-PSP`** for
   preliminary prospects (Appendix-A defines `BUD-TGT` for prospectivity zones; prospects are distinct).
 
 ## Still open (later phases / documentation)

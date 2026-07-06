@@ -3,8 +3,8 @@
 Phase 04 consumes Phase 03's evidence GPKG (for the scoring grid), so the real-run helper chains
 Phase 00 → 01 → 03 → 04. On the bare synthetic archive most evidence layers are empty, so the grid
 scores ~0 and no candidate reaches the threshold — that path is exercised too. The delineation test
-writes a real #68 workbook (so Phase 03 ingests points) and injects a covering geology polygon so
-cells actually score and prospects form.
+writes a real #68 workbook (so Phase 03 ingests points) and injects a geology contact + fault near
+those points so cells there score (geology-contact 20 + structure 15 + geochem 15) and prospects form.
 """
 
 from __future__ import annotations
@@ -60,21 +60,49 @@ def _write_68(ctx, config):
     wb.save(wc)
 
 
-def _inject_geology(config):
-    """Append a covering geology polygon into the evidence GPKG so cells score geology(20)."""
+def _inject_evidence(config):
+    """Append a geology contact + a fault near the ingested #68 points so cells there score
+    geology(20, contact-proximity) + structure(15) + geochem(15) = C-class prospects."""
     import geopandas as gpd
-    from shapely.geometry import MultiPolygon, box
+    from shapely.geometry import LineString, MultiLineString, MultiPolygon
 
     gpkg = _evidence_gpkg_03(config)
-    b = vector_io.read_layer(gpkg, "license_boundary")
-    minx, miny, maxx, maxy = b.total_bounds
-    poly = MultiPolygon([box(minx, miny, maxx, maxy)])
-    row = dict.fromkeys(EVIDENCE_FIELDS, "")
-    row["feature_id"] = "BUD-GEO50-0001"
-    row["validation_status"] = "Historical only"
-    g = gpd.GeoDataFrame([row], geometry=[poly], crs=f"EPSG:{config.target_epsg}")
-    g = g.reindex(columns=[*EVIDENCE_FIELDS, "geometry"])
-    vector_io.write_layer(g, gpkg, layer="geology_units_50k_polygon", mode="a")
+    pts = vector_io.read_layer(gpkg, "mineralized_points_point")
+    reps = [g.representative_point() for g in pts.geometry]
+    coords = [(p.x, p.y) for p in reps]
+    epsg = config.target_epsg
+
+    def _row(fid):
+        r = dict.fromkeys(EVIDENCE_FIELDS, "")
+        r["feature_id"] = fid
+        r["validation_status"] = "Historical only"
+        return r
+
+    # geology polygon whose contact (boundary) sits within a grid cell of each point
+    poly = pts.geometry.union_all().buffer(150)
+    geol = poly if poly.geom_type == "MultiPolygon" else MultiPolygon([poly])
+    gg = gpd.GeoDataFrame([_row("BUD-GEO50-0001")], geometry=[geol], crs=f"EPSG:{epsg}")
+    vector_io.write_layer(
+        gg.reindex(columns=[*EVIDENCE_FIELDS, "geometry"]),
+        gpkg,
+        layer="geology_units_50k_polygon",
+        mode="a",
+    )
+    # a fault through the points
+    line = (
+        LineString(coords)
+        if len(coords) >= 2
+        else LineString([coords[0], (coords[0][0] + 300, coords[0][1])])
+    )
+    fg = gpd.GeoDataFrame(
+        [_row("BUD-STR-0001")], geometry=[MultiLineString([line])], crs=f"EPSG:{epsg}"
+    )
+    vector_io.write_layer(
+        fg.reindex(columns=[*EVIDENCE_FIELDS, "geometry"]),
+        gpkg,
+        layer="faults_structures_line",
+        mode="a",
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -184,7 +212,7 @@ def test_phase04_delineates_prospects(raw_archive):
     _run_to_03(ctx)
     _write_68(ctx, config)
     Phase03GeologySynthesis().run(ctx)
-    _inject_geology(config)
+    _inject_evidence(config)
 
     phase = Phase04ProspectRanking()
     phase.prepare(ctx)

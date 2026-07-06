@@ -371,7 +371,11 @@ class Phase04ProspectRanking(Phase):
         n = len(cells)
         falses = pd.Series([False] * n, index=cells.index)
 
-        def present(layer_names: list[str], buffer_m: float = 0.0):  # type: ignore[no-untyped-def]
+        def present(  # type: ignore[no-untyped-def]
+            layer_names: list[str], buffer_m: float = 0.0, boundary: bool = False
+        ):
+            from shapely.ops import unary_union
+
             geoms = []
             for name in layer_names:
                 g = ev.get(name)
@@ -381,22 +385,25 @@ class Phase04ProspectRanking(Phase):
                         if hasattr(g.geometry, "union_all")
                         else g.geometry.unary_union
                     )
+                    # ``boundary`` scores CONTACTS (polygon edges) rather than blanket interiors,
+                    # so a map-covering unit does not flag every cell — it discriminates on the
+                    # favorable-contact setting the methodology intends.
+                    if boundary:
+                        m = m.boundary
                     geoms.append(m.buffer(buffer_m) if buffer_m else m)
             if not geoms:
                 return falses
-            from shapely.ops import unary_union
-
             return cells.geometry.intersects(unary_union(geoms))
 
         alter_layers = [k for k in ev if "alter" in k.lower() or "aster" in k.lower()]
         road_layers = [k for k in ev if "road" in k.lower()]
         flags = {
+            # geology: favorable-CONTACT setting — near a geology-unit contact (polygon boundary)
+            # or an intrusive contact — not merely inside any mapped unit (which blankets the map).
             "geology": present(
-                [
-                    "geology_units_50k_polygon",
-                    "geology_units_200k_polygon",
-                    "tectonic_terrane_context_polygon",
-                ]
+                ["geology_units_50k_polygon", "geology_units_200k_polygon"],
+                GRID_CELL_M,
+                boundary=True,
             )
             | present(["intrusive_contacts_line"], GRID_CELL_M),
             "geochem": present(
@@ -408,7 +415,9 @@ class Phase04ProspectRanking(Phase):
             ),
             "field_pxrf": falses,
             "drone": falses,
-            "cmcs": present(["buffer_5km_10km_20km_25km", "metallogenic_zones_polygon"])
+            # cmcs: localized nearest-deposit/metallogenic context, NOT the whole filled 25 km buffer
+            # (which covers the entire AOI and gives every cell a flat +7).
+            "cmcs": present(["metallogenic_zones_polygon"], GRID_CELL_M)
             | present(["cmcs_nearest_occurrences_point"], OCCURRENCE_NEAR_M),
             "access": present(road_layers, ACCESS_NEAR_M),
         }
@@ -606,9 +615,11 @@ class Phase04ProspectRanking(Phase):
             f"## Scoring (v9 §5, weights sum 100)\n{weights}\n\n"
             f"Grid {int(GRID_CELL_M)} m over the licence + {int(CONTEXT_BUFFER_M)} m context; each cell "
             f"scores a criterion's full weight when its evidence is present (occurrence proximity "
-            f"{int(OCCURRENCE_NEAR_M)} m, access {int(ACCESS_NEAR_M)} m). Cells scoring "
-            f">= {SCORE_THRESHOLD} are dissolved into candidate polygons; class by max score "
-            f"(A>=75, B 55-74, C 35-54, D<35).\n\n"
+            f"{int(OCCURRENCE_NEAR_M)} m, access {int(ACCESS_NEAR_M)} m). Geology scores near unit "
+            f"**contacts** (polygon boundaries + intrusive contacts), not blanket interiors, and CMCS "
+            f"scores **localized** nearest-deposit/metallogenic context, not the whole filled buffer — "
+            f"so scores discriminate rather than saturate. Cells scoring >= {SCORE_THRESHOLD} are "
+            f"dissolved into candidate polygons; class by max score (A>=75, B 55-74, C 35-54, D<35).\n\n"
             f"## Desktop data gaps (scored 0)\n"
             f"ASTER/Sentinel alteration (Phase 02 method-note), field/pXRF (Phase 06), drone LiDAR "
             f"(Phase 05). Desktop prospects therefore land B/C; A/B advance to field to upgrade.\n\n"

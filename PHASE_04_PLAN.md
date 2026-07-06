@@ -27,7 +27,11 @@ from Phase 03's `SCORING_CRITERIA`, the 03A deposit-model rubric ≥70/50/30 —
 1. **Evidence overlay** — copy the non-empty Phase 03 evidence layers into one overlay GPKG (01).
 2. **Score grid** — a `GRID_CELL_M`=250 m fishnet over the boundary + `CONTEXT_BUFFER_M`=1000 m; each
    cell scores a criterion's full §5 weight when its evidence is present (occurrence proximity
-   `OCCURRENCE_NEAR_M`=750 m, access `ACCESS_NEAR_M`=1500 m). Written as `Evidence_Score_Grid` (03).
+   `OCCURRENCE_NEAR_M`=750 m, access `ACCESS_NEAR_M`=1500 m). **Discriminating rules:** geology scores
+   near unit *contacts* (polygon boundaries + intrusive contacts), not blanket interiors; CMCS scores
+   *localized* nearest-deposit/metallogenic context, not the whole filled 25 km buffer — otherwise
+   those two criteria flag ~100% of cells and the result saturates into one blob. Written as
+   `Evidence_Score_Grid` (03).
 3. **Delineate** — dissolve contiguous cells scoring ≥ `SCORE_THRESHOLD`=35 (the C floor) into
    candidate polygons; per polygon: `max_score`/`mean_score`, area, centroid, nearest-feature
    distances, per-criterion evidence flags, `BUD-PSP-####` id, rank. Written as `Prospect_Polygons`
@@ -51,13 +55,19 @@ elements, dominant_deposit_model, model_confidence, missing_model_evidence, vali
 target_interpretation, recommended_followup, validation_status, limitation, source_phase`.
 
 ## Status note (v0.4.0)
-On the current real data the Phase 03 evidence GPKG holds only the 7 #68 mineralized points + the
-CMCS buffer + boundary (geology/structure/alteration are empty templates awaiting human digitizing),
-so the grid tops out at 22/100 and Phase 04 yields **0 candidate prospects** — correct and honest.
-The machinery is complete and test-proven (a delineation test with injected geology + ingested #68
-produces ranked A/B/C/D prospects). Prospects populate once the Phase 03 evidence layers are
-digitized/ingested (or the human `4. Phase_04/Input` layers are brought in via Phase 03's human-layer
-ingest — the scoring rules key off layer presence, so ASTER/roads criteria activate automatically).
+Two states, both honest:
+- **Bare Phase 03 templates** (7 #68 points + CMCS buffer + boundary only): grid tops out at 22/100
+  → **0 candidates** — correct; the geology/structure/alteration layers aren't digitized yet.
+- **Human evidence fed in** (the `4. Phase_04/Input` digitized geology/faults/dykes/occurrences
+  ingested via Phase 03's human-layer path — done 2026-07-06): Phase 04 delineates **6 discrete
+  C-class prospects** (`BUD-PSP-0001..0006`, max score 50/100, 31–1288 ha) — the **same count** as
+  the human's 6 PCAs, ranked by score. They cap at **C** (not the human's A) because ASTER/field/drone
+  score 0 at desktop and the geometry-only evidence GPKG can't score favorable-lithology / geochem-
+  element / alteration *attributes* — the fuller fidelity upgrade (attribute-aware scoring +
+  ASTER) is the planned next increment.
+
+Prospects populate once the Phase 03 evidence layers are digitized/ingested; the scoring rules key
+off layer presence, so an ingested ASTER/roads layer activates its criterion automatically.
 
 ## Reuse
 `core.vector_io.make_grid / dissolve_adjacent / nearest_distance` (added for this phase);

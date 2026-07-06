@@ -84,7 +84,13 @@ class QAQCReport:
 
     @property
     def passed(self) -> bool:
-        """True only if there are items and none failed (pending is allowed)."""
+        """True if there are items and none failed. **PENDING is allowed** — an
+        orchestrate phase legitimately ends with human-completion items still open.
+
+        So ``passed`` means "nothing failed", *not* "all work complete". A consumer
+        that needs true completion must also check :pyattr:`has_pending` (surfaced as
+        ``qaqc_pending`` in the run manifest, and as the gate's ``provisional`` flag).
+        """
         return bool(self.items) and not self.has_failures
 
     # ---- writers --------------------------------------------------------- #

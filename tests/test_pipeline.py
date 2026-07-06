@@ -113,6 +113,26 @@ def test_dry_run_builds_full_tree_and_manifest(project):
     assert len(data["phases"]) == 13
 
 
+def test_manifest_surfaces_qaqc_pending_alongside_passed(raw_archive):
+    # qaqc_passed means "nothing failed" and is True even with PENDING items; the manifest must
+    # carry the companion qaqc_pending signal so a consumer can tell "passed" from "complete".
+    # Phase 00's real run always leaves the source-note/owner item PENDING for the operator.
+    config, register, _raw = raw_archive
+    manifest = run_pipeline(config, register, only=["00"], dry_run=False)
+
+    p00 = next(p for p in manifest.phases if p.phase_id == "00")
+    assert p00.qaqc_passed is True  # no failures
+    assert p00.qaqc_pending is True  # but human-completion items remain
+    assert p00.qaqc_pending == p00.gate_provisional  # both derive from has_pending
+
+    # the field is machine-readable in the written manifest, not just on the dataclass
+    man_path = config.runs_root / manifest.run_id / "run_manifest.json"
+    data = json.loads(man_path.read_text(encoding="utf-8"))
+    d00 = next(p for p in data["phases"] if p["phase_id"] == "00")
+    assert d00["qaqc_passed"] is True
+    assert d00["qaqc_pending"] is True
+
+
 def test_real_run_without_data_fails_loudly(project):
     config, register, _tmp = project  # raw_root empty
     missing = validate_raw_inputs(register, config.raw_root)

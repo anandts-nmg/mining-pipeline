@@ -69,7 +69,11 @@ class PhaseOutcome:
     mode: str
     status: str
     outputs: list[str] = field(default_factory=list)
+    #: ``qaqc_passed`` means "no QA/QC item failed" — it is True even when items are
+    #: still PENDING human completion. ``qaqc_pending`` is the companion signal: a
+    #: consumer that needs true completion must read both (passed AND not pending).
     qaqc_passed: bool = False
+    qaqc_pending: bool = False
     gate_status: str = ""
     gate_reason: str = ""
     gate_overridden: bool = False
@@ -84,6 +88,7 @@ class PhaseOutcome:
             "status": self.status,
             "outputs": self.outputs,
             "qaqc_passed": self.qaqc_passed,
+            "qaqc_pending": self.qaqc_pending,
             "gate": {
                 "status": self.gate_status,
                 "reason": self.gate_reason,
@@ -440,6 +445,7 @@ def run_pipeline(
                 report = phase.qaqc(ctx)
                 _write_phase_qaqc(ctx, phase, report)
                 outcome.qaqc_passed = report.passed
+                outcome.qaqc_pending = report.has_pending
                 decision = phase.gate(report, ctx)
                 outcome.gate_status = decision.status.value
                 outcome.gate_reason = decision.reason

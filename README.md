@@ -4,8 +4,8 @@ A config-driven Python geospatial pipeline implementing the *automatable* parts 
 **Buduunkhad / XV-023222 Exploration Workflow Methodology** (79 raw inputs, phases 00–99).
 
 This repository is the **foundation build**: the project skeleton, the conventions enforced
-in code, the 79-input register, the phase-runner architecture, **Phases 00, 01, 02 and 03 implemented
-end-to-end**, and every later phase registered as a stub behind a uniform interface.
+in code, the 79-input register, the phase-runner architecture, **Phases 00, 01, 02, 03 and 04
+implemented end-to-end**, and every later phase registered as a stub behind a uniform interface.
 
 > The methodology is phase-gated. Remote sensing / pXRF / drone outputs are **support**
 > evidence, not ore proof — final confidence comes from lab assay + field geology +
@@ -19,7 +19,7 @@ end-to-end**, and every later phase registered as a stub behind a uniform interf
 | 01 | Data Audit & Master GIS Setup | build | **implemented** — KMZ→GeoPackage boundary (EPSG:32647), buffers, raster CRS audit, master GPKG schema, confidence ranking, QGIS project |
 | 02 | Remote Sensing Preprocessing | build | **implemented** — per-product clip (DEM 5 km / Sentinel licence / basemap 1 km) → reproject to EPSG:32647 → Cloud-Optimized GeoTIFF; DEM terrain derivatives (multi-azimuth hillshade, slope, aspect, TRI, profile/plan curvature, flow); Sentinel indices / ASTER-HDF / KOMPSAT-ortho as formula-complete method notes. See `PHASE_02_PLAN.md` |
 | 03/03A | Geology / Metallogenic / CMCS Synthesis + Deposit Model | orchestrate | **implemented** — 12-folder scaffold; 17-layer evidence GPKG (13 provenance fields + `BUD-` feature IDs); CMCS 5/10/20/25 km context buffer; #68 mineralized-point XLSX→validated points; human-layer ingest; 03A deposit-model template + 6-model evidence table + 100-pt scoring; all outputs stamped *Historical only*. See `PHASE_03_PLAN.md` |
-| 04 | Preliminary Prospect Delineation & Ranking | build | stub |
+| 04 | Preliminary Prospect Delineation & Ranking | build | **implemented** — 250 m evidence-scoring grid over the AOI scored on the v9 §5 8-criterion weighted matrix (ASTER/field/drone unavailable at desktop → score 0, flagged data gaps); high-score cells dissolved into `BUD-PSP` A/B/C/D-ranked prospect polygons + ranking table + Go/No-Go matrix; all *Preliminary — not ore proof*. See `PHASE_04_PLAN.md` |
 | 05 | DJI Matrice 400 Drone / LiDAR / Photogrammetry | orchestrate | stub |
 | 06 | Recon Mapping & Portable XRF | orchestrate | stub |
 | 07 | Rock Chip / Channel / Verification Sampling | orchestrate | stub |
@@ -93,7 +93,7 @@ which phases ran, their gate decisions, and their outputs.
 ## The cloud-data caveat (important)
 
 The 79 raw inputs live in a **Google Drive folder (cloud-only by default)**. The pipeline runs on
-real data once that archive is synced/copied to a local folder — Phases 00–03 have been run
+real data once that archive is synced/copied to a local folder — Phases 00–04 have been run
 end-to-end against a local copy (gates GO). The design keeps the data decoupled from the code:
 
 - The raw archive path is a config value (`config/project.yaml → paths.raw_root`); nothing is

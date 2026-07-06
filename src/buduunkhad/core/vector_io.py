@@ -172,6 +172,74 @@ def buffer_rings(boundary_gdf, distances_m: list[int], epsg: int):  # type: igno
     return gpd.GeoDataFrame(rings, crs=f"EPSG:{epsg}")
 
 
+def make_grid(aoi_gdf, cell_m: float, epsg: int):  # type: ignore[no-untyped-def]
+    """Build a square fishnet of ``cell_m``-sided cells over ``aoi_gdf``'s extent, keeping only
+    cells that intersect the (dissolved) AOI. Returns a GeoDataFrame with a ``grid_id`` column
+    in ``EPSG:<epsg>`` (used by Phase 04's evidence-scoring grid).
+    """
+    import math
+
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    merged = (
+        aoi_gdf.geometry.union_all()
+        if hasattr(aoi_gdf.geometry, "union_all")
+        else aoi_gdf.geometry.unary_union
+    )
+    minx, miny, maxx, maxy = merged.bounds
+    nx = max(1, math.ceil((maxx - minx) / cell_m))
+    ny = max(1, math.ceil((maxy - miny) / cell_m))
+    cells = []
+    gid = 0
+    for i in range(nx):
+        x0 = minx + i * cell_m
+        for j in range(ny):
+            y0 = miny + j * cell_m
+            cell = box(x0, y0, x0 + cell_m, y0 + cell_m)
+            if cell.intersects(merged):
+                cells.append({"grid_id": f"G{gid:05d}", "geometry": cell})
+                gid += 1
+    return gpd.GeoDataFrame(cells, geometry="geometry", crs=f"EPSG:{epsg}")
+
+
+def dissolve_adjacent(gdf):  # type: ignore[no-untyped-def]
+    """Merge touching/overlapping geometries into contiguous clusters. Unions everything, then
+    explodes into one row per connected part with a ``cluster_id`` column, in the input CRS.
+    Returns an empty copy unchanged.
+    """
+    import geopandas as gpd
+
+    if gdf is None or len(gdf) == 0:
+        return gdf.copy() if gdf is not None else gdf
+    merged = (
+        gdf.geometry.union_all() if hasattr(gdf.geometry, "union_all") else gdf.geometry.unary_union
+    )
+    parts = gpd.GeoSeries([merged], crs=gdf.crs).explode(index_parts=False).reset_index(drop=True)
+    return gpd.GeoDataFrame(
+        {"cluster_id": list(range(len(parts))), "geometry": list(parts)},
+        geometry="geometry",
+        crs=gdf.crs,
+    )
+
+
+def nearest_distance(gdf, target_gdf):  # type: ignore[no-untyped-def]
+    """Elementwise distance (metres, in ``gdf``'s CRS) from each geometry in ``gdf`` to the
+    nearest geometry in ``target_gdf`` (dissolved to one geometry). Returns a pandas Series
+    aligned to ``gdf.index``; an empty/None target yields all-NaN.
+    """
+    import pandas as pd
+
+    if target_gdf is None or len(target_gdf) == 0:
+        return pd.Series([float("nan")] * len(gdf), index=gdf.index)
+    merged = (
+        target_gdf.geometry.union_all()
+        if hasattr(target_gdf.geometry, "union_all")
+        else target_gdf.geometry.unary_union
+    )
+    return gdf.geometry.distance(merged)
+
+
 # Degrees-minutes-seconds like 96°41'16" or 45°59'26.8"N (seconds/hemisphere optional).
 _DMS_RE = re.compile(
     r"(?P<deg>-?\d+(?:\.\d+)?)\s*[°ºd]\s*"

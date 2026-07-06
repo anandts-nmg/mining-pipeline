@@ -398,6 +398,22 @@ Same rule — master = truth; the `docs/phase_03` guide honoured as the more-spe
 17-layer evidence GPKG + #68 XLSX→points with source attributes into the occurrence registers + CMCS buffer
 + human-layer ingest) and run end-to-end on the local archive (gate GO, 7 mineralized points ingested).
 
+## Phase 04 — Preliminary Prospect Delineation & Ranking (implemented v0.4.0)
+
+No per-phase QGIS guide exists (`docs/phase_04` is absent — the v9 methodology doc is the only spec),
+so there are **no doc-vs-guide conflicts** to reconcile; Phase 04 follows the methodology directly
+(`PHASE_04_PLAN.md`). Two points worth recording:
+- **Two 100-pt scoring frameworks (both intentional).** Phase 03's `SCORING_CRITERIA` scores *deposit
+  models* (03A rubric; ≥70/50-69/30-49/<30). Phase 04's `PROSPECT_CRITERIA` (v9 §5: geology 20 /
+  geochem 15 / RS 15 / structure 15 / field 15 / drone 8 / CMCS 7 / access 5) scores *prospect
+  polygons* into **A≥75 / B55-74 / C35-54 / D<35**. Phase 04 consumes the former as each prospect's
+  `model_confidence` / `validation_priority`.
+- **Desktop data gaps (non-blocking, invariant #8).** RS/ASTER (Phase 02 method-note, H-4),
+  field/pXRF (Phase 06+) and drone (Phase 05+) evidence do not exist at desktop Phase 04 → those
+  criteria score 0 and are recorded in the data-gap register. Desktop prospects therefore land B/C;
+  the gate advances A/B to the field phases to upgrade. New feature-id prefix **`BUD-PSP`** for
+  preliminary prospects (Appendix-A defines `BUD-TGT` for prospectivity zones; prospects are distinct).
+
 ## Still open (later phases / documentation)
 
 - **KOMPSAT EULA** — source the file, or keep it as a permanent documented gap.

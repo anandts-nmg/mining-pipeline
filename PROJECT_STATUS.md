@@ -11,15 +11,15 @@ has delivered, what's next, and where the gaps are. (Technical detail lives in
 ## Bottom line
 
 The desk-based half of the exploration workflow is **built, tested, and delivered**.
-Phases 00–03 — from raw-data safekeeping through the geological/metallogenic synthesis —
-run end-to-end on the real project data and are published to the shared Drive as **v0.3.3**.
-Field and lab campaigns are already **underway** (a Phase I field program has run and produced
-data); the work from here is **extending the pipeline** to ingest and process that data through
-the later phases.
+Phases 00–04 — from raw-data safekeeping through the geological synthesis and the **preliminary
+prospect ranking** — run end-to-end on the real project data and are published to the shared Drive as
+**v0.4.0**. Field and lab campaigns are already **underway** (a Phase I field program has run and
+produced data); the work from here is **extending the pipeline** to ingest and process that data
+through the later phases.
 
 ## Progress at a glance
 
-The methodology has **13 phases (00–99)**. **4 are complete**; the rest are scaffolded and
+The methodology has **13 phases (00–99)**. **5 are complete**; the rest are scaffolded and
 waiting on either the next build increment or on field/lab work.
 
 | # | Phase | Status |
@@ -28,10 +28,10 @@ waiting on either the next build increment or on field/lab work.
 | 01 | Data Audit & Master GIS Setup | ✅ Complete |
 | 02 | Remote Sensing (satellite/terrain) Preprocessing | ✅ Complete |
 | 03 | Geological, Metallogenic & Deposit-Model Synthesis | ✅ Complete |
-| 04 | Preliminary Prospect Ranking | ⏭️ Next to build |
+| 04 | Preliminary Prospect Delineation & Ranking | ✅ Complete — desktop machinery; ranks prospects once evidence layers are digitized |
 | 05–11, 99 | Drone, field sampling, soil/geochem, integration, final delivery | 🕓 Scaffolded; **build-limited** — field/lab data already in hand for 06–09 |
 
-## What has been delivered (v0.3.1)
+## What has been delivered (v0.4.0)
 
 - **A secured, verified raw-data archive** — every one of the 79 source inputs checksummed
   and locked read-only, so nothing is accidentally altered.
@@ -43,20 +43,24 @@ waiting on either the next build increment or on field/lab work.
   mineralized points** digitized from the source registers, plus the deposit-model and
   scoring templates. All of it is labelled **"Historical / supporting evidence — not proof
   of ore."**
+- **A preliminary prospect-ranking engine** — a 250 m evidence grid scored on the methodology's
+  8-criterion matrix, dissolving high-score cells into A/B/C/D-ranked prospect polygons with a
+  ranking table and a Go/No-Go decision matrix. All labelled **"Preliminary — not ore proof."**
+  (On today's still-sparse desktop evidence it yields 0 candidates and flags exactly what's
+  missing; it auto-ranks prospects once the geology/structure/alteration layers are digitized.)
 - **Published to the shared Drive** and version-tagged, with an index and audit trail.
 
-Quality bar: all automated checks pass (linting, type-checking, 107 tests), and the work
+Quality bar: all automated checks pass (linting, type-checking, 116 tests), and the work
 went through a full correctness audit with every finding fixed.
 
 ## What's next
 
-1. **Phase 04 — Preliminary Prospect Ranking** (recommended next). Scores and ranks target
-   areas using the geological evidence already assembled. This is the last major step that
-   runs mostly on existing desktop data.
-2. **Phases 06–09** are now **buildable** — the field & lab data (pXRF field readings, rock-chip
+1. **Phases 06–09** are **buildable now** — the field & lab data (pXRF field readings, rock-chip
    and soil sampling, lab assay reports) **already exists** from the Phase I program, so these
-   phases are limited by pipeline build, not by data. Drone LiDAR, geophysics and drilling data
-   are still outstanding.
+   phases are limited by pipeline build, not by data.
+2. **Feed the prospect engine** — digitizing the geology/structure/alteration evidence into Phase 03
+   (or ingesting the human's Phase-04 evidence layers) lets Phase 04 produce real ranked prospects.
+3. **Phase 05** (drone LiDAR), geophysics and drilling await their field campaigns.
 
 ## Open decisions & risks (all minor, none blocking)
 
@@ -81,5 +85,5 @@ went through a full correctness audit with every finding fixed.
 
 ---
 
-*Prepared from the live repository state (branch `main`, tag `v0.3.3`). For the engineering
+*Prepared from the live repository state (branch `main`, tag `v0.4.0`). For the engineering
 detail behind any line above, see the referenced documents in the repo root.*

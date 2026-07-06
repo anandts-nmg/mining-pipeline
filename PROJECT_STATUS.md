@@ -1,6 +1,6 @@
 # Project Status — Buduunkhad / XV-023222 Exploration Pipeline
 
-**As of:** 2026-07-06 · **Release:** v0.3.2 · **Health:** 🟢 On track
+**As of:** 2026-07-06 · **Release:** v0.3.3 · **Health:** 🟢 On track
 
 A brief for management. One-page snapshot of what the automated exploration pipeline
 has delivered, what's next, and where the gaps are. (Technical detail lives in
@@ -12,7 +12,7 @@ has delivered, what's next, and where the gaps are. (Technical detail lives in
 
 The desk-based half of the exploration workflow is **built, tested, and delivered**.
 Phases 00–03 — from raw-data safekeeping through the geological/metallogenic synthesis —
-run end-to-end on the real project data and are published to the shared Drive as **v0.3.2**.
+run end-to-end on the real project data and are published to the shared Drive as **v0.3.3**.
 Field and lab campaigns are already **underway** (a Phase I field program has run and produced
 data); the work from here is **extending the pipeline** to ingest and process that data through
 the later phases.
@@ -81,5 +81,5 @@ went through a full correctness audit with every finding fixed.
 
 ---
 
-*Prepared from the live repository state (branch `main`, tag `v0.3.2`). For the engineering
+*Prepared from the live repository state (branch `main`, tag `v0.3.3`). For the engineering
 detail behind any line above, see the referenced documents in the repo root.*

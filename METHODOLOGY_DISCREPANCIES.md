@@ -208,6 +208,9 @@ boundary.) So the earlier "copy-paste slip" reading was based on the older v5/v6
 **Implemented (v0.3.2):** `boundary.buffers_m = [500, 1000, 5000, 10000, 20000, 25000]` (Phase 01
 now emits the 25 km ring); Phase 03's `CMCS_RINGS_M = [5000, 10000, 20000, 25000]` and the CMCS
 folder/layer carry the `_25km` suffix. Phase 02 is unaffected (its clips use licence / 1 km / 5 km).
+**Step 7A completed (v0.3.3):** the automatable coverage deliverables — a standalone 25 km buffer,
+the within-25 km near-occurrence selection, and the 25 km coverage-check register — are now emitted
+(the context-map PDF remains a human/QGIS layout).
 
 **02-2 — Phase-2 folder structure (Doc A vs the detailed guide).** Doc A's Phase 02 tree (master,
 p.39) is **6 folders**: `01_Sentinel2_SNAP13 / 02_ASTER_Workflow_v5 / 03_KOMPSAT2_ILWIS368_QGIS /

@@ -155,6 +155,70 @@ def test_phase03_cmcs_buffer_four_rings(raw_archive):
     assert (gdf["validation_status"] == "Historical only").all()
 
 
+def test_phase03_step7a_standalone_25km_buffer(raw_archive):
+    # v8/v9 Step 7A: a standalone 25 km coverage buffer + the coverage-check register are emitted
+    # even when #68 is the synthetic placeholder (buffer is boundary-derived; register is a template).
+    config, register, _raw = raw_archive
+    ctx, phase, result = _run_real(config, register)
+    assert result.status == "ok"
+    cmcs = (
+        paths.phase_dir(config.output_root, "03") / "08_CMCS_MRPAM_Buffer_Check_5km_10km_20km_25km"
+    )
+    b25 = list(cmcs.glob("*Buffer_25km*.gpkg"))
+    assert b25, "standalone 25 km coverage buffer not written"
+    g = vector_io.read_layer(b25[0], "license_boundary_buffer_25km")
+    assert len(g) == 1
+    assert list(cmcs.glob("*25km_Near_Occurrence_Coverage_Check_Register*.xlsx")), (
+        "25 km coverage-check register not emitted"
+    )
+
+
+def test_phase03_step7a_coverage_from_68(raw_archive):
+    # A real #68 workbook (points inside the AOI) exercises the coverage check: per-occurrence
+    # within-20/25 km flags in the register + the within-25 km selection layer written.
+    import openpyxl as pyxl
+
+    config, register, _raw = raw_archive
+    ctx = _ctx(config, register)
+    Phase00Archive().run(ctx)
+    p1 = Phase01DataAudit()
+    p1.prepare(ctx)
+    p1.run(ctx)
+
+    rec = ctx.record_by_no(68)
+    wc = paths.phase_dir(config.output_root, "00") / rec.evidence_group / rec.filename
+    wc.parent.mkdir(parents=True, exist_ok=True)
+    wb = pyxl.Workbook()
+    ws = wb.active
+    assert ws is not None
+    ws.append(["name", "commodity", "lon", "lat"])
+    ws.append(["OccA", "Au", 96.50, 45.50])
+    ws.append(["OccB", "Cu", 96.55, 45.52])
+    wb.save(wc)
+
+    phase = Phase03GeologySynthesis()
+    phase.prepare(ctx)
+    phase.run(ctx)
+
+    cmcs = (
+        paths.phase_dir(config.output_root, "03") / "08_CMCS_MRPAM_Buffer_Check_5km_10km_20km_25km"
+    )
+    sel = list(cmcs.glob("*near_mineral_occurrences_within_25km*.gpkg"))
+    assert sel, "within-25 km selection layer not written"
+    g = vector_io.read_layer(sel[0], "near_mineral_occurrences_within_25km")
+    assert len(g) == 2
+
+    reg = list(cmcs.glob("*25km_Near_Occurrence_Coverage_Check_Register*.xlsx"))
+    assert reg
+    ws2 = openpyxl.load_workbook(reg[0]).active
+    assert ws2 is not None
+    rows = list(ws2.iter_rows(values_only=True))
+    header, data = rows[0], rows[1:]
+    assert len(data) == 2, "coverage register should carry both ingested occurrences"
+    assert "distance_to_boundary_km" in header
+    assert all(r[header.index("within_25km")] == "yes" for r in data)
+
+
 def test_phase03_xlsx_ingest_skips_gracefully(raw_archive):
     """The synthetic #68 raw is a text placeholder, not a real workbook: ingest must skip,
     record a note, and not crash — leaving 0 mineralized points."""

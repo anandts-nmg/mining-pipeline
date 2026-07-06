@@ -193,6 +193,21 @@ _CMCS_NEAREST_COLUMNS = [
     "limitation",
     "note",
 ]
+# Step 7A (methodology v8/v9) — 25 km near-occurrence coverage check register.
+_STEP7A_COVERAGE_COLUMNS = [
+    "feature_id",
+    "occurrence_name",
+    "commodity",
+    "easting_32647",
+    "northing_32647",
+    "distance_to_boundary_km",
+    "within_20km",
+    "within_25km",
+    "covered_by_ring",
+    "source_raw_input_no",
+    "validation_status",
+    "note",
+]
 _EVIDENCE_TABLE_COLUMNS = [
     "candidate_model",
     "preliminary_confidence",
@@ -255,6 +270,7 @@ class Phase03GeologySynthesis(Phase):
     _occurrence_rows: list[dict[str, object]]
     _coord_qaqc_rows: list[dict[str, object]]
     _xref_rows: list[dict[str, object]]
+    _coverage_rows: list[dict[str, object]]
 
     def __init__(self) -> None:
         self._evidence_layers = []
@@ -267,6 +283,7 @@ class Phase03GeologySynthesis(Phase):
         self._occurrence_rows = []
         self._coord_qaqc_rows = []
         self._xref_rows = []
+        self._coverage_rows = []
 
     # ------------------------------------------------------------------ #
 
@@ -382,6 +399,21 @@ class Phase03GeologySynthesis(Phase):
         )
         vector_io.write_layer(boundary_geom, evidence_path, layer="license_boundary", mode="a")
 
+        # Step 7A (methodology v8/v9) — standalone 25 km near-occurrence coverage buffer.
+        buf25 = vector_io.buffer_rings(boundary, [25000], cfg.target_epsg)
+        buf25["validation_status"] = HISTORICAL_VALIDATION
+        buf25["limitation"] = CMCS_LIMITATION
+        buf25_name = naming.data_name(
+            cfg.data_prefix,
+            f"{cfg.project.license_code}_Buffer_25km",
+            crs_or_param=naming.epsg_tag(cfg.target_epsg),
+            version=1,
+            ext="gpkg",
+        )
+        buf25_path = pdir / _CMCS_FOLDER / buf25_name
+        vector_io.write_layer(buf25, buf25_path, layer="license_boundary_buffer_25km")
+        result.add_output(buf25_path)
+
     # ------------------------------------------------------------------ #
     # Step 5 — #68 mineralized-point XLSX -> validated points
     # ------------------------------------------------------------------ #
@@ -435,6 +467,9 @@ class Phase03GeologySynthesis(Phase):
         vector_io.write_layer(gdf, validated_path, layer="Validated_Historical_Occurrence_Points")
         result.add_output(validated_path)
         vector_io.write_layer(gdf, evidence_path, layer=_MINERALIZED_LAYER, mode="a")
+
+        # Step 7A (v8/v9) — 25 km near-occurrence coverage check on the ingested points.
+        self._build_step7a_coverage(ctx, pdir, gdf, rec, result)
 
     def _build_occurrence_rows(self, raw_gdf, evidence_gdf, rec) -> None:  # type: ignore[no-untyped-def]
         """Map #68 source attributes into the occurrence/coordinate/cross-reference register rows.
@@ -517,6 +552,83 @@ class Phase03GeologySynthesis(Phase):
                 }
             )
         self._occurrence_rows, self._coord_qaqc_rows, self._xref_rows = occ, coord, xref
+
+    # ------------------------------------------------------------------ #
+    # Step 7A — 25 km near-occurrence coverage check (methodology v8/v9)
+    # ------------------------------------------------------------------ #
+
+    def _build_step7a_coverage(self, ctx, pdir, gdf, rec, result) -> None:  # type: ignore[no-untyped-def]
+        """Distance of each ingested occurrence to the licence boundary + the within-25 km
+        selection layer + coverage-check register rows.
+
+        The methodology's regional ``BH_near_min_occurrences`` layer is a human/CMCS input; here
+        the automatable check runs on the #68 points we ingest (all inside the licence, so all
+        covered by the smallest ring — the register documents that honestly). When the regional
+        near-occurrence layer is later dropped in as a human layer, the same check applies.
+        """
+        cfg = ctx.config
+        boundary = self._load_boundary_aoi(ctx)
+        if boundary is None or len(gdf) == 0:
+            return
+        merged = (
+            boundary.geometry.union_all()
+            if hasattr(boundary.geometry, "union_all")
+            else boundary.geometry.unary_union
+        )
+        dist_m = gdf.geometry.distance(merged)
+        self._build_coverage_rows(list(dist_m), rec)
+
+        within25 = gdf[dist_m <= 25000]
+        if len(within25):
+            sel_name = naming.data_name(
+                cfg.data_prefix,
+                "near_mineral_occurrences_within_25km",
+                crs_or_param=naming.epsg_tag(cfg.target_epsg),
+                version=1,
+                ext="gpkg",
+            )
+            sel_path = pdir / _CMCS_FOLDER / sel_name
+            vector_io.write_layer(within25, sel_path, layer="near_mineral_occurrences_within_25km")
+            result.add_output(sel_path)
+
+    def _build_coverage_rows(self, distances_m: list[float], rec) -> None:  # type: ignore[no-untyped-def]
+        rows: list[dict[str, object]] = []
+        for i, orow in enumerate(self._occurrence_rows):
+            dm = float(distances_m[i]) if i < len(distances_m) else float("nan")
+            km = round(dm / 1000.0, 3)
+            w20, w25 = dm <= 20000, dm <= 25000
+            covered = (
+                "<=5km"
+                if dm <= 5000
+                else "<=10km"
+                if dm <= 10000
+                else "<=20km"
+                if dm <= 20000
+                else "<=25km"
+                if dm <= 25000
+                else ">25km"
+            )
+            rows.append(
+                {
+                    "feature_id": orow.get("feature_id", ""),
+                    "occurrence_name": orow.get("occurrence_name", ""),
+                    "commodity": orow.get("commodity", ""),
+                    "easting_32647": orow.get("easting_32647", ""),
+                    "northing_32647": orow.get("northing_32647", ""),
+                    "distance_to_boundary_km": km,
+                    "within_20km": "yes" if w20 else "no",
+                    "within_25km": "yes" if w25 else "no",
+                    "covered_by_ring": covered,
+                    "source_raw_input_no": rec.no,
+                    "validation_status": HISTORICAL_VALIDATION,
+                    "note": (
+                        "Within 25 km but NOT 20 km — Step 7A coverage extension"
+                        if (w25 and not w20)
+                        else CMCS_LIMITATION
+                    ),
+                }
+            )
+        self._coverage_rows = rows
 
     # ------------------------------------------------------------------ #
     # Step 8 — ingest any human-digitized layers found in the phase folders
@@ -731,6 +843,12 @@ class Phase03GeologySynthesis(Phase):
                 "CMCS Nearest Deposit",
             ),
             (
+                pdir / _CMCS_FOLDER / reg("25km_Near_Occurrence_Coverage_Check_Register"),
+                _STEP7A_COVERAGE_COLUMNS,
+                self._coverage_rows,
+                "25km Coverage Check",
+            ),
+            (
                 pdir
                 / "10_Preliminary_Deposit_Model_03A"
                 / dat("preliminary_deposit_model_evidence_table"),
@@ -878,6 +996,18 @@ class Phase03GeologySynthesis(Phase):
                 f"{self._cmcs_rings}-ring CMCS buffer built + nearest-deposit register template."
                 if self._buffer_ok
                 else "CMCS buffer NOT built: Phase 01 licence boundary missing (run Phase 01 first)."
+            ),
+        )
+        report.add(
+            "Step 7A — 25 km near-occurrence coverage check done",
+            RECORDED_ACCEPTANCE,
+            decision=Decision.PASS,
+            note=(
+                f"{len(self._coverage_rows)} occurrence(s) checked vs 20/25 km; standalone 25 km "
+                "buffer + within-25 km selection + coverage register emitted."
+                if self._coverage_rows
+                else "25 km coverage register emitted as template (regional near-occurrence layer "
+                "is a human/CMCS input)."
             ),
         )
         report.add(

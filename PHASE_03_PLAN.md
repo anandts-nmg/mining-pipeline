@@ -131,7 +131,10 @@ Phase 01.
 `prospectivity_target_zones_polygons`, `source_material_observation_points`, `source_material_route_lines`,
 `source_material_trench_pit_points`, `Validated_Historical_Occurrence_Points` (all `_EPSG32647_v01.gpkg`).
 
-**Pipeline-built:** `CMCS_MRPAM_Buffer_5km_10km_20km_25km_EPSG32647_v01.gpkg` (Step 7),
+**Pipeline-built:** `CMCS_MRPAM_Buffer_5km_10km_20km_25km_EPSG32647_v01.gpkg` (Step 7); the **Step 7A**
+25 km coverage set — `L23222_Buffer_25km_EPSG32647_v01.gpkg`,
+`near_mineral_occurrences_within_25km_EPSG32647_v01.gpkg` and
+`25km_Near_Occurrence_Coverage_Check_Register_v01.xlsx`;
 `Validated_Historical_Occurrence_Points` from #68 (Step 5), and the authoritative merged GPKG (Step 8):
 
 **`XV023222_Buduunkhad_Geological_Evidence_Layers_v01.gpkg`** — the authoritative evidence GPKG.

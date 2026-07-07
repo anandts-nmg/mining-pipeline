@@ -20,8 +20,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from buduunkhad.core import aster, dem, naming, raster_writers, registers, vector_io
 from buduunkhad.core import crs as crs_mod
-from buduunkhad.core import dem, naming, raster_writers, registers, vector_io
 from buduunkhad.core.qaqc import RECORDED_ACCEPTANCE, Decision, QAQCReport, new_report
 from buduunkhad.phases.base import Phase, PhaseResult, RunContext
 
@@ -64,7 +64,7 @@ _SENTINEL = {74, 77, 78}  # received composites/ratio stacks -> reproject+clip(l
 _BASEMAP_NOCLIP = {75}  # 2.4 m Google basemap -> reproject only
 _BASEMAP_CLIP = {76}  # 0.15 m high-res basemap -> reproject + clip 1 km
 _KOMPSAT_BANDS = {24, 28, 32, 36, 40}  # method-note only (RPC ortho is external)
-_ASTER_HDF = {73}  # method-note only (SNAP/ILWIS band extraction)
+_ASTER_HDF = {73}  # automated SOP chain when an HDF4-capable gdalwarp exists, else method note
 
 _DEM_CLIP_M = 5000
 _BASEMAP_CLIP_M = 1000
@@ -153,6 +153,9 @@ class Phase02RemoteSensing(Phase):
     _skipped: int
     _failed: int
     _flow_skips: list[str]
+    _aster_processed: bool
+    _aster_targets: int
+    _aster_extras: list[Path]  # non-COG ASTER outputs (polygons gpkg, threshold register)
 
     def __init__(self) -> None:
         self._rows = []
@@ -163,6 +166,9 @@ class Phase02RemoteSensing(Phase):
         self._skipped = 0
         self._failed = 0
         self._flow_skips = []
+        self._aster_processed = False
+        self._aster_targets = 0
+        self._aster_extras = []
 
     # ------------------------------------------------------------------ #
 
@@ -196,7 +202,7 @@ class Phase02RemoteSensing(Phase):
 
         for rec in sorted(ctx.records_by_numbers(self.input_numbers), key=lambda r: r.no):
             if rec.no in _ASTER_HDF:
-                self._rows.append(self._note_row(rec, "ASTER HDF → SNAP/ILWIS method note"))
+                self._rows.append(self._do_aster(ctx, rec, pdir))
                 continue
             if rec.no in _KOMPSAT_BANDS:
                 self._rows.append(self._note_row(rec, "KOMPSAT band → RPC ortho method note"))
@@ -273,10 +279,17 @@ class Phase02RemoteSensing(Phase):
         result.add_output(rs_log)
         for p in self._outputs:
             result.add_output(p)
+        for p in self._aster_extras:
+            result.add_output(p)
         result.log(
             f"reprojected/clipped {self._reprojected} raster(s) → COG; "
             f"{self._derivatives} terrain derivative(s); {self._skipped} skipped (no overlap); "
             f"{self._failed} failed"
+            + (
+                f"; ASTER SOP chain: {self._aster_targets} target polygon(s)"
+                if self._aster_processed
+                else "; ASTER: method-note fallback"
+            )
         )
         return result
 
@@ -504,6 +517,128 @@ class Phase02RemoteSensing(Phase):
             "note": "",
         }
 
+    # ------------------------------------------------------------------ #
+    # ASTER SOP chain (#73): extract → project → indices → score → targets
+    # ------------------------------------------------------------------ #
+
+    def _do_aster(self, ctx: RunContext, rec, pdir: Path) -> dict[str, object]:  # type: ignore[no-untyped-def]
+        """Run the automated ASTER SOP chain, degrading to the method note on any obstacle.
+
+        Degradation (missing working copy, no HDF4-capable gdalwarp, extraction/processing
+        failure) is recorded as a Method-note row — never a batch failure: ASTER is support
+        evidence and the manual method note remains a methodology-acceptable fallback.
+        """
+        row = self._base_row(
+            rec,
+            action="HDF4 extract → EPSG:32647 → alteration indices → target score (SOP)",
+            clip_label="Full scene",
+            compress="DEFLATE",
+        )
+        wc = ctx.phase_dir("00") / rec.evidence_group / rec.filename
+        if not wc.exists():
+            row.update(
+                output_crs="EPSG:32647 (target)",
+                decision="Method-note",
+                note="working copy missing (run Phase 00 first) — method-note fallback.",
+            )
+            return row
+        gdalwarp = aster.find_hdf4_gdalwarp()
+        if gdalwarp is None:
+            row.update(
+                output_crs="EPSG:32647 (target)",
+                decision="Method-note",
+                note="No HDF4-capable GDAL found (install QGIS or set BUDUUNKHAD_GDAL_BIN) — "
+                "method-note fallback.",
+            )
+            return row
+        try:
+            res = self._run_aster_chain(ctx, wc, pdir / "02_ASTER_Workflow_v5", gdalwarp)
+        except Exception as exc:  # noqa: BLE001 - degrade to the note, keep the batch going
+            ctx.logger.warning("ASTER chain failed; method-note fallback: %s", exc)
+            row.update(
+                output_crs="EPSG:32647 (target)",
+                decision="Method-note",
+                note=f"ASTER processing failed ({type(exc).__name__}: {str(exc)[:160]}) — "
+                "method-note fallback.",
+            )
+            return row
+        self._aster_processed = True
+        self._aster_targets = res.n_targets
+        score_file = res.score_files[-1] if res.score_files else None
+        row.update(
+            native_epsg="(swath GCPs)",
+            output_crs=f"EPSG:{ctx.config.target_epsg}",
+            output=str(score_file) if score_file else "",
+            derivative=f"{len(res.index_files)} indices + {len(res.score_files) - 1} binaries "
+            f"+ score + {res.n_targets} target polygon(s)",
+            decision="Pass",
+            note="SOP chain: 11 bands → 7 indices → mean+1.5σ binaries → weighted score "
+            "(2·clay+ferric+chlorite+silica) → targets ≥3.",
+        )
+        return row
+
+    def _run_aster_chain(
+        self, ctx: RunContext, hdf_wc: Path, aster_dir: Path, gdalwarp: Path
+    ) -> aster.AsterResult:
+        cfg = ctx.config
+        epsg = cfg.target_epsg
+        params = aster.AsterParams(epsg=epsg)
+
+        def out_name(desc: str, ext: str = "tif") -> str:
+            return naming.data_name(
+                cfg.data_prefix, desc, crs_or_param=naming.epsg_tag(epsg), version=1, ext=ext
+            )
+
+        bands = aster.extract_bands(hdf_wc, aster_dir / "03_Project_UTM47", gdalwarp, epsg=epsg)
+        arrays, profile = aster.read_aligned(bands)
+        indices = aster.compute_indices(arrays)
+        res = aster.AsterResult(band_files=list(bands.values()))
+
+        idx_dir = aster_dir / "04_Index_Calculation"
+        for name, arr in indices.items():
+            out = idx_dir / out_name(f"ASTER_{name}")
+            aster.write_index_raster(arr, profile, out)
+            res.index_files.append(out)
+
+        binaries, score, stats = aster.score_targets(indices, params=params)
+        res.stats_rows = stats
+        score_dir = aster_dir / "05_Score_Class_Binary"
+        for short, binary in binaries.items():
+            out = score_dir / out_name(f"ASTER_{short.capitalize()}_Anomaly_Binary")
+            aster.write_index_raster(binary, profile, out)
+            res.score_files.append(out)
+        score_out = score_dir / out_name("ASTER_Porphyry_Target_Score")
+        aster.write_index_raster(score, profile, score_out)
+        res.score_files.append(score_out)  # kept last: _do_aster reports it as THE output
+
+        gdf = aster.polygonize_targets(score, profile, params=params)
+        res.n_targets = len(gdf)
+        if len(gdf):
+            poly_out = score_dir / out_name("ASTER_Porphyry_Target_Polygons", ext="gpkg")
+            vector_io.write_layer(gdf, poly_out, layer="aster_porphyry_targets")
+            res.polygon_file = poly_out
+            self._aster_extras.append(poly_out)
+
+        reg = aster_dir / "06_QAQC" / f"{cfg.register_prefix}_ASTER_Anomaly_Threshold_Register.xlsx"
+        registers.write_table_xlsx(
+            stats,
+            [
+                "component",
+                "index",
+                "weight",
+                "mean",
+                "std",
+                "threshold",
+                "anomaly_pixels",
+                "valid_pixels",
+            ],
+            reg,
+            sheet_title="ASTER thresholds",
+        )
+        self._aster_extras.append(reg)
+        self._outputs.extend(res.index_files + res.score_files)  # COGs (is_cog-checked in qaqc)
+        return res
+
     def _note_row(self, rec, action: str) -> dict[str, object]:  # type: ignore[no-untyped-def]
         row = self._base_row(rec, action=action, clip_label="(external)", compress="(n/a)")
         row.update(output_crs="EPSG:32647 (target)", decision="Method-note")
@@ -587,6 +722,18 @@ class Phase02RemoteSensing(Phase):
             + (f" Flow notes: {'; '.join(self._flow_skips)}." if self._flow_skips else ""),
         )
         report.add(
+            "ASTER alteration indices + porphyry target score produced (SOP chain)",
+            RECORDED_ACCEPTANCE,
+            decision=Decision.PASS if self._aster_processed else Decision.NA,
+            note=(
+                f"7 ratio indices, mean+1.5σ binaries, weighted target score, "
+                f"{self._aster_targets} target polygon(s); thresholds logged."
+                if self._aster_processed
+                else "Method-note fallback (no HDF4-capable GDAL, or extraction failed) — "
+                "acceptable: ASTER is support evidence."
+            ),
+        )
+        report.add(
             "Remote-sensing outputs labelled SUPPORT evidence only (not ore proof)",
             "Every output row + method note carries validation_status/limitation (invariant #8).",
             decision=Decision.PASS,
@@ -629,18 +776,28 @@ _SENTINEL_NOTE = (
 )
 
 _ASTER_NOTE = (
-    "# Phase 02 — ASTER HDF alteration workflow v5 (orchestrated)\n\n"
-    "ASTER L1B #73 is `.hdf`; band extraction + UTM47 projection + index scoring run in\n"
-    "SNAP/ILWIS 3.6.8 / ASTER workflow v5 (do **not** use a haze/edge filter in ratio\n"
-    "calculations). Extract b1..b9 → project to EPSG:32647 → compute the 15 Float32 score\n"
-    "rasters, then the weighted porphyry-alteration score:\n\n"
-    "score_porphyry_alteration =\n"
-    "  0.12282·sericite + 0.08776·aloh + 0.07022·clay + 0.05265·argilic + 0.05765·quartz\n"
-    "  + 0.08020·silicification + 0.06013·silica + 0.08270·iron_oxide + 0.06766·ferric\n"
-    "  + 0.06013·chlorite + 0.04511·mgoh + 0.03008·carbonate + 0.01503·carbonate_swir\n"
-    "  + 0.03760·structure_v1 + 0.10527·lithology\n\n"
-    "Outputs (05_Score_Class_Binary): raw Float32 score; 3-class map (percentiles 0–60 / 60–85\n"
-    "/ 85–100 → 1/2/3); binary mask (class==3 → 1 else 0). Keep score/class/binary separate.\n"
+    "# Phase 02 — ASTER L1B alteration processing (automated SOP chain)\n\n"
+    "The pipeline automates the geologist's QGIS SOP (`ASTER_QGIS_402_SOP_non_geologist_MN`,\n"
+    "2026-06-03 — the recipe behind the reference `ASTER_Project` outputs) for #73: 11 swath\n"
+    "bands (VNIR/SWIR/TIR) GCP-warped to EPSG:32647 via an HDF4-capable `gdalwarp`\n"
+    "(QGIS-bundled; `BUDUUNKHAD_GDAL_BIN` overrides discovery), aligned to the 30 m SWIR grid\n"
+    "(bilinear), then:\n\n"
+    "- **Indices (SOP Appendix A):** Ferric_Iron=B02/B01 · Clay_AlOH=B05/B06 (≡ Sericite/\n"
+    "  Illite) · Advanced_Argillic=B04/B06 · Chlorite_Epidote_MgOH=B07/B08 (≡ Carbonate/\n"
+    "  Mg-OH) · Silica=B13/B12 · Quartz_Rich=B14/B12 · NDVI=(B3N−B02)/(B3N+B02)\n"
+    "- **Anomaly binaries:** index > mean + 1.5·σ per scene (thresholds logged in the\n"
+    "  `ASTER_Anomaly_Threshold_Register`).\n"
+    "- **Porphyry target score:** 2·clay + ferric + chlorite + silica (0–5); **target\n"
+    "  polygons** = score ≥ 3, area ≥ 0.5 ha; confidence High ≥ 5 / Moderate 3–4.\n\n"
+    "Without an HDF4-capable GDAL the chain degrades to this note (install QGIS or set\n"
+    "`BUDUUNKHAD_GDAL_BIN`).\n\n"
+    '**Workflow-v5 weighted score (NOT automated).** The older ILWIS "workflow v5" formula —\n'
+    "0.12282·sericite + 0.08776·aloh + 0.07022·clay + 0.05265·argilic + 0.05765·quartz\n"
+    "+ 0.08020·silicification + 0.06013·silica + 0.08270·iron_oxide + 0.06766·ferric\n"
+    "+ 0.06013·chlorite + 0.04511·mgoh + 0.03008·carbonate + 0.01503·carbonate_swir\n"
+    "+ 0.03760·structure_v1 + 0.10527·lithology — mixes spectral scores with non-spectral\n"
+    "inputs (structure_v1, lithology) whose derivations are not documented in any available\n"
+    "source; retained for reference only (see METHODOLOGY_DISCREPANCIES.md 02-3).\n"
     + _SUPPORT_FOOTER
 )
 

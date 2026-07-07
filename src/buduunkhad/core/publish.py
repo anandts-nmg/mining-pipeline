@@ -39,6 +39,10 @@ WORKING_COPY_DIRS: frozenset[str] = frozenset(
         "07_Basemap_Sentinel2_ASTER",
         "01_Input_Working_Copy",
         "00_Input_Working_Copy",
+        # ASTER per-band warp intermediates (re-derivable from #73; the deliverables are the
+        # index/score/target products in 04_Index_Calculation and 05_Score_Class_Binary).
+        "02_Band_Extraction",
+        "03_Project_UTM47",
     }
 )
 

@@ -87,6 +87,32 @@ def test_phase02_real_run(raw_archive):
     assert decision.status is GateStatus.GO, decision.reason
 
 
+def test_phase02_aster_falls_back_to_method_note_without_gdal(raw_archive, monkeypatch):
+    """With no HDF4-capable gdalwarp (BUDUUNKHAD_GDAL_BIN=''), #73 degrades to the method-note
+    row — never a failure — and the QA/QC item reads N/A, keeping the gate GO."""
+    monkeypatch.setenv("BUDUUNKHAD_GDAL_BIN", "")
+    config, register, _raw = raw_archive
+    ctx = _ctx(config, register)
+    Phase00Archive().run(ctx)
+    p1 = Phase01DataAudit()
+    p1.prepare(ctx)
+    p1.run(ctx)
+
+    phase = Phase02RemoteSensing()
+    phase.prepare(ctx)
+    result = phase.run(ctx)
+    assert result.status == "ok"
+    row = next(r for r in phase._rows if r["no"] == 73)
+    assert row["decision"] == "Method-note"
+    assert "No HDF4-capable GDAL" in str(row["note"])
+    assert not phase._aster_processed
+
+    report = phase.qaqc(ctx)
+    aster_item = next(i for i in report.items if "ASTER alteration" in i.item)
+    assert aster_item.decision.value == "N/A"
+    assert phase.gate(report, ctx).status is GateStatus.GO
+
+
 def test_phase02_sentinel_clip_margins_flagged_nodata(raw_archive):
     """#74/#77 Sentinel composites have no source nodata; the licence clip must flag margins
     with a nodata value (not leave them as valid 0.0). Regression for the v0.3.1 fix."""

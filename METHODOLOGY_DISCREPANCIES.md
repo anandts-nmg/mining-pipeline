@@ -5,7 +5,7 @@ the phases the pipeline implements end-to-end (**Phase 00**, **Phase 01**, **Pha
 **Phase 03**). It also records what the code currently implements, for reference.
 
 > Per `CLAUDE.md`, the **master methodology document is the ultimate source of truth.**
-> Where the sources conflict, the code follows the master. **The Phase 0–3 conflicts are now
+> Where the sources conflict, the code follows the master. **The Phase 0–4 conflicts are now
 > resolved & implemented** — see "Resolutions" below (verified at tags `v0.1.0` / `v0.2.0` /
 > `v0.2.1` / `v0.3.1` / `v0.3.2`); only later-phase / documentation items (KOMPSAT EULA,
 > BMP-as-`.jpg`) remain open.
@@ -33,8 +33,8 @@ vocabulary **High / Medium / Low / Needs verification**). The disagreements belo
 
 ## At a glance — count & status
 
-**15 explicitly-numbered conflicts** (Phase 00: 3 · Phase 01: 7 · Phase 02: 2 · Phase 03: 3), plus ~4
-doc-vs-reality reconciliations and 1 intra-document version drift. **All 15 are resolved (by decision)** —
+**17 explicitly-numbered conflicts** (Phase 00: 3 · Phase 01: 7 · Phase 02: 3 · Phase 03: 3 · Phase 04: 1), plus ~4
+doc-vs-reality reconciliations and 1 intra-document version drift. **All 17 are resolved (by decision)** —
 01-7 and 02-1 / H-1 were decided 2026-06-30; the Phase-03 items (03-1/2/3 + handoff H-4) were decided
 2026-07-01 during Phase-3 planning (`PHASE_03_PLAN.md`). **Phase 03 is now implemented and run
 (v0.3.1).** **02-1 / H-1 were re-decided 2026-07-06** — the 25 km buffer is *adopted* (per the newer
@@ -44,8 +44,9 @@ v8/v9 methodology), superseding the earlier "artefact" call; implemented at v0.3
 |---|---|---|---|---|
 | Phase 00 | master Doc A vs Phase-1 doc (Doc B) | 00-1, 00-2, 00-3 | 00-1, 00-2, 00-3 | — |
 | Phase 01 | master Doc A vs Phase-1 doc (Doc B) | 01-1 … 01-7 | 01-1 … 01-7 | — |
-| Phase 02 | master Doc A vs `docs/phase_02` guides | 02-1, 02-2 | 02-1, 02-2 | — |
+| Phase 02 | master Doc A vs `docs/phase_02` guides + ASTER SOP | 02-1, 02-2, 02-3 | 02-1, 02-2, 02-3 (SOP automated 2026-07-07) | — |
 | Phase 03 | master Doc A §03 vs Phase-3 QGIS guide | 03-1, 03-2, 03-3 | 03-1, 03-2, 03-3 | — |
+| Phase 04 | master v9 §5 vs Phase-4 guide §6 (scoring matrix) | 04-1 | 04-1 (adopted §6, v0.6.0) | — |
 | Phase 01 ↔ 02 | inter-phase handoff | H-1, H-2, H-3 | H-1, H-2, H-3 | — |
 | Phase 02 ↔ 03 | inter-phase handoff | H-4 (ASTER/KOMPSAT support gap) | H-4 | — |
 | Doc vs reality | docs vs the real Drive archive | 7/11/9 taxonomy · 78/79 · `0. Raw Data` name · #23 EULA | all reconciled | — |
@@ -222,12 +223,30 @@ was for Phase 1) — it is a superset that keeps every Doc A concept and gives G
 home (`config/.../phase02 custom_subfolders`). Mirrors the Phase-1 precedent (01-1) of honouring the
 deep-dive's richer structure.
 
+**02-3 — Two different ASTER alteration-scoring schemes (guide §8.5 "workflow v5" vs the geologist's
+SOP).** The Phase-2 guide §8.5 prescribes a **15-component weighted porphyry score** (0.12282·sericite
++ … + 0.03760·structure_v1 + 0.10527·lithology) inherited from the older ILWIS "ASTER workflow v5" —
+but two of its components (`structure_v1`, `lithology`) are **non-spectral** inputs whose derivations
+are not documented in any available source, and the 13 spectral components' individual formulas are
+likewise undefined (the guide defers to "the previous workflow's logic"). The geologist's later QGIS
+SOP (`ASTER_QGIS_402_SOP_non_geologist_MN`, 2026-06-03 — the recipe that actually produced the
+reference `ASTER_Project` outputs) defines a fully-specified alternative: 7 band-ratio indices
+(Appendix A), per-scene mean+1.5σ anomaly binaries, and a **4-component weighted target score**
+(2·clay + ferric + chlorite + silica, 0–5; polygons at ≥3, ≥0.5 ha).
+**Resolved 2026-07-07 — automate the SOP scheme** (same rule as 01-1/02-2/03-1: the later, more
+specific operator recipe is the phase authority, and it is the only fully-reproducible one); the v5
+weighted formula is retained in the ASTER method note for reference only. Implemented in
+`core/aster.py` + the Phase 02 `#73` branch: HDF4 extraction via a QGIS-bundled `gdalwarp`
+(`BUDUUNKHAD_GDAL_BIN` override; graceful method-note fallback when absent), everything else
+rasterio/numpy; georeferencing verified pixel-identical to the geologist's QGIS band exports.
+
 **Expected-output coverage vs Doc A (p.39).** Doc A lists `Terrain_Derivatives.gpkg` and
 `RemoteSensing_QAQC_Report.docx` among Phase-2 outputs. The pipeline now emits a
 `..._Terrain_Derivatives_Index.xlsx` (catalogues the derivative COGs) and the
 `..._RemoteSensing_QAQC_Report.docx`; the *vector* terrain package (contour/drainage/watershed gpkg)
-remains a method-note (SAGA/GRASS), and the Sentinel/ASTER/KOMPSAT processed products stay method-notes
-(external tooling). All other Doc A Phase-2 outputs map to produced COGs or method notes.
+remains a method-note (SAGA/GRASS), and the Sentinel/KOMPSAT processed products stay method-notes
+(external tooling; the **ASTER alteration products are now automated** per 02-3). All other Doc A
+Phase-2 outputs map to produced COGs or method notes.
 
 The Phase-2 guides otherwise *agree* with the core methodology on the project constants, the
 EPSG:32647 target, the support-evidence-only rule, and the per-sensor processing — the pipeline

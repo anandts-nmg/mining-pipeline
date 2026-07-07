@@ -238,7 +238,13 @@ specific operator recipe is the phase authority, and it is the only fully-reprod
 weighted formula is retained in the ASTER method note for reference only. Implemented in
 `core/aster.py` + the Phase 02 `#73` branch: HDF4 extraction via a QGIS-bundled `gdalwarp`
 (`BUDUUNKHAD_GDAL_BIN` override; graceful method-note fallback when absent), everything else
-rasterio/numpy; georeferencing verified pixel-identical to the geologist's QGIS band exports.
+rasterio/numpy; georeferencing verified pixel-identical to the geologist's QGIS band exports;
+index rasters agree with the reference at r ≈ 0.92–0.98.
+**Threshold-basis sub-decision (2026-07-07):** the SOP text implies full-scene statistics, but the
+reference outputs were thresholded on **licence-clipped rasters** (their binary extents match the
+5 km buffer to within a pixel). Decided with the user: **statistics from the licence-area subset
+(5 km buffer AOI), threshold applied full-scene** — matching the geologist's actual practice while
+keeping district context; the basis is recorded per row in the `ASTER_Anomaly_Threshold_Register`.
 
 **Expected-output coverage vs Doc A (p.39).** Doc A lists `Terrain_Derivatives.gpkg` and
 `RemoteSensing_QAQC_Report.docx` among Phase-2 outputs. The pipeline now emits a

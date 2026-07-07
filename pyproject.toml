@@ -31,8 +31,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# DEM derivative tooling, only needed once Phase 02 (remote sensing) is built.
-dem = ["richdem>=0.3; python_version < '3.13'", "whitebox>=2.3"]
+# Optional Phase-02 tooling: whitebox (vector hydrology), scikit-image (lineament draft).
+# Phase 02 degrades gracefully (notes instead of outputs) when these are absent.
+dem = ["richdem>=0.3; python_version < '3.13'", "whitebox>=2.3", "scikit-image>=0.22"]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
@@ -76,11 +77,11 @@ no_implicit_optional = true
 disallow_untyped_defs = false
 check_untyped_defs = true
 
-# Newer numpy ships PEP 695 `type` statements in its stubs that mypy rejects when
-# targeting < 3.12; we don't type-check against numpy internals, so skip following
-# it (treated as Any, like the other geospatial libs).
+# Newer numpy (and tifffile/scikit-image, pulled in via the [dem] extra) ship PEP 695
+# `type` statements that mypy rejects when targeting < 3.12; we don't type-check against
+# their internals, so skip following them (treated as Any, like the other geospatial libs).
 [[tool.mypy.overrides]]
-module = ["numpy", "numpy.*"]
+module = ["numpy", "numpy.*", "tifffile", "tifffile.*", "skimage", "skimage.*"]
 follow_imports = "skip"
 follow_imports_for_stubs = true
 

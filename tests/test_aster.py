@@ -121,6 +121,29 @@ def test_write_index_raster_float_and_uint8(tmp_path):
         assert ds.dtypes[0] == "uint8"
 
 
+def test_score_targets_stats_mask_changes_threshold_basis():
+    """Thresholds from AOI-masked statistics (licence-area subset), applied full-scene."""
+    shape = (10, 10)
+    bands = _bands(shape)
+    idx = compute_indices(bands)
+    # AOI = left half; make the RIGHT half extremely hot so full-scene stats would differ
+    aoi = np.zeros(shape, dtype=bool)
+    aoi[:, :5] = True
+    for _short, (index_name, _w) in aster.SCORE_COMPONENTS.items():
+        arr = idx[index_name].copy()
+        arr[:, 5:] = 1000.0
+        idx[index_name] = arr
+    masked = score_targets(idx, params=AsterParams(), stats_mask=aoi, stats_basis="licence subset")
+    unmasked = score_targets(idx, params=AsterParams())
+    # AOI stats exclude the hot half -> lower threshold than full-scene stats
+    thr_masked = float(str(masked[2][0]["threshold"]))
+    thr_full = float(str(unmasked[2][0]["threshold"]))
+    assert thr_masked < thr_full
+    assert masked[2][0]["threshold_basis"] == "licence subset"
+    # threshold applied FULL-scene: the hot right half exceeds the AOI-based threshold
+    assert masked[1][3, 7] > 0  # scored outside the AOI
+
+
 def test_find_hdf4_gdalwarp_env_override(tmp_path, monkeypatch):
     # empty string explicitly disables discovery
     monkeypatch.setenv("BUDUUNKHAD_GDAL_BIN", "")

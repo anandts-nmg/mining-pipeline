@@ -20,7 +20,16 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from buduunkhad.core import aster, dem, naming, raster_writers, registers, vector_io
+from buduunkhad.core import (
+    aster,
+    dem,
+    hydrology,
+    lineaments,
+    naming,
+    raster_writers,
+    registers,
+    vector_io,
+)
 from buduunkhad.core import crs as crs_mod
 from buduunkhad.core.qaqc import RECORDED_ACCEPTANCE, Decision, QAQCReport, new_report
 from buduunkhad.phases.base import Phase, PhaseResult, RunContext
@@ -156,6 +165,9 @@ class Phase02RemoteSensing(Phase):
     _aster_processed: bool
     _aster_targets: int
     _aster_extras: list[Path]  # non-COG ASTER outputs (polygons gpkg, threshold register)
+    _hydrology_note: str  # "" until attempted; then a produced/skipped summary
+    _lineaments_note: str
+    _vector_outputs: list[Path]  # hydrology/lineament GPKGs (not COGs)
 
     def __init__(self) -> None:
         self._rows = []
@@ -169,6 +181,9 @@ class Phase02RemoteSensing(Phase):
         self._aster_processed = False
         self._aster_targets = 0
         self._aster_extras = []
+        self._hydrology_note = ""
+        self._lineaments_note = ""
+        self._vector_outputs = []
 
     # ------------------------------------------------------------------ #
 
@@ -202,7 +217,7 @@ class Phase02RemoteSensing(Phase):
 
         for rec in sorted(ctx.records_by_numbers(self.input_numbers), key=lambda r: r.no):
             if rec.no in _ASTER_HDF:
-                self._rows.append(self._do_aster(ctx, rec, pdir))
+                self._rows.append(self._do_aster(ctx, rec, pdir, dem_aoi))
                 continue
             if rec.no in _KOMPSAT_BANDS:
                 self._rows.append(self._note_row(rec, "KOMPSAT band → RPC ortho method note"))
@@ -271,6 +286,12 @@ class Phase02RemoteSensing(Phase):
                     )
                 )
 
+        # Post-loop vector products derived from the clipped DEM + its hillshades: the
+        # contour/drainage/watershed package (guide §04.5, previously method-note-only) and the
+        # first-pass lineament draft. Both degrade to a note when their optional dep is absent.
+        self._do_hydrology(ctx, dem_reproj_dir, pdir)
+        self._do_lineaments(ctx, deriv_dir)
+
         registers.write_table_xlsx(
             self._rows, _RS_LOG_COLUMNS, rs_log, sheet_title="RemoteSensing QAQC"
         )
@@ -280,6 +301,8 @@ class Phase02RemoteSensing(Phase):
         for p in self._outputs:
             result.add_output(p)
         for p in self._aster_extras:
+            result.add_output(p)
+        for p in self._vector_outputs:
             result.add_output(p)
         result.log(
             f"reprojected/clipped {self._reprojected} raster(s) → COG; "
@@ -521,12 +544,15 @@ class Phase02RemoteSensing(Phase):
     # ASTER SOP chain (#73): extract → project → indices → score → targets
     # ------------------------------------------------------------------ #
 
-    def _do_aster(self, ctx: RunContext, rec, pdir: Path) -> dict[str, object]:  # type: ignore[no-untyped-def]
+    def _do_aster(self, ctx: RunContext, rec, pdir: Path, stats_aoi) -> dict[str, object]:  # type: ignore[no-untyped-def]
         """Run the automated ASTER SOP chain, degrading to the method note on any obstacle.
 
-        Degradation (missing working copy, no HDF4-capable gdalwarp, extraction/processing
-        failure) is recorded as a Method-note row — never a batch failure: ASTER is support
-        evidence and the manual method note remains a methodology-acceptable fallback.
+        ``stats_aoi`` (the 5 km buffer GeoDataFrame, or None) is the anomaly-threshold
+        statistics basis — the geologist's decided licence-area subset (2026-07-07, 02-3):
+        thresholds from AOI pixels, applied full-scene. Degradation (missing working copy, no
+        HDF4-capable gdalwarp, extraction/processing failure) is recorded as a Method-note
+        row — never a batch failure: ASTER is support evidence and the manual method note
+        remains a methodology-acceptable fallback.
         """
         row = self._base_row(
             rec,
@@ -552,7 +578,7 @@ class Phase02RemoteSensing(Phase):
             )
             return row
         try:
-            res = self._run_aster_chain(ctx, wc, pdir / "02_ASTER_Workflow_v5", gdalwarp)
+            res = self._run_aster_chain(ctx, wc, pdir / "02_ASTER_Workflow_v5", gdalwarp, stats_aoi)
         except Exception as exc:  # noqa: BLE001 - degrade to the note, keep the batch going
             ctx.logger.warning("ASTER chain failed; method-note fallback: %s", exc)
             row.update(
@@ -578,7 +604,12 @@ class Phase02RemoteSensing(Phase):
         return row
 
     def _run_aster_chain(
-        self, ctx: RunContext, hdf_wc: Path, aster_dir: Path, gdalwarp: Path
+        self,
+        ctx: RunContext,
+        hdf_wc: Path,
+        aster_dir: Path,
+        gdalwarp: Path,
+        stats_aoi,  # type: ignore[no-untyped-def]
     ) -> aster.AsterResult:
         cfg = ctx.config
         epsg = cfg.target_epsg
@@ -600,7 +631,18 @@ class Phase02RemoteSensing(Phase):
             aster.write_index_raster(arr, profile, out)
             res.index_files.append(out)
 
-        binaries, score, stats = aster.score_targets(indices, params=params)
+        # Threshold statistics basis: the licence-area subset (5 km buffer) per the geologist's
+        # 2026-07-07 decision (02-3) — matching how the reference outputs were thresholded on
+        # licence-clipped rasters. Thresholds apply full-scene (district context preserved).
+        if stats_aoi is not None:
+            stats_mask = aster.aoi_mask(stats_aoi, profile)
+            stats_basis = "5 km buffer AOI (licence-area subset)"
+        else:
+            stats_mask = None
+            stats_basis = "full scene (no Phase-01 buffer AOI found)"
+        binaries, score, stats = aster.score_targets(
+            indices, params=params, stats_mask=stats_mask, stats_basis=stats_basis
+        )
         res.stats_rows = stats
         score_dir = aster_dir / "05_Score_Class_Binary"
         for short, binary in binaries.items():
@@ -626,6 +668,7 @@ class Phase02RemoteSensing(Phase):
                 "component",
                 "index",
                 "weight",
+                "threshold_basis",
                 "mean",
                 "std",
                 "threshold",
@@ -638,6 +681,102 @@ class Phase02RemoteSensing(Phase):
         self._aster_extras.append(reg)
         self._outputs.extend(res.index_files + res.score_files)  # COGs (is_cog-checked in qaqc)
         return res
+
+    # ------------------------------------------------------------------ #
+    # DEM vector products: hydrology package + lineament first pass
+    # ------------------------------------------------------------------ #
+
+    def _primary_clipped_dem(self, dem_reproj_dir: Path) -> Path | None:
+        """The clipped ALOS-PALSAR 12.5 m DEM COG (the primary DEM for vector products)."""
+        hits = sorted(dem_reproj_dir.glob("*ALOS-PALSAR_DEM*Clip*_v01.tif"))
+        return hits[0] if hits else None
+
+    def _do_hydrology(self, ctx: RunContext, dem_reproj_dir: Path, pdir: Path) -> None:
+        """Contours + drainage network + watersheds from the clipped DEM (WhiteboxTools).
+
+        Degrades to a note (method note stays authoritative) when whitebox is unavailable
+        or fails — the vector package is a Doc A expected output but support evidence only.
+        """
+        import tempfile
+
+        cfg = ctx.config
+        dem_cog = self._primary_clipped_dem(dem_reproj_dir)
+        if dem_cog is None:
+            self._hydrology_note = "skipped: clipped ALOS DEM not found"
+            return
+        wbt = hydrology.find_whitebox()
+        if wbt is None:
+            self._hydrology_note = "skipped: whitebox not installed (pip install whitebox)"
+            return
+        out_dir = pdir / "04_ALOS_ASTERGDEM_GlobalMapper_QGIS" / "05_Drainage_Watershed"
+        params = hydrology.HydrologyParams()
+        try:
+            with tempfile.TemporaryDirectory(prefix="wbt_") as tmp:
+                contours, streams, basins = hydrology.build_hydrology(
+                    dem_cog, Path(tmp), wbt=wbt, params=params
+                )
+        except Exception as exc:  # noqa: BLE001 - degrade to the note
+            ctx.logger.warning("hydrology chain failed: %s", exc)
+            self._hydrology_note = f"failed: {type(exc).__name__}: {str(exc)[:120]}"
+            return
+        epsg = cfg.target_epsg
+        named = [
+            (contours, f"DEM_Contours_{int(params.contour_interval_m)}m", "contours"),
+            (streams, "DEM_Drainage_Network", "drainage_network"),
+            (basins, "DEM_Watersheds", "watersheds"),
+        ]
+        for gdf, desc, layer in named:
+            if not len(gdf):
+                continue
+            gdf["validation_status"] = SUPPORT_VALIDATION
+            gdf["limitation"] = SUPPORT_LIMITATION
+            out = out_dir / naming.data_name(
+                cfg.data_prefix, desc, crs_or_param=naming.epsg_tag(epsg), version=1, ext="gpkg"
+            )
+            vector_io.write_layer(gdf.to_crs(epsg=epsg), out, layer=layer)
+            self._vector_outputs.append(out)
+        self._hydrology_note = (
+            f"{len(contours)} contour line(s) @ {int(params.contour_interval_m)} m, "
+            f"{len(streams)} stream segment(s) (threshold "
+            f"{params.stream_threshold_cells} cells), {len(basins)} watershed(s)"
+        )
+
+    def _do_lineaments(self, ctx: RunContext, deriv_dir: Path) -> None:
+        """First-pass lineament draft from the ALOS multi-azimuth hillshades (Canny+Hough).
+
+        The output is a MACHINE DRAFT of an interpretive product — stamped for geologist
+        review, never fed to scoring unreviewed. Degrades to a note without scikit-image.
+        """
+        cfg = ctx.config
+        shades = sorted(deriv_dir.glob("*ALOS-PALSAR_DEM*Hillshade_Az*_v01.tif"))
+        if len(shades) < 2:
+            self._lineaments_note = "skipped: <2 ALOS azimuth hillshades found"
+            return
+        try:
+            gdf = lineaments.extract_lineaments(shades)
+        except lineaments.LineamentError as exc:
+            self._lineaments_note = f"skipped: {exc}"
+            return
+        except Exception as exc:  # noqa: BLE001 - degrade to the note
+            ctx.logger.warning("lineament extraction failed: %s", exc)
+            self._lineaments_note = f"failed: {type(exc).__name__}: {str(exc)[:120]}"
+            return
+        if not len(gdf):
+            self._lineaments_note = "0 segments above the length threshold"
+            return
+        out = deriv_dir / naming.data_name(
+            cfg.data_prefix,
+            "DEM_Lineament_Draft",
+            crs_or_param=naming.epsg_tag(cfg.target_epsg),
+            version=1,
+            ext="gpkg",
+        )
+        vector_io.write_layer(gdf.to_crs(epsg=cfg.target_epsg), out, layer="lineament_draft")
+        self._vector_outputs.append(out)
+        self._lineaments_note = (
+            f"{len(gdf)} draft segment(s) from {len(shades)} azimuth hillshades "
+            "(machine draft — geologist review required)"
+        )
 
     def _note_row(self, rec, action: str) -> dict[str, object]:  # type: ignore[no-untyped-def]
         row = self._base_row(rec, action=action, clip_label="(external)", compress="(n/a)")
@@ -726,12 +865,30 @@ class Phase02RemoteSensing(Phase):
             RECORDED_ACCEPTANCE,
             decision=Decision.PASS if self._aster_processed else Decision.NA,
             note=(
-                f"7 ratio indices, mean+1.5σ binaries, weighted target score, "
-                f"{self._aster_targets} target polygon(s); thresholds logged."
+                f"7 ratio indices, mean+1.5σ binaries (licence-subset stats basis), weighted "
+                f"target score, {self._aster_targets} target polygon(s); thresholds logged."
                 if self._aster_processed
                 else "Method-note fallback (no HDF4-capable GDAL, or extraction failed) — "
                 "acceptable: ASTER is support evidence."
             ),
+        )
+        hydro_ok = self._hydrology_note and not self._hydrology_note.startswith(
+            ("skipped", "failed")
+        )
+        report.add(
+            "Vector hydrology package (contours / drainage network / watersheds)",
+            RECORDED_ACCEPTANCE,
+            decision=Decision.PASS if hydro_ok else Decision.NA,
+            note=self._hydrology_note or "not attempted",
+        )
+        lin_ok = self._lineaments_note and not self._lineaments_note.startswith(
+            ("skipped", "failed")
+        )
+        report.add(
+            "Lineament first-pass draft (multi-azimuth hillshade Canny+Hough)",
+            "MACHINE DRAFT stamped for geologist review; never scored unreviewed.",
+            decision=Decision.PASS if lin_ok else Decision.NA,
+            note=self._lineaments_note or "not attempted",
         )
         report.add(
             "Remote-sensing outputs labelled SUPPORT evidence only (not ore proof)",
@@ -785,7 +942,10 @@ _ASTER_NOTE = (
     "- **Indices (SOP Appendix A):** Ferric_Iron=B02/B01 · Clay_AlOH=B05/B06 (≡ Sericite/\n"
     "  Illite) · Advanced_Argillic=B04/B06 · Chlorite_Epidote_MgOH=B07/B08 (≡ Carbonate/\n"
     "  Mg-OH) · Silica=B13/B12 · Quartz_Rich=B14/B12 · NDVI=(B3N−B02)/(B3N+B02)\n"
-    "- **Anomaly binaries:** index > mean + 1.5·σ per scene (thresholds logged in the\n"
+    "- **Anomaly binaries:** index > mean + 1.5·σ with the statistics computed on the\n"
+    "  **licence-area subset (5 km buffer AOI)** — the geologist's decided basis (2026-07-07,\n"
+    "  02-3), matching how the reference outputs were thresholded on licence-clipped rasters —\n"
+    "  and the threshold applied full-scene (thresholds + basis logged in the\n"
     "  `ASTER_Anomaly_Threshold_Register`).\n"
     "- **Porphyry target score:** 2·clay + ferric + chlorite + silica (0–5); **target\n"
     "  polygons** = score ≥ 3, area ≥ 0.5 ha; confidence High ≥ 5 / Moderate 3–4.\n\n"

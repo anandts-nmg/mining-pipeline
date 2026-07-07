@@ -232,20 +232,42 @@ def anomaly_threshold(index: np.ndarray, *, k: float) -> tuple[float, float, flo
     return mean, std, mean + k * std
 
 
+def aoi_mask(aoi_gdf, profile) -> np.ndarray:  # type: ignore[no-untyped-def]
+    """Boolean mask (True inside the AOI geometries) on the profile's grid."""
+    from rasterio.features import geometry_mask
+
+    geoms = list(aoi_gdf.to_crs(profile["crs"]).geometry)
+    return geometry_mask(
+        geoms,
+        out_shape=(profile["height"], profile["width"]),
+        transform=profile["transform"],
+        invert=True,
+    )
+
+
 def score_targets(
-    indices: dict[str, np.ndarray], *, params: AsterParams
+    indices: dict[str, np.ndarray],
+    *,
+    params: AsterParams,
+    stats_mask: np.ndarray | None = None,
+    stats_basis: str = "full scene",
 ) -> tuple[dict[str, np.ndarray], np.ndarray, list[dict[str, object]]]:
     """Anomaly binaries + the weighted porphyry target score (SOP §13.1–13.2).
 
-    Returns ``(binaries, score, stats_rows)``; score is uint8 with 255 = nodata (outside
-    the imaged swath).
+    ``stats_mask`` restricts the mean/σ **statistics** to an AOI (the geologist's decided
+    basis is the licence-area subset — the 5 km buffer — matching how the reference outputs
+    were thresholded on licence-clipped rasters); the resulting threshold is still applied
+    to the whole scene so the score keeps its district context. ``stats_basis`` labels the
+    basis in the stats rows. Returns ``(binaries, score, stats_rows)``; score is uint8 with
+    255 = nodata (outside the imaged swath).
     """
     binaries: dict[str, np.ndarray] = {}
     stats: list[dict[str, object]] = []
     valid_all: np.ndarray | None = None
     for short, (index_name, weight) in SCORE_COMPONENTS.items():
         idx = indices[index_name]
-        mean, std, thr = anomaly_threshold(idx, k=params.threshold_k)
+        stats_arr = np.where(stats_mask, idx, np.nan) if stats_mask is not None else idx
+        mean, std, thr = anomaly_threshold(stats_arr, k=params.threshold_k)
         binary = (idx > thr) & ~np.isnan(idx)
         binaries[short] = binary.astype("uint8")
         valid = ~np.isnan(idx)
@@ -255,6 +277,7 @@ def score_targets(
                 "component": short,
                 "index": index_name,
                 "weight": weight,
+                "threshold_basis": stats_basis,
                 "mean": round(mean, 6),
                 "std": round(std, 6),
                 "threshold": round(thr, 6),

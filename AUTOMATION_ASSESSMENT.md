@@ -66,7 +66,7 @@ they automate **0%** today.
 |---|--:|:--:|--:|---|
 | 00 | 95% | ✅ | **~95%** | complete — deterministic integrity/inventory/checksums |
 | 01 | 85% | ✅ | **~75%** | Tier-1 spine done; **master GPKG ships as an empty schema** (evidence lives in the Phase-03 GPKG, not back-populated); georef manual |
-| 02 | 82% | ✅ | **~72%** | DEM + Sentinel-clip + basemap COGs + **ASTER alteration chain (automated 2026-07-07** — indices/binaries/target score/polygons, validated r≈0.92–0.98 vs the geologist's reference**)**; KOMPSAT / Sentinel-indices remain method-notes |
+| 02 | 82% | ✅ | **~78%** | DEM + Sentinel-clip + basemap COGs + **ASTER alteration chain** (automated 2026-07-07, licence-basis thresholds, validated r≈0.92–0.98 vs the geologist's reference) + **vector hydrology** (contours/drainage/watersheds via WhiteboxTools) + **lineament first-pass draft** (Canny+Hough, geologist-review-stamped); KOMPSAT / Sentinel-indices remain method-notes (blocked: external RPC ortho / missing raw bands) |
 | 03 | 45% | ✅ (ORCH) | **~40%** | scaffold + registers + evidence-GPKG assembly + CMCS buffer + #68 ingest + human-layer ingest done; **digitizing / georef / deposit-model matrix = human** |
 | 04 | 72% | ✅ | **~55%** | grid + scoring + banding + ranking + Go/No-Go run, **but `model_fit` is uniform/dead and it over-flags** (see §7); scoring quality is compromised |
 | 05–11, 99 | 40–90% | ❌ stub | **0%** | not implemented |

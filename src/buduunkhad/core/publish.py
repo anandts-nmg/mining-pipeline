@@ -43,6 +43,9 @@ WORKING_COPY_DIRS: frozenset[str] = frozenset(
         # index/score/target products in 04_Index_Calculation and 05_Score_Class_Binary).
         "02_Band_Extraction",
         "03_Project_UTM47",
+        # Phase-00 copies of UNREGISTERED raw docs (DataRoom registers, folder readme) —
+        # raw duplicates like the evidence-group folders above (also in the raw backup).
+        "08_Supplementary_Source_Documents",
     }
 )
 

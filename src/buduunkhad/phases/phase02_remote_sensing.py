@@ -897,10 +897,11 @@ class Phase02RemoteSensing(Phase):
             note=f"Stamped on all {len(self._rows)} log rows and the method notes.",
         )
         report.add(
-            "Sentinel indices / ASTER alteration / KOMPSAT ortho (external SNAP/ILWIS)",
+            "Sentinel indices / KOMPSAT ortho (external SNAP/ILWIS steps)",
             RECORDED_ACCEPTANCE,
             decision=Decision.PENDING,
-            note="Orchestrated steps — formula-complete method notes emitted in 01_/02_/03_ subfolders.",
+            note="Orchestrated steps — formula-complete method notes in the 01_/03_ subfolders. "
+            "(ASTER alteration is automated in-pipeline since v0.7.0 — see the ASTER item above.)",
         )
         return report
 

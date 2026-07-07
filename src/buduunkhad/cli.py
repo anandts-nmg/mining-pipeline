@@ -174,6 +174,62 @@ def publish_deliverables(
     typer.echo("Share that folder in Google Drive to give teammates access.")
 
 
+@app.command("backup-raw")
+def backup_raw(
+    config: Path = _CONFIG_OPT,
+    label: str = typer.Option("v01", "--label", help="Version label for the raw backup folder."),
+    overwrite: bool = typer.Option(
+        False, "--overwrite", help="Overwrite an existing backup with this label."
+    ),
+) -> None:
+    """Back up the COMPLETE raw archive to BUDUUNKHAD_PUBLISH_ROOT, checksum-verified.
+
+    Creates ``Raw_Archive_Backup_<label>/`` with the full raw tree under ``0_Raw_Data/`` plus the
+    Phase-00 checksum register + integrity artifacts, then re-hashes every file against the
+    register. Unlike ``publish`` (deliverables only), this deliberately backs up the raw data so
+    teammates have an immutable, verifiable copy separate from the working source. Raw stays
+    read-only. Run Phase 00 first — it produces the checksum register.
+    """
+    from buduunkhad.core import paths
+    from buduunkhad.core.publish import PublishError, backup_raw_archive
+    from buduunkhad.pipeline import baseline_checksum_path
+
+    cfg, _register = load_project(config)
+    publish_root = os.environ.get("BUDUUNKHAD_PUBLISH_ROOT")
+    if not publish_root:
+        typer.secho(
+            "Set BUDUUNKHAD_PUBLISH_ROOT to a destination folder (e.g. a Google "
+            "Drive-for-Desktop path) before backing up.",
+            fg="red",
+        )
+        raise typer.Exit(2)
+    register_csv = baseline_checksum_path(cfg)
+    p00 = paths.phase_dir(cfg.output_root, "00")
+    prefix = cfg.register_prefix
+    integrity = [
+        p00 / f"{prefix}_79Input_Master_Inventory.xlsx",
+        p00 / f"{prefix}_Raw_Data_Integrity_Log.xlsx",
+        p00 / f"{prefix}_Source_Data_Readme.docx",
+    ]
+    try:
+        res = backup_raw_archive(
+            cfg.raw_root,
+            register_csv,
+            Path(publish_root),
+            label,
+            integrity_files=integrity,
+            overwrite=overwrite,
+        )
+    except PublishError as exc:
+        typer.secho(str(exc), fg="red")
+        raise typer.Exit(1) from exc
+    typer.secho(
+        f"Raw backup: {res.files} file(s), {res.verified} verified byte-identical.", fg="green"
+    )
+    typer.echo(f"  {res.dest}")
+    typer.echo("Share that folder in Google Drive to give teammates a verified, immutable copy.")
+
+
 @app.command("run")
 def run(
     config: Path = _CONFIG_OPT,

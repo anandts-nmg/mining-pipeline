@@ -8,6 +8,7 @@ touched.
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 from buduunkhad.core import raw_guard, registers, sidecars
@@ -24,9 +25,15 @@ class Phase00Archive(Phase):
     input_numbers = list(range(1, 80))
     gate_condition = "All files archived, checksum complete, processing copies available."
 
+    #: Raw files present in raw_root but not listed in the register (DataRoom register/
+    #: explanation docs, folder readmes) are archived here so the control archive mirrors the
+    #: full checksummed raw set, not just the register-listed inputs.
+    SUPPLEMENTARY_DIR = "08_Supplementary_Source_Documents"
+
     # filled during run() so qaqc() can report on it
     _checksums: list[raw_guard.ChecksumRecord]
     _copied_parents: int
+    _supplementary: int
     _missing: list[str]
     _known_gaps: list[str]
     _raw_unchanged: bool
@@ -34,6 +41,7 @@ class Phase00Archive(Phase):
     def __init__(self) -> None:
         self._checksums = []
         self._copied_parents = 0
+        self._supplementary = 0
         self._missing = []
         self._known_gaps = []
         self._raw_unchanged = True
@@ -107,6 +115,21 @@ class Phase00Archive(Phase):
                 )
             )
 
+        # 2b. archive raw files NOT listed in the register (supplementary source docs — the
+        # DataRoom register/explanation .docx, folder readmes). The checksum baseline (step 1)
+        # covers the WHOLE raw archive, so the control archive must mirror that full set, not
+        # only the register-listed inputs — otherwise it certifies more than it safeguards.
+        registered_names = {rec.filename for rec in ctx.register}
+        supp_dir = archive_dir / self.SUPPLEMENTARY_DIR
+        for f in raw_guard.iter_files(raw_root):
+            if f.name in registered_names:
+                continue  # a register-listed input (parent or sidecar) — copied above
+            target = supp_dir / f.relative_to(raw_root)  # preserve the raw sub-path
+            assert_not_raw_write(target, raw_root)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(f, target)
+            self._supplementary += 1
+
         # 3. verify raw archive unchanged after all copying
         after = raw_guard.verify_against(raw_root, before)
         self._raw_unchanged = after.ok
@@ -120,9 +143,9 @@ class Phase00Archive(Phase):
         for p in (inv_path, integ_path, checksum_path, readme_path):
             result.add_output(p)
         result.log(
-            f"archived {self._copied_parents} parent bundles, "
-            f"{len(self._checksums)} files checksummed, {len(self._missing)} missing, "
-            f"{len(self._known_gaps)} acknowledged gap(s)"
+            f"archived {self._copied_parents} parent bundles + {self._supplementary} "
+            f"supplementary source doc(s), {len(self._checksums)} files checksummed, "
+            f"{len(self._missing)} missing, {len(self._known_gaps)} acknowledged gap(s)"
         )
         return result
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import hashlib
 import json
 from pathlib import Path
 
@@ -9,10 +11,62 @@ import pytest
 
 from buduunkhad.core.publish import (
     PublishError,
+    backup_raw_archive,
     collect_deliverables,
     latest_gate_per_phase,
     publish,
 )
+
+
+def _write_register(path: Path, rows: list[tuple[str, str, bytes]]) -> None:
+    """rows = [(filename, relative_path, content)] -> a SHA-256 checksum register CSV."""
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["filename", "relative_path", "sha256", "size_bytes"])
+        for name, rel, content in rows:
+            w.writerow([name, rel, hashlib.sha256(content).hexdigest(), len(content)])
+
+
+def test_backup_raw_archive_copies_and_verifies(tmp_path):
+    raw = tmp_path / "raw"
+    (raw / "grpA").mkdir(parents=True)
+    (raw / "grpA" / "a.tif").write_bytes(b"AAAA")
+    (raw / "readme.txt").write_bytes(b"notes")
+    reg = tmp_path / "SHA-256_Checksum_Register.csv"
+    _write_register(reg, [("a.tif", "grpA/a.tif", b"AAAA"), ("readme.txt", "readme.txt", b"notes")])
+
+    res = backup_raw_archive(raw, reg, tmp_path / "drive", "v01")
+
+    assert res.dest == tmp_path / "drive" / "Raw_Archive_Backup_v01"
+    assert res.files == 2 and res.verified == 2
+    assert not res.missing and not res.mismatched
+    assert (res.dest / "0_Raw_Data" / "grpA" / "a.tif").read_bytes() == b"AAAA"
+    assert (res.dest / "SHA-256_Checksum_Register.csv").exists()  # register carried to root
+    assert (res.dest / "README.md").exists()
+
+
+def test_backup_raw_archive_detects_mismatch(tmp_path):
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    (raw / "a.bin").write_bytes(b"REAL")
+    reg = tmp_path / "reg.csv"
+    _write_register(reg, [("a.bin", "a.bin", b"WRONG")])  # register hash won't match the file
+    with pytest.raises(PublishError):
+        backup_raw_archive(raw, reg, tmp_path / "drive", "v01")
+
+
+def test_backup_raw_archive_refuses_existing_label(tmp_path):
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    (raw / "a.bin").write_bytes(b"X")
+    reg = tmp_path / "reg.csv"
+    _write_register(reg, [("a.bin", "a.bin", b"X")])
+    backup_raw_archive(raw, reg, tmp_path / "drive", "v01")
+    with pytest.raises(PublishError):  # non-empty label dir must not be silently clobbered
+        backup_raw_archive(raw, reg, tmp_path / "drive", "v01")
+    # overwrite=True is allowed
+    res = backup_raw_archive(raw, reg, tmp_path / "drive", "v01", overwrite=True)
+    assert res.verified == 1
 
 
 def _make_output(root: Path) -> None:

@@ -10,8 +10,12 @@ re-upload duplicates of data that already lives in the Drive.
 
 from __future__ import annotations
 
+import csv
+import hashlib
 import json
+import os
 import shutil
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -209,3 +213,134 @@ def _write_index(
     index = dest / "INDEX.md"
     index.write_text("\n".join(lines), encoding="utf-8")
     return index
+
+
+# --------------------------------------------------------------------------- #
+# raw-archive backup (a frozen, checksum-verified copy of the complete raw set)
+# --------------------------------------------------------------------------- #
+
+
+@dataclass(frozen=True)
+class RawBackupResult:
+    dest: Path
+    files: int
+    verified: int
+    missing: list[str] = field(default_factory=list)
+    mismatched: list[str] = field(default_factory=list)
+
+
+def _sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def backup_raw_archive(
+    raw_root: Path,
+    checksum_register: Path,
+    publish_root: Path,
+    label: str,
+    *,
+    integrity_files: Sequence[Path] = (),
+    overwrite: bool = False,
+) -> RawBackupResult:
+    """Copy the *complete* raw archive to a frozen, checksum-verified backup under ``publish_root``.
+
+    Creates ``publish_root/Raw_Archive_Backup_<label>/`` with the full raw tree under
+    ``0_Raw_Data/``, the Phase-00 checksum register + any ``integrity_files`` at the root, and a
+    README. Every row of the checksum register is re-hashed against the copied file; a missing or
+    mismatched file raises :class:`PublishError` (the README is still written for diagnosis).
+
+    Raw is read-only — this only *reads* ``raw_root``. Unlike :func:`publish` (which excludes raw
+    working copies), this deliberately backs up the raw data so teammates have an immutable,
+    verifiable copy separate from the working source. Intended one-time / on-change, not per run.
+    """
+    raw_root = Path(raw_root)
+    publish_root = Path(publish_root)
+    checksum_register = Path(checksum_register)
+    if not raw_root.exists():
+        raise PublishError(f"raw_root does not exist: {raw_root}")
+    if not checksum_register.exists():
+        raise PublishError(f"checksum register not found: {checksum_register} (run Phase 00 first)")
+    dest = publish_root / f"Raw_Archive_Backup_{label}"
+    if dest.exists() and any(dest.iterdir()) and not overwrite:
+        raise PublishError(
+            f"{dest} already exists and is non-empty; pass overwrite=True or use a new label"
+        )
+    data_dir = dest / "0_Raw_Data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    # copy the complete raw tree (skip Windows desktop.ini folder-config junk Drive re-creates)
+    files = 0
+    for f in sorted(raw_root.rglob("*")):
+        if not f.is_file() or f.name.lower() == "desktop.ini":
+            continue
+        target = data_dir / f.relative_to(raw_root)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(f, target)
+        files += 1
+
+    # copy the integrity evidence (register + inventory/log/readme) to the backup root
+    shutil.copy2(checksum_register, dest / checksum_register.name)
+    for extra in integrity_files:
+        extra = Path(extra)
+        if extra.exists():
+            shutil.copy2(extra, dest / extra.name)
+
+    # verify every register row against the copied file
+    verified = 0
+    missing: list[str] = []
+    mismatched: list[str] = []
+    with open(checksum_register, newline="", encoding="utf-8") as fh:
+        for row in csv.DictReader(fh):
+            rel = row["relative_path"].replace("/", os.sep)
+            p = data_dir / rel
+            if not p.exists():
+                missing.append(row["relative_path"])
+            elif _sha256(p) == row["sha256"]:
+                verified += 1
+            else:
+                mismatched.append(row["relative_path"])
+
+    _write_raw_backup_readme(dest, label, files, verified, checksum_register.name)
+    if missing or mismatched:
+        raise PublishError(
+            f"raw backup verification failed: {len(missing)} missing, "
+            f"{len(mismatched)} mismatched vs the checksum register (dest={dest})"
+        )
+    return RawBackupResult(
+        dest=dest, files=files, verified=verified, missing=missing, mismatched=mismatched
+    )
+
+
+def _write_raw_backup_readme(
+    dest: Path, label: str, files: int, verified: int, register_name: str
+) -> Path:
+    lines = [
+        f"# Raw Archive Backup — {label}",
+        "",
+        "**Frozen, checksum-verified backup of the complete raw exploration data archive.**",
+        "Do not edit anything in this folder — it exists so the working source can be protected",
+        "and, if it is ever altered, restored/verified against this snapshot.",
+        "",
+        "## Contents",
+        f"- `0_Raw_Data/` — complete raw archive ({files} files, full folder structure).",
+        f"- `{register_name}` — SHA-256 integrity baseline (the source of truth for verification).",
+        "- Phase-00 inventory / integrity log / source readme (where provided).",
+        "",
+        "## Verification",
+        f"All {verified} checksum-register rows were re-hashed against the copied files and "
+        "matched byte-for-byte at backup time. To re-verify a file, compare its SHA-256 against "
+        f"the `sha256` column in `{register_name}` (`Get-FileHash -Algorithm SHA256` / `sha256sum`).",
+        "",
+        "## Notes",
+        "- One-time, versioned backup — raw data does not change, so it is not re-uploaded per run.",
+        "  If the raw archive is ever legitimately updated, create a new label rather than overwriting.",
+        "- Raw inputs are read-only source evidence; remote-sensing / pXRF / drone data are *support*",
+        "  evidence, never ore proof.",
+    ]
+    readme = dest / "README.md"
+    readme.write_text("\n".join(lines), encoding="utf-8")
+    return readme

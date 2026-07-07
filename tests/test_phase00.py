@@ -78,3 +78,30 @@ def test_phase00_dry_run_writes_empty_scaffolding(project):
     # evidence-group subfolders created
     for group in config.evidence_groups:
         assert (archive / group.name).is_dir()
+
+
+def test_phase00_archives_unregistered_supplementary_files(raw_archive):
+    # Raw files NOT in the register (e.g. DataRoom register/explanation docs, folder readmes) must
+    # still be archived, so the control archive mirrors the FULL checksummed raw set (not just the
+    # register-listed inputs). Regression for the archive-certifies-more-than-it-safeguards gap.
+    config, register, raw_root = raw_archive
+    supp = raw_root / "ZZ_DataRoom" / "MasterRegister_Explanation.docx"
+    supp.parent.mkdir(parents=True, exist_ok=True)
+    supp.write_bytes(b"supplementary register doc not present in input_register")
+
+    ctx = _ctx(config, register)
+    phase = Phase00Archive()
+    phase.prepare(ctx)
+    result = phase.run(ctx)
+    assert result.status == "ok"
+
+    archive = paths.phase_dir(config.output_root, "00")
+    archived = (
+        archive
+        / Phase00Archive.SUPPLEMENTARY_DIR
+        / "ZZ_DataRoom"
+        / "MasterRegister_Explanation.docx"
+    )
+    assert archived.exists(), "supplementary (unregistered) raw file was not archived"
+    assert archived.read_bytes() == supp.read_bytes()  # byte-identical copy
+    assert phase._supplementary == 1

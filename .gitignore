@@ -23,7 +23,8 @@ runs/
 *.docx
 # ...but track the authoritative methodology docs (source of truth), like the v6 PDF at repo root
 !XV-023222_Buduunkhad_Exploration_Workflow_Methodology_78Inputs_v9_25km_Clickable_TOC_PageNumbers.docx
-!docs/phase_04/*.docx
+# ...and the full per-phase methodology/guide set mirrored from the Drive workflow folder
+!docs/**/*.docx
 SHA-256_Checksum_Register.csv
 !config/*.csv          # keep the curated input register under version control
 

@@ -75,8 +75,40 @@ def test_phase01_real_run(raw_archive):
     bufgdf = gpd.read_file(buffer_files[0])
     assert len(bufgdf) == len(config.boundary.buffers_m)
 
+    # 1A.3/1B.3 source-traceability fields on both vector deliverables
+    provenance = {
+        "source_raw_input_no",
+        "source_raw_filename",
+        "processing_phase",
+        "processing_software",
+        "processing_action",
+        "output_filename",
+        "qaqc_status",
+        "validation_status",
+        "limitation",
+    }
+    for gdf, label in ((bgdf, "boundary"), (bufgdf, "buffers")):
+        missing = provenance - set(gdf.columns)
+        assert not missing, f"{label} missing provenance fields: {missing}"
+    assert bgdf.iloc[0]["source_raw_input_no"] == str(config.boundary.input_no)
+    assert bgdf.iloc[0]["processing_phase"] == "01"
+    assert bgdf.iloc[0]["validation_status"] == "Historical only"
+    assert bufgdf.iloc[0]["output_filename"] == buffer_files[0].name
+
     # CRS/Georef QAQC log + confidence ranking + qgz
-    assert (pdir / "03_CRS_Check" / f"{prefix}_CRS_Georeference_QAQC_Log.xlsx").exists()
+    crs_log = pdir / "03_CRS_Check" / f"{prefix}_CRS_Georeference_QAQC_Log.xlsx"
+    assert crs_log.exists()
+
+    # the log carries the methodology's extent / pixel-alignment / sidecar checks
+    import pandas as pd
+
+    log_df = pd.read_excel(crs_log)
+    for col in ("extent", "pixel_aligned", "sidecar_status"):
+        assert col in log_df.columns, f"CRS log missing '{col}' column"
+    assert len(log_df) >= 1
+    # synthetic fixture rasters are north-up GeoTIFFs -> all audited as aligned
+    assert log_df["pixel_aligned"].astype(bool).all()
+    assert log_df["extent"].astype(str).str.contains(",").all()
     assert (pdir / "07_Data_Confidence_Ranking" / f"{prefix}_Data_Confidence_Ranking.xlsx").exists()
     assert (pdir / "08_Master_QGIS_Project_Setup" / f"{prefix}_Master_QGIS_Project.qgz").exists()
     _assert_phase1_deliverables(pdir)

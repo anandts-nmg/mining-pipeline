@@ -29,6 +29,9 @@ class RasterAudit:
     res_x: float | None = None
     res_y: float | None = None
     bounds: tuple[float, float, float, float] | None = None
+    #: grid is axis-aligned / north-up (no rotation/shear terms in the transform) - the
+    #: deterministic "pixel alignment" check the methodology Phase-1 raster audit requires
+    pixel_aligned: bool | None = None
     needs_reproject: bool | None = None
     error: str | None = None
 
@@ -65,6 +68,7 @@ def audit_raster(path: Path, target_epsg: int = TARGET_EPSG) -> RasterAudit:
                 res_x=res_x,
                 res_y=res_y,
                 bounds=(b.left, b.bottom, b.right, b.top),
+                pixel_aligned=(ds.transform.b == 0.0 and ds.transform.d == 0.0),
                 needs_reproject=(epsg != target_epsg),
             )
     except Exception as exc:  # noqa: BLE001 - report, don't crash the audit

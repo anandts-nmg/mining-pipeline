@@ -188,11 +188,31 @@ class Phase01DataAudit(Phase):
             ext="gpkg",
         )
         boundary_path = gpkg_dir / boundary_name
+
+        # populate the master gpkg's (empty) license_boundary layer first, preserving
+        # others - the master layer keeps the slim config schema (name/source_input),
+        # while the standalone deliverable below carries the full 1B.3 provenance.
+        vector_io.write_layer(gdf32, master_path, layer="license_boundary", mode="a")
+
+        def _stamp_provenance(gdf, action: str, output_filename: str):  # type: ignore[no-untyped-def]
+            """Attach the source-traceability fields the methodology (1A.3/1B.3) requires
+            on every output layer."""
+            gdf["source_raw_input_no"] = str(cfg.boundary.input_no)
+            gdf["source_raw_filename"] = boundary_src.name
+            gdf["processing_phase"] = self.id
+            gdf["processing_software"] = "buduunkhad pipeline (geopandas/pyproj)"
+            gdf["processing_action"] = action
+            gdf["output_filename"] = output_filename
+            gdf["qaqc_status"] = "Checked"
+            gdf["validation_status"] = "Historical only"
+            gdf["limitation"] = (
+                "Administrative licence boundary context layer - not mineral evidence."
+            )
+            return gdf
+
+        gdf32 = _stamp_provenance(gdf32, "KMZ import + reproject to EPSG:32647", boundary_name)
         vector_io.write_layer(gdf32, boundary_path, layer="license_boundary")
         result.add_output(boundary_path)
-
-        # populate the master gpkg's (empty) license_boundary layer, preserving others
-        vector_io.write_layer(gdf32, master_path, layer="license_boundary", mode="a")
 
         # buffers
         buffers_gdf = vector_io.buffer_rings(gdf32, cfg.boundary.buffers_m, epsg)
@@ -205,6 +225,9 @@ class Phase01DataAudit(Phase):
             ext="gpkg",
         )
         buffer_path = gpkg_dir / buffer_name
+        buffers_gdf = _stamp_provenance(
+            buffers_gdf, "Multi-ring buffer off the licence boundary", buffer_name
+        )
         vector_io.write_layer(buffers_gdf, buffer_path, layer="project_buffers")
         result.add_output(buffer_path)
         self._boundary_ok = True
@@ -237,11 +260,27 @@ class Phase01DataAudit(Phase):
                     "nodata": audit.nodata if audit.nodata is not None else "",
                     "res_x": audit.res_x if audit.res_x is not None else "",
                     "res_y": audit.res_y if audit.res_y is not None else "",
+                    "extent": ", ".join(f"{v:.4f}" for v in audit.bounds) if audit.bounds else "",
+                    "pixel_aligned": audit.pixel_aligned if audit.pixel_aligned is not None else "",
+                    "sidecar_status": self._sidecar_status(ctx, rec, wc),
                     "decision": "Pass" if audit.readable else "Fail",
                     "note": audit.error or "",
                 }
             )
         return rows
+
+    def _sidecar_status(self, ctx: RunContext, rec: InputRecord, wc: Path) -> str:
+        """Register-driven sidecar availability beside the working copy (methodology
+        Phase-1 step: 'sidecar availability-г шалгана')."""
+        expected = [
+            r.filename for r in ctx.register if r.is_sidecar and r.parent_file == rec.filename
+        ]
+        if not expected:
+            return "n/a (no registered sidecars)"
+        missing = [name for name in expected if not (wc.parent / name).exists()]
+        if missing:
+            return f"{len(expected) - len(missing)}/{len(expected)} present; missing: {', '.join(missing)}"
+        return f"{len(expected)}/{len(expected)} present"
 
     def _confidence_rows(self, ctx: RunContext) -> list[dict[str, object]]:
         rows: list[dict[str, object]] = []
@@ -511,6 +550,9 @@ _CRS_LOG_COLUMNS = [
     "nodata",
     "res_x",
     "res_y",
+    "extent",
+    "pixel_aligned",
+    "sidecar_status",
     "decision",
     "note",
 ]

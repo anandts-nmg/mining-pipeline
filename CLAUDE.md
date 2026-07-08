@@ -14,14 +14,15 @@ implemented end-to-end. Phase 02 follows the `docs/phase_02` guides: per-product
 GeoTIFF; DEM terrain derivatives (multi-azimuth hillshade, slope, aspect, TRI, profile/plan
 curvature, flow); a terrain-derivatives index + QA/QC report; and formula-complete method
 notes for the external SNAP/ILWIS/ASTER-HDF/KOMPSAT-ortho steps. Phase 03 (ORCHESTRATE) follows
-`docs/phase_03` / `PHASE_03_PLAN.md`: scaffold the 12-folder tree, emit registers/templates + the
+`docs/phase_03`: scaffold the 12-folder tree, emit registers/templates + the
 Preliminary Deposit Model, build the CMCS 5/10/20/25 km buffer, ingest the #68 mineralized-point XLSX +
 human-digitized layers into a 17-layer evidence GPKG (all *Historical only* support evidence). Phase 04
-(BUILD) follows `PHASE_04_PLAN.md`: a 250 m evidence-scoring grid over the AOI scored on the v9 §5
-8-criterion weighted matrix (desktop-unavailable ASTER/field/drone criteria score 0 as data gaps),
-high-score cells dissolved into A/B/C/D-ranked prospect polygons + ranking table + Go/No-Go matrix
-(all *Preliminary — not ore proof*). Phase 05 and later phases are registered stubs unless their
-module explicitly implements real work.
+(BUILD) follows `docs/phase_04`: a 250 m evidence-scoring grid over the AOI
+scored on the Phase-4 guide §6 desktop matrix (geology 20 / occurrence 15 / geochem 20 / RS 15 /
+structure 10 / deposit-model fit 10 / access 5 / confidence 5 — conflict 04-1; absent evidence
+scores 0 as a data gap), cells dissolved **per class band** into discrete A/B/C prospect polygons +
+ranking table + Go/No-Go matrix (all *Preliminary — not ore proof*). Phase 05 and later phases are
+registered stubs unless their module explicitly implements real work.
 
 ## Project constants (never invent — they live in `config/project.yaml`)
 
@@ -108,4 +109,4 @@ missing files. Dry runs skip that check. Build and test against synthetic fixtur
 - When unsure about a phase's exact inputs/outputs/QA-QC, follow the methodology document,
   not assumptions.
 - The `config/input_register.csv` filenames were reconciled against the real archive on
-  2026-06-30 (see `REGISTER_RECONCILIATION.md`): validated, 0 edits. It remains editable config.
+  2026-06-30: validated, 0 edits. It remains editable config.

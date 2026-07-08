@@ -17,9 +17,9 @@ implemented end-to-end**, and every later phase registered as a stub behind a un
 |------|------|------|--------|
 | 00 | Raw Files Archive | build | **implemented** — inventory, SHA-256 integrity, readme, working copies, raw read-only verification |
 | 01 | Data Audit & Master GIS Setup | build | **implemented** — KMZ→GeoPackage boundary (EPSG:32647), buffers, raster CRS audit, master GPKG schema, confidence ranking, QGIS project |
-| 02 | Remote Sensing Preprocessing | build | **implemented** — per-product clip (DEM 5 km / Sentinel licence / basemap 1 km) → reproject to EPSG:32647 → Cloud-Optimized GeoTIFF; DEM terrain derivatives (multi-azimuth hillshade, slope, aspect, TRI, profile/plan curvature, flow); Sentinel indices / ASTER-HDF / KOMPSAT-ortho as formula-complete method notes. See `PHASE_02_PLAN.md` |
-| 03/03A | Geology / Metallogenic / CMCS Synthesis + Deposit Model | orchestrate | **implemented** — 12-folder scaffold; 17-layer evidence GPKG (13 provenance fields + `BUD-` feature IDs); CMCS 5/10/20/25 km context buffer; #68 mineralized-point XLSX→validated points; human-layer ingest; 03A deposit-model template + 6-model evidence table + 100-pt scoring; all outputs stamped *Historical only*. See `PHASE_03_PLAN.md` |
-| 04 | Preliminary Prospect Delineation & Ranking | build | **implemented** — 250 m evidence-scoring grid on the Phase-4 guide §6 desktop matrix (geology 20 / occurrence 15 / geochem 20 / RS 15 / structure 10 / model-fit 10 / access 5 / confidence 5; **attribute-aware**: focused alteration activates `rs`, geochem-anomaly polygons drive `geochem`+`elements`; 03A matrix scores `model_fit`); cells dissolved **per class band** into discrete `BUD-PSP` A/B/C prospects + ranking table + Go/No-Go matrix; all *Preliminary — not ore proof*. See `PHASE_04_PLAN.md` + `docs/phase_04/` |
+| 02 | Remote Sensing Preprocessing | build | **implemented** — per-product clip (DEM 5 km / Sentinel licence / basemap 1 km) → reproject to EPSG:32647 → Cloud-Optimized GeoTIFF; DEM terrain derivatives (multi-azimuth hillshade, slope, aspect, TRI, profile/plan curvature, flow); automated ASTER alteration-mineral chain + vector hydrology (streams/basins/contours) + lineament first-pass draft; Sentinel indices / KOMPSAT-ortho as formula-complete method notes. See `docs/phase_02/` |
+| 03/03A | Geology / Metallogenic / CMCS Synthesis + Deposit Model | orchestrate | **implemented** — 12-folder scaffold; 17-layer evidence GPKG (13 provenance fields + `BUD-` feature IDs); CMCS 5/10/20/25 km context buffer; #68 mineralized-point XLSX→validated points; human-layer ingest; 03A deposit-model template + 6-model evidence table + 100-pt scoring; all outputs stamped *Historical only*. See `docs/phase_03/` |
+| 04 | Preliminary Prospect Delineation & Ranking | build | **implemented** — 250 m evidence-scoring grid on the Phase-4 guide §6 desktop matrix (geology 20 / occurrence 15 / geochem 20 / RS 15 / structure 10 / model-fit 10 / access 5 / confidence 5; **attribute-aware**: focused alteration activates `rs`, geochem-anomaly polygons drive `geochem`+`elements`; 03A matrix scores `model_fit`); cells dissolved **per class band** into discrete `BUD-PSP` A/B/C prospects + ranking table + Go/No-Go matrix; all *Preliminary — not ore proof*. See `docs/phase_04/` |
 | 05 | DJI Matrice 400 Drone / LiDAR / Photogrammetry | orchestrate | stub |
 | 06 | Recon Mapping & Portable XRF | orchestrate | stub |
 | 07 | Rock Chip / Channel / Verification Sampling | orchestrate | stub |
@@ -139,7 +139,7 @@ project Google Drive separately so teammates can see them:
 # Publish ONLY the deliverables (not the 1.8 GiB raw working copies) to a Drive folder:
 $env:BUDUUNKHAD_OUTPUT_ROOT  = "C:\bk\out"
 $env:BUDUUNKHAD_PUBLISH_ROOT = "G:\My Drive\Buduunkhad_Deliverables"   # a Drive-for-Desktop folder
-buduunkhad publish --label v0.3.1
+buduunkhad publish --label v0.6.0
 ```
 
 This copies the GIS layers, registers, logs and reports into a versioned `PhaseNN/` folder with
@@ -147,7 +147,7 @@ an `INDEX.md` + the run manifest; raw working copies are excluded. Then **share 
 Google Drive** to give teammates access (Drive for Desktop uploads it automatically).
 
 > The `config/input_register.csv` filenames were reconciled against the real archive on
-> 2026-06-30 (see `REGISTER_RECONCILIATION.md`): validated with 0 edits. The register is plain
+> 2026-06-30: validated with 0 edits. The register is plain
 > editable config, and `buduunkhad validate` reports any manifest mismatches.
 
 ## Run-start safety checks (real runs)

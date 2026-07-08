@@ -1,10 +1,11 @@
 # Project Status — Buduunkhad / XV-023222 Exploration Pipeline
 
-**As of:** 2026-07-06 · **Release:** v0.3.3 · **Health:** 🟢 On track
+**As of:** 2026-07-08 · **Release:** v0.7.0 · **Health:** 🟢 On track
 
 A brief for management. One-page snapshot of what the automated exploration pipeline
 has delivered, what's next, and where the gaps are. (Technical detail lives in
-`METHODOLOGY_DISCREPANCIES.md`, `REGISTER_RECONCILIATION.md`, and the phase docs.)
+`METHODOLOGY_DISCREPANCIES.md`, `AUTOMATION_ASSESSMENT.md`, and the per-phase methodology
+guides under `docs/`.)
 
 ---
 
@@ -13,7 +14,7 @@ has delivered, what's next, and where the gaps are. (Technical detail lives in
 The desk-based half of the exploration workflow is **built, tested, and delivered**.
 Phases 00–04 — from raw-data safekeeping through the geological synthesis and the **preliminary
 prospect ranking** — run end-to-end on the real project data and are published to the shared Drive as
-**v0.4.0**. Field and lab campaigns are already **underway** (a Phase I field program has run and
+**v0.7.0**. Field and lab campaigns are already **underway** (a Phase I field program has run and
 produced data); the work from here is **extending the pipeline** to ingest and process that data
 through the later phases.
 
@@ -28,29 +29,33 @@ waiting on either the next build increment or on field/lab work.
 | 01 | Data Audit & Master GIS Setup | ✅ Complete |
 | 02 | Remote Sensing (satellite/terrain) Preprocessing | ✅ Complete |
 | 03 | Geological, Metallogenic & Deposit-Model Synthesis | ✅ Complete |
-| 04 | Preliminary Prospect Delineation & Ranking | ✅ Complete — desktop machinery; ranks prospects once evidence layers are digitized |
+| 04 | Preliminary Prospect Delineation & Ranking | ✅ Complete — **47 ranked prospects delivered (7 A-class, 15 B, 25 C)** from the digitized evidence |
 | 05–11, 99 | Drone, field sampling, soil/geochem, integration, final delivery | 🕓 Scaffolded; **build-limited** — field/lab data already in hand for 06–09 |
 
-## What has been delivered (v0.4.0)
+## What has been delivered (v0.7.0)
 
 - **A secured, verified raw-data archive** — every one of the 79 source inputs checksummed
-  and locked read-only, so nothing is accidentally altered.
+  and locked read-only, so nothing is accidentally altered, plus a **repeatable checksum-verified
+  backup to the shared Drive** so the originals can never be tampered with.
 - **A master GIS database** — all layers standardized to the project coordinate system
   (UTM 47N), with the licence boundary and the 500 m–25 km buffers.
 - **Processed satellite & terrain products** — clipped, reprojected, cloud-optimized imagery
-  and DEM derivatives, with QA/QC.
+  and DEM derivatives, with QA/QC. Now includes an **automated ASTER alteration-mineral chain**
+  (clay / iron-oxide / silica band-ratio anomaly targets, validated against the geologist's own
+  QGIS output), **vector hydrology** (streams, watersheds, contours) and a **first-pass lineament
+  draft** — all machine-drafted and stamped for geologist review.
 - **A geological evidence package** — a 17-layer database including the **7 historical
   mineralized points** digitized from the source registers, plus the deposit-model and
   scoring templates. All of it is labelled **"Historical / supporting evidence — not proof
   of ore."**
-- **A preliminary prospect-ranking engine** — a 250 m evidence grid scored on the methodology's
-  8-criterion matrix, dissolving high-score cells into A/B/C/D-ranked prospect polygons with a
-  ranking table and a Go/No-Go decision matrix. All labelled **"Preliminary — not ore proof."**
-  (On today's still-sparse desktop evidence it yields 0 candidates and flags exactly what's
-  missing; it auto-ranks prospects once the geology/structure/alteration layers are digitized.)
+- **Ranked preliminary prospects** — a 250 m evidence grid scored on the methodology's 8-criterion
+  desktop matrix, dissolved into **47 discrete ranked prospect polygons: 7 A-class (top score
+  83/100), 15 B, 25 C**, each carrying its element signature (Au/Cu/Mo/…), a ranking table and a
+  Go/No-Go decision matrix. All labelled **"Preliminary — not ore proof"** — A-class means
+  *field-follow-up priority*, not a confirmed deposit.
 - **Published to the shared Drive** and version-tagged, with an index and audit trail.
 
-Quality bar: all automated checks pass (linting, type-checking, 116 tests), and the work
+Quality bar: all automated checks pass (linting, type-checking, 133 tests), and the work
 went through a full correctness audit with every finding fixed.
 
 ## What's next
@@ -58,8 +63,8 @@ went through a full correctness audit with every finding fixed.
 1. **Phases 06–09** are **buildable now** — the field & lab data (pXRF field readings, rock-chip
    and soil sampling, lab assay reports) **already exists** from the Phase I program, so these
    phases are limited by pipeline build, not by data.
-2. **Feed the prospect engine** — digitizing the geology/structure/alteration evidence into Phase 03
-   (or ingesting the human's Phase-04 evidence layers) lets Phase 04 produce real ranked prospects.
+2. **Two quick score upgrades** — the geologist completing the Phase 3 deposit-model score matrix
+   (+up to 10 pts per prospect) and supplying a roads layer (+up to 5) would sharpen the ranking.
 3. **Phase 05** (drone LiDAR), geophysics and drilling await their field campaigns.
 
 ## Open decisions & risks (all minor, none blocking)
@@ -67,8 +72,8 @@ went through a full correctness audit with every finding fixed.
 - **One decision pending:** whether a phase that is *automatically* complete but still waiting
   on a human sign-off step should pause the pipeline or advance with a flag. It currently
   advances, clearly marked "provisional." Low stakes; needs a one-line call.
-- **No scientific disagreements outstanding.** All 15 documentation conflicts between the
-  methodology versions were reconciled and recorded.
+- **No scientific disagreements outstanding.** All 17 documentation conflicts between the
+  methodology versions were reconciled and recorded (latest: the Phase-4 scoring matrix, 04-1).
 
 ## Data gaps
 
@@ -80,10 +85,10 @@ went through a full correctness audit with every finding fixed.
   yet. Still genuinely outstanding: **drone LiDAR, geophysics, and drilling**. Until the
   decision-grade lab data is integrated, the *published* evidence remains supporting
   (historical/remote-sensing).
-- **A few external imagery products** (certain ASTER/KOMPSAT/Sentinel steps) require
+- **A few external imagery products** (certain Sentinel indices / KOMPSAT ortho steps) require
   specialist software and are captured as documented method-notes rather than automated output.
 
 ---
 
-*Prepared from the live repository state (branch `main`, tag `v0.4.0`). For the engineering
-detail behind any line above, see the referenced documents in the repo root.*
+*Prepared from the live repository state (branch `main`, tag `v0.7.0`). For the engineering
+detail behind any line above, see the referenced documents in the repo root and `docs/`.*

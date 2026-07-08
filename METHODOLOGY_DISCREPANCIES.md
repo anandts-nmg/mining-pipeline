@@ -36,7 +36,7 @@ vocabulary **High / Medium / Low / Needs verification**). The disagreements belo
 **17 explicitly-numbered conflicts** (Phase 00: 3 · Phase 01: 7 · Phase 02: 3 · Phase 03: 3 · Phase 04: 1), plus ~4
 doc-vs-reality reconciliations and 1 intra-document version drift. **All 17 are resolved (by decision)** —
 01-7 and 02-1 / H-1 were decided 2026-06-30; the Phase-03 items (03-1/2/3 + handoff H-4) were decided
-2026-07-01 during Phase-3 planning (`PHASE_03_PLAN.md`). **Phase 03 is now implemented and run
+2026-07-01 during Phase-3 planning. **Phase 03 is now implemented and run
 (v0.3.1).** **02-1 / H-1 were re-decided 2026-07-06** — the 25 km buffer is *adopted* (per the newer
 v8/v9 methodology), superseding the earlier "artefact" call; implemented at v0.3.2.
 
@@ -419,7 +419,7 @@ Same rule — master = truth; the `docs/phase_03` guide honoured as the more-spe
 | H-4 ASTER/KOMPSAT support gap | Non-blocking; recorded in the data-gap register (RS = 10/100 pts, not a required handover layer). | `Phase3_DataGap` register (implemented) |
 | georef straddle | Phase 03 owns the actual georeferencing of the geology/metallogenic scans; Phase 01 scaffolds the log. | `phase03` steps 3-5 |
 
-**Net:** Phase 03 is implemented per `PHASE_03_PLAN.md` (ORCHESTRATE: scaffold 12 folders + templates + the
+**Net:** Phase 03 is implemented per `docs/phase_03` (ORCHESTRATE: scaffold 12 folders + templates + the
 17-layer evidence GPKG + #68 XLSX→points with source attributes into the occurrence registers + CMCS buffer
 + human-layer ingest) and run end-to-end on the local archive (gate GO, 7 mineralized points ingested).
 
@@ -473,8 +473,8 @@ Other points worth recording:
 
 *(01-7 and 02-1 / H-1 were **resolved 2026-06-30** — see above: follow Doc A's Phase 3/4 folder names,
 and treat the Phase-2 guide's 25 km buffer as an artefact (add-on-demand). The standalone Phase-1 PDF is
-superseded for folder structure per 01-7. **03-1/2/3 + H-4 were decided 2026-07-01** during Phase-3 planning —
-see `PHASE_03_PLAN.md`; the BMP-as-`.jpg` files get characterized when Phase 03 georeferences them.)*
+superseded for folder structure per 01-7. **03-1/2/3 + H-4 were decided 2026-07-01** during Phase-3 planning;
+the BMP-as-`.jpg` files get characterized when Phase 03 georeferences them.)*
 
 ---
 

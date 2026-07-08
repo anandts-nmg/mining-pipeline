@@ -18,10 +18,10 @@ Drive connector on 2026-06-23. The authoritative per-file pin is `config/raw_man
 - Heavy **duplication** inflates the wider drive (KOMPSAT PAN 699 MB copied ≥3×, license
   boundary gpkg ×40+); other licences (XV-022905, L08718 Suujiin Bulag) and a stray
   EPSG:32649 boundary also live in the drive — so we **pin file IDs**, never match by name.
-- **Verified end-to-end:** Phases 00–03 ran **go/go on this real data** (tag `v0.3.1`) — the
+- **Verified end-to-end:** Phases 00–04 ran **go/go on this real data** (tag `v0.6.0`) — the
   79-input archive checksummed, boundary → EPSG:32647 + 6 buffers (500 m–25 km), 13-layer master GeoPackage,
-  Phase-02 COGs + terrain derivatives, and the 17-layer Phase-03 evidence GPKG; the EULA gap was
-  recorded (not fatal).
+  Phase-02 COGs + terrain derivatives, the 17-layer Phase-03 evidence GPKG, and 47 ranked Phase-04
+  prospect polygons; the EULA gap was recorded (not fatal).
 
 ## Structure (Exploration Stage)
 
@@ -45,8 +45,7 @@ Buduun khad/
 ## Canonical size census (78 registered inputs present in `0. Raw Data`; the EULA #23 is absent)
 
 > On-disk the archive holds **79 physical files**: the #61 metallogenic scheme is byte-duplicated
-> across folders `05` and `07` (counted once below, pinned to folder 07). See
-> `REGISTER_RECONCILIATION.md`.
+> across folders `05` and `07` (counted once below, pinned to folder 07).
 
 | Theme | Files | Size |
 |---|--:|--:|
@@ -82,7 +81,7 @@ Google basemaps 185 MB (0.15 m) + 105 MB (2.4 m). Everything else is small scans
 
 - The register holds **79 inputs**; **78 of 79 are present** in `0. Raw Data` and matched to a
   canonical Drive file ID, **size-verified (0 mismatches** — re-verified 2026-07-03 after the
-  #56 manifest size pin was corrected back to 1,898,113 B; see `REGISTER_RECONCILIATION.md`**)**.
+  #56 manifest size pin was corrected back to 1,898,113 B**)**.
 - **1 missing:** `#23 KOMPSATEULAForm_3.1.pdf` (KOMPSAT licence/EULA — provenance only). Recorded
   as an **acknowledged data gap** — it is logged and flows to the data-gap register, and does
   **not** block the run.

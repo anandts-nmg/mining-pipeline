@@ -110,7 +110,20 @@ def test_phase01_real_run(raw_archive):
     assert log_df["pixel_aligned"].astype(bool).all()
     assert log_df["extent"].astype(str).str.contains(",").all()
     assert (pdir / "07_Data_Confidence_Ranking" / f"{prefix}_Data_Confidence_Ranking.xlsx").exists()
-    assert (pdir / "08_Master_QGIS_Project_Setup" / f"{prefix}_Master_QGIS_Project.qgz").exists()
+
+    # layered master QGIS project: boundary + buffers on top of the 13 schema layers,
+    # with datasources relative to the .qgz that resolve on disk
+    from buduunkhad.core.qgis_project import read_qgz_layers
+
+    qgz = pdir / "08_Master_QGIS_Project_Setup" / f"{prefix}_Master_QGIS_Project.qgz"
+    assert qgz.exists()
+    entries = read_qgz_layers(qgz)
+    assert len(entries) == 2 + len(config.master_gpkg_layers)
+    assert entries[0]["name"].startswith("License Boundary")
+    assert entries[1]["name"].startswith("Project Buffers")
+    for e in entries:
+        rel = e["datasource"].split("|", 1)[0]
+        assert (qgz.parent / rel).resolve().exists(), f"datasource does not resolve: {rel}"
     _assert_phase1_deliverables(pdir)
 
     report = phase.qaqc(ctx)
@@ -133,4 +146,13 @@ def test_phase01_dry_run_creates_schema(project):
     assert master.exists()
     layers = set(vector_io.list_gpkg_layers(master))
     assert {layer.name for layer in config.master_gpkg_layers}.issubset(layers)
+
+    # dry-run project carries the schema layers only (no boundary/buffers yet)
+    from buduunkhad.core.qgis_project import read_qgz_layers
+
+    qgz = (
+        pdir / "08_Master_QGIS_Project_Setup" / f"{config.register_prefix}_Master_QGIS_Project.qgz"
+    )
+    assert qgz.exists()
+    assert len(read_qgz_layers(qgz)) == len(config.master_gpkg_layers)
     _assert_phase1_deliverables(pdir)

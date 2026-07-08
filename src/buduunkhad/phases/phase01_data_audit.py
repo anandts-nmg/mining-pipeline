@@ -7,18 +7,18 @@ Make the 79 inputs GIS-ready and stand up the EPSG:32647 master database:
 3. Audit every raster's CRS / resolution / extent / nodata / band count.
 4. Create the Master GeoPackage schema (13 typed, empty layers).
 5. Write the CRS/Georeference QA/QC log and the Data Confidence Ranking.
-6. Emit a minimal EPSG:32647 QGIS project (.qgz).
+6. Write the layered EPSG:32647 Master QGIS project (.qgz): boundary + buffers on
+   top of every master-schema layer, with relative datasources.
 7. Emit the Phase 1 handoff placeholders required by the methodology.
 """
 
 from __future__ import annotations
 
-import zipfile
 from pathlib import Path
 
 from buduunkhad.config import InputRecord
 from buduunkhad.core import crs as crs_mod
-from buduunkhad.core import naming, registers, vector_io
+from buduunkhad.core import naming, qgis_project, registers, vector_io
 from buduunkhad.core.qaqc import RECORDED_ACCEPTANCE, Decision, QAQCReport, new_report
 from buduunkhad.phases.base import Phase, PhaseResult, RunContext
 
@@ -35,6 +35,8 @@ class Phase01DataAudit(Phase):
     # populated during run() for qaqc()
     _boundary_ok: bool
     _boundary_epsg: int | None
+    _boundary_path: Path | None
+    _buffer_path: Path | None
     _n_buffers: int
     _raster_audits: list[crs_mod.RasterAudit]
     _master_layers: list[str]
@@ -43,6 +45,8 @@ class Phase01DataAudit(Phase):
     def __init__(self) -> None:
         self._boundary_ok = False
         self._boundary_epsg = None
+        self._boundary_path = None
+        self._buffer_path = None
         self._n_buffers = 0
         self._raster_audits = []
         self._master_layers = []
@@ -70,10 +74,9 @@ class Phase01DataAudit(Phase):
         self._master_layers = vector_io.list_gpkg_layers(master_path)
         result.add_output(master_path)
 
-        # ---- minimal QGIS project (.qgz) ----
+        # The layered master QGIS project is written at the end of run() (real runs add
+        # the boundary/buffer layers on top of the master schema; dry-run gets schema only).
         qgz_path = qgis_dir / f"{cfg.register_prefix}_Master_QGIS_Project.qgz"
-        _write_min_qgz(qgz_path, epsg, project_title=f"{cfg.project.name} Master")
-        result.add_output(qgz_path)
 
         crs_log = crs_dir / f"{cfg.register_prefix}_CRS_Georeference_QAQC_Log.xlsx"
         conf_path = conf_dir / f"{cfg.register_prefix}_Data_Confidence_Ranking.xlsx"
@@ -94,13 +97,15 @@ class Phase01DataAudit(Phase):
                 summary_path=summary_path,
                 phase2_ready_path=phase2_ready_path,
             )
+            self._write_master_project(ctx, qgz_path, master_path)
+            result.add_output(qgz_path)
             result.add_output(crs_log)
             result.add_output(conf_path)
             for path in self._handoff_paths:
                 result.add_output(path)
             result.log(
-                "dry-run: master GPKG schema + QGIS project + empty CRS/confidence logs "
-                "+ Phase 1 handoff package"
+                "dry-run: master GPKG schema + layered QGIS project + empty CRS/confidence "
+                "logs + Phase 1 handoff package"
             )
             return result
 
@@ -134,10 +139,14 @@ class Phase01DataAudit(Phase):
         for path in self._handoff_paths:
             result.add_output(path)
 
+        # ---- 6. layered master QGIS project (boundary/buffers on top of the schema) ----
+        n_qgz_layers = self._write_master_project(ctx, qgz_path, master_path)
+        result.add_output(qgz_path)
+
         result.log(
             f"boundary={'ok' if self._boundary_ok else 'missing'}, buffers={self._n_buffers}, "
             f"rasters audited={len(self._raster_audits)}, master layers={len(self._master_layers)}, "
-            f"handoff outputs={len(self._handoff_paths)}"
+            f"qgz layers={n_qgz_layers}, handoff outputs={len(self._handoff_paths)}"
         )
         return result
 
@@ -230,7 +239,63 @@ class Phase01DataAudit(Phase):
         )
         vector_io.write_layer(buffers_gdf, buffer_path, layer="project_buffers")
         result.add_output(buffer_path)
+        self._boundary_path = boundary_path
+        self._buffer_path = buffer_path
         self._boundary_ok = True
+
+    def _write_master_project(self, ctx: RunContext, qgz_path: Path, master_path: Path) -> int:
+        """Write the layered Master QGIS project (methodology §01: the master project
+        opens with its layers, not as an empty scaffold).
+
+        Layer tree, top to bottom: the boundary + buffer deliverables (when the real
+        run produced them), then every master-schema layer. Datasources are relative
+        to the .qgz so the output tree stays portable. Returns the layer count.
+        """
+        import os
+
+        cfg = ctx.config
+
+        def rel(target: Path) -> str:
+            return Path(os.path.relpath(target, qgz_path.parent)).as_posix()
+
+        layers: list[qgis_project.QgzLayer] = []
+        if self._boundary_path is not None:
+            layers.append(
+                qgis_project.QgzLayer(
+                    name=f"License Boundary ({cfg.project.license_code})",
+                    source=f"{rel(self._boundary_path)}|layername=license_boundary",
+                    geometry="MultiPolygon",
+                    symbol=qgis_project.polygon_outline("227,26,28,255", 0.8),
+                )
+            )
+        if self._buffer_path is not None:
+            layers.append(
+                qgis_project.QgzLayer(
+                    name="Project Buffers (500 m - 25 km)",
+                    source=f"{rel(self._buffer_path)}|layername=project_buffers",
+                    geometry="MultiPolygon",
+                    symbol=qgis_project.polygon_outline("120,120,120,255", 0.4, dash=True),
+                )
+            )
+        master_rel = rel(master_path)
+        for layer in cfg.master_gpkg_layers:
+            layers.append(
+                qgis_project.QgzLayer(
+                    name=layer.name,
+                    source=f"{master_rel}|layername={layer.name}",
+                    geometry=layer.geometry,
+                    # the master license_boundary duplicates the styled deliverable on
+                    # top - keep it in the project but unchecked to avoid double-draw
+                    visible=not (layer.name == "license_boundary" and self._boundary_path),
+                )
+            )
+        qgis_project.write_layered_qgz(
+            qgz_path,
+            epsg=cfg.target_epsg,
+            title=f"{cfg.project.name} Master",
+            layers=layers,
+        )
+        return len(layers)
 
     def _audit_rasters(self, ctx: RunContext) -> list[dict[str, object]]:
         rows: list[dict[str, object]] = []
@@ -757,30 +822,6 @@ def _write_simple_pdf(path: Path, lines: list[str]) -> Path:
         ).encode("ascii")
     )
     path.write_bytes(b"".join(chunks))
-    return path
-
-
-def _write_min_qgz(path: Path, epsg: int, project_title: str) -> Path:
-    """Write a minimal but valid QGIS project (.qgz = zip containing a .qgs)."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    qgs_xml = (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        f'<qgis version="3.34" projectname="{project_title}">\n'
-        "  <projectCrs>\n"
-        "    <spatialrefsys>\n"
-        f"      <authid>EPSG:{epsg}</authid>\n"
-        f"      <srid>{epsg}</srid>\n"
-        "    </spatialrefsys>\n"
-        "  </projectCrs>\n"
-        "  <layer-tree-group/>\n"
-        "  <projectlayers/>\n"
-        "</qgis>\n"
-    )
-    if path.exists():
-        path.unlink()
-    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(f"{path.stem}.qgs", qgs_xml)
     return path
 
 

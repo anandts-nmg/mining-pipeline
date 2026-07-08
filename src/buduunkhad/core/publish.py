@@ -167,7 +167,10 @@ def publish(
     copied: list[Path] = []
     for target, src in targets.items():
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, target)
+        if src.suffix.lower() == ".qgz":
+            _publish_qgz_flat(src, target)
+        else:
+            shutil.copy2(src, target)
         copied.append(target)
 
     skipped = sum(
@@ -184,6 +187,36 @@ def publish(
     gates = latest_gate_per_phase(runs_root) if runs_root is not None else {}
     _write_index(dest, output_root, copied, label, gates)
     return PublishResult(dest=dest, files=copied, skipped_working_copies=skipped)
+
+
+def _publish_qgz_flat(src: Path, target: Path) -> None:
+    """Copy a QGIS project, rewriting layer datasources for the flat publish layout.
+
+    Phase outputs reference their GPKGs relative to the .qgz inside the phase's
+    subfolder tree (e.g. ``../05_KMZ_KML_to_GPKG/x.gpkg|layername=y``); publishing
+    flattens every deliverable of a phase into one ``PhaseNN/`` folder, so each
+    datasource is rewritten to ``./<basename>`` — the published project then opens
+    with its layers resolving beside it.
+    """
+    import zipfile
+    from xml.etree import ElementTree as ET
+
+    def flatten(source: str) -> str:
+        path_part, sep, layer_part = source.partition("|")
+        return f"./{Path(path_part).name}{sep}{layer_part}"
+
+    with zipfile.ZipFile(src) as zf:
+        qgs_name = next(n for n in zf.namelist() if n.endswith(".qgs"))
+        root = ET.fromstring(zf.read(qgs_name))
+    for node in root.iter("layer-tree-layer"):
+        if node.get("source"):
+            node.set("source", flatten(node.get("source", "")))
+    for ds in root.iter("datasource"):
+        if ds.text:
+            ds.text = flatten(ds.text)
+    ET.indent(root)
+    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(qgs_name, ET.tostring(root, encoding="unicode", xml_declaration=True))
 
 
 def _write_index(

@@ -138,6 +138,38 @@ def test_publish_copies_versioned_with_index(tmp_path):
     ).exists()
 
 
+def test_publish_flattens_qgz_datasources(tmp_path):
+    """The published .qgz must resolve its layers in the flat PhaseNN/ layout."""
+    from buduunkhad.core.qgis_project import QgzLayer, read_qgz_layers, write_layered_qgz
+
+    out = tmp_path / "out"
+    (out / "01_Phase_1_Data_Audit_and_Master_GIS_Setup" / "08_Master_QGIS_Project_Setup").mkdir(
+        parents=True
+    )
+    qgz = (
+        out
+        / "01_Phase_1_Data_Audit_and_Master_GIS_Setup"
+        / "08_Master_QGIS_Project_Setup"
+        / "XV-023222_Buduunkhad_Master_QGIS_Project.qgz"
+    )
+    write_layered_qgz(
+        qgz,
+        epsg=32647,
+        title="T",
+        layers=[
+            QgzLayer(
+                name="license_boundary",
+                source="../05_KMZ_KML_to_GPKG/boundary.gpkg|layername=license_boundary",
+                geometry="MultiPolygon",
+            )
+        ],
+    )
+    result = publish(out, tmp_path / "drive", "vTEST")
+    published = next(p for p in result.files if p.suffix == ".qgz")
+    entries = read_qgz_layers(published)
+    assert entries[0]["datasource"] == "./boundary.gpkg|layername=license_boundary"
+
+
 def test_publish_refuses_existing_nonempty_label(tmp_path):
     out = tmp_path / "out"
     out.mkdir()

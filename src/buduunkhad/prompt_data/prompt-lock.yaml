@@ -1,0 +1,30 @@
+lock_version: 1.0.0
+history:
+  - prompt_id: fixture.document-extraction
+    version: 1.0.0
+    prompt_sha256: 9889030748560b9ee0e709e014dbdf5bcc2833d340a2182b2d37bbb489d6c7e1
+    output_schema:
+      schema_id: buduunkhad.ai.document_extraction
+      version: 1.0.0
+      sha256: 07648e6fb2ab8366064869571d8e4d0169b2121d049cb88b4af4ed70f6323f5f
+    component_sha256:
+      - name: system
+        path: fixtures/document_extraction/1.0.0/system.txt
+        sha256: a13df1e4e1c31e38b0402890c8a57adc93247220828ad09b96bf7bc36f3ffe2e
+      - name: user
+        path: fixtures/document_extraction/1.0.0/user.txt
+        sha256: 8b9d5f1305d20f715cadceea87ea4c1486c1bb8caf6d1f752550be6c873c3ccc
+  - prompt_id: fixture.feature-critique
+    version: 1.0.0
+    prompt_sha256: beb17db1aa018ee163e8b72fbd798908e38d17ba47c51b13a3f8c13222ab2f53
+    output_schema:
+      schema_id: buduunkhad.ai.feature_critique
+      version: 1.0.0
+      sha256: c3e39c65c163fbcae546e8561ca5c0aa6dcc0f341af80bc1955e389867275e33
+    component_sha256:
+      - name: system
+        path: fixtures/feature_critique/1.0.0/system.txt
+        sha256: 332d4279fe67db279a2cafbecbb5f8ee0e4f5c0312a2326e517b9b489eca7c92
+      - name: user
+        path: fixtures/feature_critique/1.0.0/user.txt
+        sha256: 7845ae0587f12232761d1ed6f5eee660b5d6d53acd470065aad29c2e7e7ed546

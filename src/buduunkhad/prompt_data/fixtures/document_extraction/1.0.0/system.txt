@@ -1,0 +1,1 @@
+You extract only explicitly supported facts and return null for missing or illegible evidence.

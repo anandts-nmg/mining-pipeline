@@ -8,19 +8,144 @@ and small placeholder bytes for everything else.
 
 from __future__ import annotations
 
+import _socket
+import http.client
+import os
 import shutil
+import socket
 import tempfile
+import urllib.request
 import zipfile
+from collections.abc import Iterator
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
 
-from buduunkhad.config import load_config, load_register
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-_TEST_BASE = Path.home() / ".bkt_tests"
+class UnexpectedNetworkAccess(RuntimeError):
+    """Raised when ordinary tests attempt any DNS or network socket operation."""
+
+
+def _deny_network(*args: object, **kwargs: object) -> None:
+    raise UnexpectedNetworkAccess(f"network access is disabled during tests: {args}, {kwargs}")
+
+
+_SYSTEM_SOCKET = socket.socket
+_NETWORK_TARGETS = (
+    (socket, "socket"),
+    (socket, "SocketType"),
+    (socket, "create_connection"),
+    (socket, "create_server"),
+    (socket, "socketpair"),
+    (socket, "getaddrinfo"),
+    (socket, "gethostbyname"),
+    (socket, "gethostbyname_ex"),
+    (socket, "gethostbyaddr"),
+    (socket, "getnameinfo"),
+    (socket, "getfqdn"),
+    (urllib.request, "urlopen"),
+    (http.client.HTTPConnection, "connect"),
+    (http.client.HTTPConnection, "request"),
+    (http.client.HTTPSConnection, "connect"),
+) + tuple(
+    (_socket, name)
+    for name in (
+        "socket",
+        "SocketType",
+        "socketpair",
+        "getaddrinfo",
+        "gethostbyname",
+        "gethostbyname_ex",
+        "gethostbyaddr",
+        "getnameinfo",
+    )
+    if hasattr(_socket, name)
+)
+_NETWORK_ORIGINALS: tuple[tuple[object, str, object], ...] = tuple(
+    (owner, name, getattr(owner, name)) for owner, name in _NETWORK_TARGETS
+)
+_CONFIGURE_DEPTH = 0
+
+
+class _DeniedSocket(_SYSTEM_SOCKET):
+    """Remain subclassable by ``ssl`` while denying every socket instance."""
+
+    def __new__(cls, *args: object, **kwargs: object) -> _DeniedSocket:
+        _deny_network(*args, **kwargs)
+        raise AssertionError("unreachable")
+
+
+def _install_network_denial() -> None:
+    _socket.socket = _DeniedSocket  # type: ignore[attr-defined]
+    if hasattr(_socket, "SocketType"):
+        _socket.SocketType = _DeniedSocket  # type: ignore[attr-defined]
+    if hasattr(_socket, "socketpair"):
+        _socket.socketpair = _deny_network  # type: ignore[attr-defined]
+    for name in (
+        "getaddrinfo",
+        "gethostbyname",
+        "gethostbyname_ex",
+        "gethostbyaddr",
+        "getnameinfo",
+    ):
+        if hasattr(_socket, name):
+            setattr(_socket, name, _deny_network)
+    socket.socket = _DeniedSocket
+    socket.SocketType = _DeniedSocket  # type: ignore[misc]
+    socket.create_connection = _deny_network  # type: ignore[assignment]
+    socket.create_server = _deny_network  # type: ignore[assignment]
+    socket.socketpair = _deny_network  # type: ignore[assignment]
+    socket.getaddrinfo = _deny_network  # type: ignore[assignment]
+    socket.gethostbyname = _deny_network  # type: ignore[assignment]
+    socket.gethostbyname_ex = _deny_network  # type: ignore[assignment]
+    socket.gethostbyaddr = _deny_network  # type: ignore[assignment]
+    socket.getnameinfo = _deny_network  # type: ignore[assignment]
+    socket.getfqdn = _deny_network  # type: ignore[assignment]
+    urllib.request.urlopen = _deny_network  # type: ignore[assignment]
+    http.client.HTTPConnection.connect = _deny_network  # type: ignore[assignment]
+    http.client.HTTPConnection.request = _deny_network  # type: ignore[assignment]
+    http.client.HTTPSConnection.connect = _deny_network  # type: ignore[assignment]
+
+
+def _restore_network_originals() -> None:
+    for owner, name, original in _NETWORK_ORIGINALS:
+        setattr(owner, name, original)
+
+
+# Activate while conftest itself is importing, before application or test modules load.
+_install_network_denial()
+
+
+def pytest_configure() -> None:
+    """Activate before test-module collection while leaving subprocess pipes untouched."""
+    global _CONFIGURE_DEPTH
+    _CONFIGURE_DEPTH += 1
+    _install_network_denial()
+
+
+def pytest_unconfigure() -> None:
+    """Restore process globals after the outermost pytest session."""
+    global _CONFIGURE_DEPTH
+    _CONFIGURE_DEPTH = max(0, _CONFIGURE_DEPTH - 1)
+    if _CONFIGURE_DEPTH:
+        _install_network_denial()
+    else:
+        _restore_network_originals()
+
+
+@pytest.fixture(autouse=True)
+def _reassert_network_denial() -> Iterator[None]:
+    """Prevent one test's mutation from weakening the next test's guard."""
+    _install_network_denial()
+    yield
+    _install_network_denial()
+
+
+_TEST_BASE_ROOT = Path.home() / ".bkt_tests"
+_SESSION_BASE = _TEST_BASE_ROOT / f"s{os.getpid():x}"
 
 
 def _short_workdir() -> Path:
@@ -30,24 +155,26 @@ def _short_workdir() -> Path:
     temp path they can exceed the Windows 260-char MAX_PATH limit, which breaks
     GDAL raster creation. Rooting fixtures near the home directory keeps paths short.
     """
-    _TEST_BASE.mkdir(parents=True, exist_ok=True)
-    return Path(tempfile.mkdtemp(dir=_TEST_BASE))
+    _SESSION_BASE.mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(dir=_SESSION_BASE))
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _cleanup_test_base():
-    """Sweep the short-path temp base before and after the session.
+def _cleanup_test_base() -> Iterator[None]:
+    """Clean only this pytest session's short-path temporary root.
 
     Per-test cleanup can leave a dir behind when GDAL still holds a file lock on
-    Windows (released only at process exit). Sweeping at session start removes any
-    straggler from a previous run, so the steady state is at most one stale dir.
+    Windows (released only at process exit). Other concurrent sessions own sibling
+    directories and are never removed here.
     """
-    shutil.rmtree(_TEST_BASE, ignore_errors=True)
+    _SESSION_BASE.mkdir(parents=True, exist_ok=True)
     yield
     import gc
 
     gc.collect()
-    shutil.rmtree(_TEST_BASE, ignore_errors=True)
+    shutil.rmtree(_SESSION_BASE, ignore_errors=True)
+    with suppress(OSError):
+        _TEST_BASE_ROOT.rmdir()
 
 
 # --------------------------------------------------------------------------- #
@@ -112,6 +239,8 @@ def make_boundary_kmz(path: Path) -> Path:
 @pytest.fixture
 def project():
     """A temp project: real config + register copied in, paths rooted at a short dir."""
+    from buduunkhad.config import load_config, load_register
+
     work = _short_workdir()
     cfg_dir = work / "config"
     cfg_dir.mkdir(parents=True, exist_ok=True)

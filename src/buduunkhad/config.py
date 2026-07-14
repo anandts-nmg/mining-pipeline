@@ -9,10 +9,23 @@ from __future__ import annotations
 
 import csv
 import os
+from collections.abc import Mapping
+from decimal import Decimal
+from enum import StrEnum
 from pathlib import Path
+from typing import Self
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializationInfo,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 #: Per-machine path overrides (so a local Drive/synced path is never committed).
 RAW_ROOT_ENV = "BUDUUNKHAD_RAW_ROOT"
@@ -108,12 +121,119 @@ class VersioningConfig(BaseModel):
     draft_suffix: str = "_DRAFT"
 
 
+class ExecutionProfile(StrEnum):
+    """Migration profiles; legacy remains the unchanged default."""
+
+    LEGACY = "legacy"
+    HYBRID = "hybrid"
+    AI_FIRST = "ai-first"
+
+
+class AIProviderSelection(StrEnum):
+    """Configured provider identity, independent from provider construction."""
+
+    FAKE = "fake"
+    REPLAY = "replay"
+    OPENAI = "openai"
+
+
+class _ValidatedAIConfigModel(BaseModel):
+    """Revalidate copy operations for security-sensitive AI configuration."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always")
+
+    @classmethod
+    def model_construct(
+        cls,
+        _fields_set: set[str] | None = None,
+        **values: object,
+    ) -> Self:
+        del _fields_set, values
+        raise TypeError("model_construct is unsupported for AI configuration")
+
+    @classmethod
+    def construct(
+        cls,
+        _fields_set: set[str] | None = None,
+        **values: object,
+    ) -> Self:
+        del _fields_set, values
+        raise TypeError("construct is unsupported for AI configuration")
+
+    def model_copy(
+        self,
+        *,
+        update: Mapping[str, object] | None = None,
+        deep: bool = False,
+    ) -> Self:
+        del deep
+        values = {name: object.__getattribute__(self, name) for name in type(self).model_fields}
+        if update:
+            for key, value in update.items():
+                if key not in type(self).model_fields:
+                    raise ValueError(f"unknown update field: {key}")
+                values[key] = value
+        return type(self).model_validate(values)
+
+    def copy(
+        self,
+        *,
+        include: object = None,
+        exclude: object = None,
+        update: Mapping[str, object] | None = None,
+        deep: bool = False,
+    ) -> Self:
+        if include is not None or exclude is not None:
+            raise ValueError("copy include/exclude is unsupported for AI configuration")
+        return self.model_copy(update=update, deep=deep)
+
+
+class AIReviewPolicyConfig(_ValidatedAIConfigModel):
+    """Default human-review requirements for future AI-enabled profiles."""
+
+    require_named_reviewer: bool = True
+    high_risk_requires_geologist: bool = True
+    production_geometry_requires_approval: bool = True
+
+
+class AIConfig(_ValidatedAIConfigModel):
+    """Optional AI settings that are safe and offline by default."""
+
+    profile: ExecutionProfile = ExecutionProfile.LEGACY
+    enabled: bool = False
+    provider: AIProviderSelection = AIProviderSelection.REPLAY
+    external_data_allowed: bool = False
+    run_cost_ceiling_usd: Decimal = Field(default=Decimal("0"), ge=0)
+    concurrency: int = Field(default=1, ge=1)
+    review_policy: AIReviewPolicyConfig = Field(default_factory=AIReviewPolicyConfig)
+
+    @model_validator(mode="after")
+    def _offline_pr1_policy(self) -> AIConfig:
+        if self.external_data_allowed:
+            raise ValueError("external_data_allowed must remain false in PR 1")
+        if self.provider is AIProviderSelection.OPENAI:
+            raise ValueError("live providers are unsupported in PR 1")
+        if self.profile is ExecutionProfile.LEGACY and self.enabled:
+            raise ValueError("legacy execution cannot enable AI")
+        if not all(
+            (
+                self.review_policy.require_named_reviewer,
+                self.review_policy.high_risk_requires_geologist,
+                self.review_policy.production_geometry_requires_approval,
+            )
+        ):
+            raise ValueError("PR 1 review safeguards cannot be disabled")
+        return self
+
+
 class ProjectConfig(BaseModel):
     """Fully-validated project configuration.
 
     ``config_dir`` is the directory the YAML was loaded from; relative paths in the
     config resolve against ``base_dir`` (the repo root, parent of ``config/``).
     """
+
+    model_config = ConfigDict(validate_assignment=True, revalidate_instances="always")
 
     project: ProjectMeta
     crs: CRSConfig
@@ -125,9 +245,68 @@ class ProjectConfig(BaseModel):
     master_gpkg_layers: list[GpkgLayer]
     confidence_levels: list[str]
     versioning: VersioningConfig = Field(default_factory=VersioningConfig)
+    ai: AIConfig = Field(default_factory=AIConfig)
 
     # Filled in by the loader; not part of the YAML.
     base_dir: Path
+
+    @classmethod
+    def model_construct(
+        cls,
+        _fields_set: set[str] | None = None,
+        **values: object,
+    ) -> Self:
+        del _fields_set, values
+        raise TypeError("model_construct is unsupported for project configuration")
+
+    @classmethod
+    def construct(
+        cls,
+        _fields_set: set[str] | None = None,
+        **values: object,
+    ) -> Self:
+        del _fields_set, values
+        raise TypeError("construct is unsupported for project configuration")
+
+    def model_copy(
+        self,
+        *,
+        update: Mapping[str, object] | None = None,
+        deep: bool = False,
+    ) -> Self:
+        del deep
+        values = {name: object.__getattribute__(self, name) for name in type(self).model_fields}
+        if update:
+            for key, value in update.items():
+                if key not in type(self).model_fields:
+                    raise ValueError(f"unknown update field: {key}")
+                values[key] = value
+        return type(self).model_validate(values)
+
+    def copy(
+        self,
+        *,
+        include: object = None,
+        exclude: object = None,
+        update: Mapping[str, object] | None = None,
+        deep: bool = False,
+    ) -> Self:
+        if include is not None or exclude is not None:
+            raise ValueError("copy include/exclude is unsupported for project configuration")
+        return self.model_copy(update=update, deep=deep)
+
+    @model_serializer(mode="wrap")
+    def _versioned_serialization(
+        self,
+        handler: SerializerFunctionWrapHandler,
+        info: SerializationInfo,
+    ) -> dict[str, object]:
+        """Keep the pre-AI serialized shape unless callers opt into ``ai-v1``."""
+        data = handler(self)
+        context = info.context or {}
+        if context.get("config_serialization_version", "legacy") == "legacy":
+            data.pop("ai", None)
+        return data
 
     # ---- convenience accessors ------------------------------------------- #
 

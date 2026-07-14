@@ -9,7 +9,7 @@ implemented end-to-end**, and every later phase registered as a stub behind a un
 
 > The methodology is phase-gated. Remote sensing / pXRF / drone outputs are **support**
 > evidence, not ore proof — final confidence comes from lab assay + field geology +
-> structural control. See `CLAUDE.md` for the governing invariants.
+> structural control. See `AGENTS.md` for repository engineering and AI-governance rules.
 
 ## What's built
 
@@ -206,6 +206,6 @@ pyright         # type-check (CI gate); or: npx pyright --pythonpath .venv/Scrip
 pre-commit install && pre-commit run --all-files
 ```
 
-See `CLAUDE.md` for the non-negotiable invariants (raw read-only, sidecar bundling,
+See `AGENTS.md` for repository engineering and AI-governance rules, including raw read-only, sidecar bundling,
 EPSG:32647, versioned naming, QA/QC + decision gates, traceability, evidence hierarchy)
 and how new phases plug into the `Phase` interface.

@@ -1,30 +1,162 @@
 # ---- Project data & generated outputs (NEVER commit raw data or deliverables) ----
+# Keep this denylist aligned with src/buduunkhad/repository_policy.py, which is
+# the authoritative streamed policy check exercised by tests and CI.
 data/
+raw/
 outputs/
 control/
 runs/
+runtime/
+log/
+logs/
+cache/
+caches/
+artifacts/
 *.gpkg
 *.tif
 *.tiff
 *.hdf
+*.h5
+*.hdf5
+*.kml
 *.kmz
 *.img
+*.jp2
+*.j2k
+*.jpg
+*.jpe
+*.jpeg
+*.jfif
+*.png
+*.gif
+*.bmp
+*.webp
+*.avif
+*.heic
+*.dng
+*.exr
+*.hdr
+*.psd
+*.ntf
+*.nitf
+*.raw
+*.ecw
+*.sid
+*.vrt
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
+*.sbn
+*.sbx
+*.shp.xml
+*.geojson
+*.gml
+*.fgb
+*.tab
+*.mif
+*.mid
+*.nc
+*.grd
+*.asc
 *.ovr
+*.rrd
 *.aux.xml
+*.las
+*.laz
+*.copc.laz
+*.e57
+*.ply
+*.pcd
+*.pts
+*.ptx
+*.xyz
+*.parquet
+*.feather
 
 # Large binaries / GIS sidecars that may slip in
 *.tfw
 *.jgw
+*.wld
+*.pgw
+*.bpw
+*.gfw
 *.rpc
 *.eph
+*.qgz
+*.qgs
+*.qml
+*.qlr
 
 # Generated registers / logs (regenerate from the pipeline)
 *.xlsx
+*.xls
+*.xlsm
+*.ods
 # Word sources are never tracked — the methodology lives in the repo as markdown
 # (canonical, under docs/) + human-readable PDF; .docx stays on Drive.
 *.docx
+*.doc
+*.docm
+*.odt
+*.ppt
+*.pptm
+*.pptx
 SHA-256_Checksum_Register.csv
 !config/*.csv          # keep the curated input register under version control
+
+# ---- AI runtime, confidential evaluation, and local secrets ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p8
+*.pkcs8
+*.ppk
+*.pgp
+*.p12
+*.pfx
+*.crt
+*.cer
+*.der
+*.jks
+*.keystore
+*.kdbx
+.netrc
+.npmrc
+.pypirc
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+credentials*.json
+service-account*.json
+secrets.*
+*.sqlite
+*.sqlite3
+*.db
+*.duckdb
+*.mdb
+*.accdb
+ai-response*
+provider-response*
+response-store*
+job-store*
+job-database*
+ai_jobs/
+ai_responses/
+private_evaluations/
+qgis_runtime/
+qgis_profiles/
+rendered_tiles/
+job_stores/
+response_stores/
+.codex-local/
+
+# Intentional synthetic exceptions must be exact paths pinned by the reusable
+# repository policy; no fixture directory is exempted wholesale.
 
 # ---- Python ----
 __pycache__/

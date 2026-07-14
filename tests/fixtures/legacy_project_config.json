@@ -1,0 +1,58 @@
+{
+  "project": {
+    "name": "Buduunkhad",
+    "project_code": "XV-023222",
+    "license_code": "L23222",
+    "data_prefix_code": "XV023222"
+  },
+  "crs": {
+    "target_epsg": 32647,
+    "target_name": "WGS 84 / UTM Zone 47N",
+    "source_geographic_epsg": 4326
+  },
+  "paths": {
+    "raw_root": "data/00_Raw_Files_Archive",
+    "output_root": "outputs",
+    "runs_root": "runs"
+  },
+  "input_register": {
+    "path": "config/input_register.csv"
+  },
+  "raw_manifest": {
+    "path": "config/raw_manifest.csv"
+  },
+  "boundary": {
+    "input_no": 8,
+    "buffers_m": [500, 1000, 5000, 10000, 20000, 25000]
+  },
+  "evidence_groups": [
+    {"group_no": 1, "name": "01_Tectonic_Terrane_KMZ", "count": 8},
+    {"group_no": 2, "name": "02_DEM_ALOS_ASTERGDEM", "count": 14},
+    {"group_no": 3, "name": "03_KOMPSAT2_MSC_L1G", "count": 24},
+    {"group_no": 4, "name": "04_HeavyMineral_StreamSediment_Field", "count": 6},
+    {"group_no": 5, "name": "05_Geology_Mineral_Prospectivity", "count": 17},
+    {"group_no": 6, "name": "06_Regional_Metallogenic_L47B", "count": 4},
+    {"group_no": 7, "name": "07_Basemap_Sentinel2_ASTER", "count": 6}
+  ],
+  "master_gpkg_layers": [
+    {"name": "license_boundary", "geometry": "MultiPolygon"},
+    {"name": "geology_units_polygon", "geometry": "MultiPolygon"},
+    {"name": "faults_structures_line", "geometry": "LineString"},
+    {"name": "intrusive_contacts_line", "geometry": "LineString"},
+    {"name": "mineral_occurrences_point", "geometry": "Point"},
+    {"name": "stream_sediment_anomaly_polygon", "geometry": "MultiPolygon"},
+    {"name": "heavy_mineral_anomaly_polygon", "geometry": "MultiPolygon"},
+    {"name": "lineament_interpretation_line", "geometry": "LineString"},
+    {"name": "preliminary_prospect_polygon", "geometry": "MultiPolygon"},
+    {"name": "target_polygon", "geometry": "MultiPolygon"},
+    {"name": "field_observation_point", "geometry": "Point"},
+    {"name": "sample_point", "geometry": "Point"},
+    {"name": "pXRF_reading_table", "geometry": "None"}
+  ],
+  "confidence_levels": ["High", "Medium", "Low", "Needs verification"],
+  "versioning": {
+    "default_version": 1,
+    "draft_suffix": "_DRAFT"
+  },
+  "base_dir": "__REPOSITORY_ROOT__"
+}

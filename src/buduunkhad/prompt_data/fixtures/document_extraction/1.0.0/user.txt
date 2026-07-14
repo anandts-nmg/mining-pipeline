@@ -1,0 +1,1 @@
+Extract the requested fields from the supplied synthetic page.

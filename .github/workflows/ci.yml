@@ -44,3 +44,106 @@ jobs:
 
       - name: Pytest
         run: pytest -q
+
+      - name: Build wheel without isolation
+        id: wheel
+        shell: bash
+        run: |
+          rm -rf dist
+          python -m build --wheel --no-isolation
+          mapfile -t wheels < <(find dist -maxdepth 1 -type f -name 'buduunkhad-*.whl' -print)
+          test "${#wheels[@]}" -eq 1
+          wheel="${wheels[0]}"
+          sha256="$(sha256sum "$wheel" | cut -d ' ' -f 1)"
+          echo "path=$wheel" >> "$GITHUB_OUTPUT"
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Inspect wheel and smoke-test packaged prompts
+        env:
+          BUDUUNKHAD_TEST_WHEEL: ${{ github.workspace }}/${{ steps.wheel.outputs.path }}
+          BUDUUNKHAD_TEST_WHEEL_SHA256: ${{ steps.wheel.outputs.sha256 }}
+        run: |
+          echo "$BUDUUNKHAD_TEST_WHEEL_SHA256  $BUDUUNKHAD_TEST_WHEEL" | sha256sum --check
+          python -m zipfile -l "$BUDUUNKHAD_TEST_WHEEL"
+          pytest -q tests/test_wheel_prompts.py
+
+      - name: Git diff check
+        run: git diff --check
+
+  minimum-dependencies:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install project at the declared Pydantic floor
+        run: |
+          python -m pip install --upgrade pip
+          pip install "pydantic==2.7.4"
+          pip install -e .
+          pip install "pytest>=8,<9" "build>=1.2,<2.0" "hatchling>=1.21"
+          python -c "import pydantic; assert pydantic.__version__.startswith('2.7.'), pydantic.__version__"
+
+      - name: Build the minimum-dependency wheel once
+        id: minimum-wheel
+        shell: bash
+        run: |
+          rm -rf dist
+          python -m build --wheel --no-isolation
+          mapfile -t wheels < <(find dist -maxdepth 1 -type f -name 'buduunkhad-*.whl' -print)
+          test "${#wheels[@]}" -eq 1
+          wheel="${wheels[0]}"
+          sha256="$(sha256sum "$wheel" | cut -d ' ' -f 1)"
+          echo "path=$wheel" >> "$GITHUB_OUTPUT"
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Run focused contracts and exact-wheel smoke test at the floor
+        env:
+          BUDUUNKHAD_TEST_WHEEL: ${{ github.workspace }}/${{ steps.minimum-wheel.outputs.path }}
+          BUDUUNKHAD_TEST_WHEEL_SHA256: ${{ steps.minimum-wheel.outputs.sha256 }}
+        run: |
+          python -c "import pydantic; assert pydantic.__version__.startswith('2.7.'), pydantic.__version__"
+          pytest -q \
+            tests/ai/test_contracts.py \
+            tests/ai/test_artifacts.py \
+            tests/ai/test_review.py \
+            tests/ai/test_providers.py \
+            tests/ai/test_prompts.py \
+            tests/ai/test_fingerprint.py \
+            tests/ai/test_config.py \
+            tests/test_repository_policy.py \
+            tests/test_network_policy.py \
+            tests/test_wheel_prompts.py
+
+  offline-network-isolation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies before network isolation
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Prove the Linux symlink escape test executes
+        run: pytest -q tests/ai/test_prompts.py::test_symlink_escape_fails
+
+      - name: Run offline contracts inside a network namespace
+        run: |
+          PYTHON_BIN="$(command -v python)"
+          sudo git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          sudo env "PATH=$PATH" BUDUUNKHAD_PROCESS_NETWORK_ISOLATED=1 \
+            unshare --net -- "$PYTHON_BIN" -m pytest -q \
+            tests/ai tests/test_network_policy.py tests/test_repository_policy.py

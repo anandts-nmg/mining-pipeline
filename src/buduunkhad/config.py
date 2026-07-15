@@ -132,9 +132,16 @@ class ExecutionProfile(StrEnum):
 class AIProviderSelection(StrEnum):
     """Configured provider identity, independent from provider construction."""
 
-    FAKE = "fake"
-    REPLAY = "replay"
+    DISABLED = "disabled"
     OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+
+
+class SourceEgressPolicy(StrEnum):
+    """Policy applied before any source preview can leave the local machine."""
+
+    DENY = "deny"
+    REQUIRE_EXPLICIT_APPROVAL = "require-explicit-approval"
 
 
 class _ValidatedAIConfigModel(BaseModel):
@@ -197,24 +204,49 @@ class AIReviewPolicyConfig(_ValidatedAIConfigModel):
 
 
 class AIConfig(_ValidatedAIConfigModel):
-    """Optional AI settings that are safe and offline by default."""
+    """AI execution settings; construction remains keyless and offline by default."""
 
     profile: ExecutionProfile = ExecutionProfile.LEGACY
     enabled: bool = False
-    provider: AIProviderSelection = AIProviderSelection.REPLAY
+    provider: AIProviderSelection = AIProviderSelection.DISABLED
+    provider_model: str | None = None
     external_data_allowed: bool = False
-    run_cost_ceiling_usd: Decimal = Field(default=Decimal("0"), ge=0)
+    request_timeout_seconds: float = Field(default=120.0, gt=0, le=3600)
+    max_output_tokens: int = Field(default=4096, ge=1)
+    max_requests_per_run: int = Field(default=1, ge=1)
+    max_cost_per_run_usd: Decimal = Field(default=Decimal("0"), ge=0)
     concurrency: int = Field(default=1, ge=1)
+    source_egress_policy: SourceEgressPolicy = SourceEgressPolicy.DENY
     review_policy: AIReviewPolicyConfig = Field(default_factory=AIReviewPolicyConfig)
 
     @model_validator(mode="after")
-    def _offline_pr1_policy(self) -> AIConfig:
-        if self.external_data_allowed:
-            raise ValueError("external_data_allowed must remain false in PR 1")
-        if self.provider is AIProviderSelection.OPENAI:
-            raise ValueError("live providers are unsupported in PR 1")
-        if self.profile is ExecutionProfile.LEGACY and self.enabled:
-            raise ValueError("legacy execution cannot enable AI")
+    def _execution_policy(self) -> AIConfig:
+        live_provider = self.provider in {
+            AIProviderSelection.OPENAI,
+            AIProviderSelection.ANTHROPIC,
+        }
+        if self.profile is ExecutionProfile.LEGACY:
+            if self.enabled:
+                raise ValueError("legacy execution cannot enable AI")
+            if self.provider is not AIProviderSelection.DISABLED:
+                raise ValueError("legacy execution requires the disabled provider")
+            if self.external_data_allowed:
+                raise ValueError("legacy execution cannot allow external data")
+        if live_provider and self.profile is ExecutionProfile.LEGACY:
+            raise ValueError("live providers require hybrid or ai-first execution")
+        if self.enabled:
+            if not live_provider:
+                raise ValueError("enabled AI requires OpenAI or Anthropic")
+            if not self.provider_model or not self.provider_model.strip():
+                raise ValueError("enabled AI requires a provider_model")
+            if not self.external_data_allowed:
+                raise ValueError("enabled live AI requires external_data_allowed=true")
+            if self.source_egress_policy is not SourceEgressPolicy.REQUIRE_EXPLICIT_APPROVAL:
+                raise ValueError("enabled live AI requires explicit source-egress approval")
+        elif self.external_data_allowed:
+            raise ValueError("external data cannot be allowed while AI is disabled")
+        if self.provider is AIProviderSelection.DISABLED and self.provider_model is not None:
+            raise ValueError("disabled provider cannot define provider_model")
         if not all(
             (
                 self.review_policy.require_named_reviewer,
@@ -304,8 +336,11 @@ class ProjectConfig(BaseModel):
         """Keep the pre-AI serialized shape unless callers opt into ``ai-v1``."""
         data = handler(self)
         context = info.context or {}
-        if context.get("config_serialization_version", "legacy") == "legacy":
+        version = context.get("config_serialization_version", "legacy")
+        if version == "legacy":
             data.pop("ai", None)
+        elif version != "ai-v1":
+            raise ValueError(f"unsupported config serialization version: {version!r}")
         return data
 
     # ---- convenience accessors ------------------------------------------- #

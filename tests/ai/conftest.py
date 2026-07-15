@@ -50,8 +50,8 @@ from buduunkhad.ai.fingerprint import (
     sha256_value,
 )
 from buduunkhad.ai.prompts import PromptRegistry, default_schema_registry
-from buduunkhad.ai.providers import FakeAIProvider, fake_response_id
 from buduunkhad.ai.review import InMemoryReviewerAuthorizer, approve_artifact, validate_artifact
+from tests.support import DeterministicTestProvider, test_response_id
 
 SHA_A = "a" * 64
 BASE_TIME = datetime(2026, 2, 1, tzinfo=UTC)
@@ -179,7 +179,7 @@ def scenario_factory(
                 "prompt": generator_prompt.identity,
                 "output_schema": generator_schema.identity,
                 "provider": {
-                    "provider": "fake",
+                    "provider": "test-provider",
                     "model": generator_model,
                     "parameters": {"temperature": 0},
                 },
@@ -198,7 +198,7 @@ def scenario_factory(
             model=request.provider.model,
             provider_parameters_sha256=sha256_value(request.provider.parameters),
             status=AIJobStatus.SUCCEEDED,
-            provider_response_id=fake_response_id(request),
+            provider_response_id=test_response_id(request),
             created_at=times[1],
             started_at=times[2],
             completed_at=times[4],
@@ -206,7 +206,7 @@ def scenario_factory(
         )
         resolver.add_request(request)
         resolver.add_job(generator)
-        response = FakeAIProvider(
+        response = DeterministicTestProvider(
             payload=payload.model_dump(mode="python"),
             created_at=times[3],
         ).generate(request, DocumentExtraction, resolver=resolver)
@@ -220,7 +220,11 @@ def scenario_factory(
             request.provider.parameters
             if reuse_generator_configuration
             else ProviderConfiguration.model_validate(
-                {"provider": "fake", "model": "placeholder", "parameters": {"role": "critic"}}
+                {
+                    "provider": "test-provider",
+                    "model": "placeholder",
+                    "parameters": {"role": "critic"},
+                }
             ).parameters
         )
         critic_effective_model = generator_model if reuse_generator_configuration else critic_model
@@ -236,7 +240,7 @@ def scenario_factory(
                 "prompt": critic_prompt.identity,
                 "output_schema": critic_schema.identity,
                 "provider": {
-                    "provider": "fake",
+                    "provider": "test-provider",
                     "model": critic_effective_model,
                     "parameters": critic_parameters,
                 },
@@ -270,7 +274,7 @@ def scenario_factory(
             model=critic_request.provider.model,
             provider_parameters_sha256=sha256_value(critic_request.provider.parameters),
             status=AIJobStatus.SUCCEEDED,
-            provider_response_id=fake_response_id(critic_request),
+            provider_response_id=test_response_id(critic_request),
             created_at=times[6],
             started_at=times[7],
             completed_at=times[critic_completed_index],
@@ -278,7 +282,7 @@ def scenario_factory(
         )
         resolver.add_request(critic_request)
         resolver.add_job(critic)
-        critic_response = FakeAIProvider(
+        critic_response = DeterministicTestProvider(
             payload=critique_payload.model_dump(mode="python"),
             created_at=times[8],
         ).generate(critic_request, FeatureCritique, resolver=resolver)

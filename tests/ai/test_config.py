@@ -19,9 +19,11 @@ def test_unchanged_project_yaml_loads_with_offline_legacy_defaults() -> None:
     config = load_config(Path("config/project.yaml"))
     assert config.ai.profile is ExecutionProfile.LEGACY
     assert config.ai.enabled is False
-    assert config.ai.provider is AIProviderSelection.REPLAY
+    assert config.ai.provider is AIProviderSelection.DISABLED
     assert config.ai.external_data_allowed is False
-    assert config.ai.run_cost_ceiling_usd == Decimal("0")
+    assert config.ai.max_cost_per_run_usd == Decimal("0")
+    assert config.ai.max_requests_per_run == 1
+    assert config.ai.max_output_tokens == 4096
     assert config.ai.concurrency == 1
 
 
@@ -59,11 +61,16 @@ def test_hybrid_configuration_is_optional_and_typed() -> None:
         update={
             "profile": ExecutionProfile.HYBRID,
             "enabled": True,
-            "provider": AIProviderSelection.FAKE,
+            "provider": AIProviderSelection.OPENAI,
+            "provider_model": "synthetic-model",
+            "external_data_allowed": True,
+            "source_egress_policy": "require-explicit-approval",
+            "max_cost_per_run_usd": Decimal("1"),
         }
     )
     assert hybrid.profile is ExecutionProfile.HYBRID
-    assert hybrid.external_data_allowed is False
+    assert hybrid.external_data_allowed is True
+    assert hybrid.provider is AIProviderSelection.OPENAI
 
 
 def test_ai_config_copy_and_reload_paths_revalidate_security_fields() -> None:
@@ -84,8 +91,8 @@ def test_ai_config_copy_and_reload_paths_revalidate_security_fields() -> None:
     ("update", "message"),
     [
         ({"enabled": True}, "legacy execution"),
-        ({"external_data_allowed": True}, "must remain false"),
-        ({"provider": AIProviderSelection.OPENAI}, "live providers"),
+        ({"external_data_allowed": True}, "legacy execution"),
+        ({"provider": AIProviderSelection.OPENAI}, "legacy execution"),
         (
             {
                 "review_policy": {
@@ -133,8 +140,22 @@ def test_project_config_revalidates_tampered_existing_nested_ai_instance() -> No
     tampered_ai = config.ai.model_copy()
     object.__setattr__(tampered_ai, "external_data_allowed", True)
     object.__setattr__(config, "ai", tampered_ai)
-    with pytest.raises(ValidationError, match="must remain false"):
+    with pytest.raises(ValidationError, match="legacy execution"):
         ProjectConfig.model_validate(config)
+
+
+def test_only_live_provider_choices_are_user_configurable() -> None:
+    assert {item.value for item in AIProviderSelection} == {
+        "disabled",
+        "openai",
+        "anthropic",
+    }
+
+
+def test_unknown_ai_serialization_version_fails() -> None:
+    config = load_config(Path("config/project.yaml"))
+    with pytest.raises(ValueError, match="unsupported config serialization version"):
+        config.model_dump(context={"config_serialization_version": "ai-v2"})
 
 
 def _normalize_legacy_dump(value: object) -> object:

@@ -68,6 +68,11 @@ Verify the install:
 buduunkhad --help        # lists run / list / info / validate / phase00 ... phase99
 ```
 
+The additive, keyless `buduunkhad ai` workflow prepares raster tiles and inspectable request
+packages, ingests saved responses, creates AI_DRAFT GIS/QGIS outputs, and evaluates them without a
+provider key. Only the separately gated `ai execute` operation needs a provider SDK and key. See
+[`docs/AI_TO_QGIS_VERTICAL_SLICE.md`](docs/AI_TO_QGIS_VERTICAL_SLICE.md).
+
 ## Usage
 
 ```bash
@@ -184,14 +189,15 @@ Otherwise keep `paths.output_root` shallow (e.g. `C:\bk\outputs`). `core.winpath
 ## Layout
 
 ```
-config/            project.yaml (constants/paths) + input_register.csv (79 inputs) + raw_manifest.csv (Drive pins)
+config/            project constants, input register, raw manifest, methodology authority records
 src/buduunkhad/
   config.py        typed (pydantic v2) config + register loaders
+  geospatial_ai/   protected paths, ledger, tiling, response processing, draft GIS + evaluation
   core/            enforced primitives: paths, naming, raw_guard, sidecars, crs, vector_io,
                    raster_writers, dem, qaqc, registers, gates, winpath
   phases/          base.py (Phase ABC + StubPhase) + one module per phase
   pipeline.py      registry + ordered runner (--from/--to/--only/--dry-run/--override)
-  cli.py           typer app
+  cli.py           legacy typer app plus additive `ai` command group
 tests/             pytest suite on synthetic fixtures (no real data needed)
 ```
 

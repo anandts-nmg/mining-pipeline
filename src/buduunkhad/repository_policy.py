@@ -184,7 +184,8 @@ SECRET_PATTERNS: Mapping[str, re.Pattern[str]] = MappingProxyType(
             r"[^\"\r\n]{8,}\"|"
             r"'(?!placeholder'|example'|dummy'|redacted'|change[_-]?me')"
             r"[^'\r\n]{8,}'|"
-            r"(?!placeholder\b|example\b|dummy\b|redacted\b|change[_-]?me\b|re\.compile\b)"
+            r"(?!placeholder\b|example\b|dummy\b|redacted\b|change[_-]?me\b|"
+            r"re\.compile\b|os\.environ\.get\b|os\.getenv\b)"
             r"[^\s,;#}{]{8,}"
             r")"
         ),

@@ -14,36 +14,40 @@ protection.
 
 ## Staged migration
 
-1. **Offline contracts and provenance foundation (this PR).** Define deeply
+1. **Offline contracts and provenance foundation.** Define deeply
    immutable Pydantic contracts, strict canonical hashes, locked and packaged
    prompt registrations, append-only review events, typed resolver interfaces,
-   and deterministic fake/replay providers. This stage does not change any
+   and deterministic test doubles outside production. This stage does not change any
    phase or pipeline lifecycle.
-2. **Phase 00 metadata enrichment.** Add an opt-in AI job that may propose
+2. **Keyless AI-to-QGIS vertical slice (current migration PR).** Add protected
+   snapshots, inspectable tiled request packages, optional OpenAI/Anthropic
+   boundaries, explicit saved-response ingestion, pixel-to-world transformation,
+   AI_DRAFT GeoPackage/QGIS output, and offline evaluation without changing a
+   phase lifecycle.
+3. **Phase 00 metadata enrichment.** Add an opt-in AI job that may propose
    document metadata, file roles, sensor or product types, relationships,
    duplicate candidates, and evidence-group classifications. Raw identity,
    checksum, filename, bundle membership, and immutability remain exclusively
    deterministic and authoritative. AI metadata stays `AI_DRAFT` until its
    required validation and review are complete.
-3. **Hybrid phase adapters.** Introduce opt-in phase services one bounded task at
+4. **Hybrid phase adapters.** Introduce opt-in phase services one bounded task at
    a time, retaining deterministic results as regression comparators. Phase
    execution and CLI defaults remain backward compatible.
-4. **Geospatial interpretation and review.** Add tiled image interpretation,
+5. **Geospatial interpretation and review.** Integrate tiled image interpretation,
    deterministic pixel-to-world conversion, validation, stitching, and a QGIS
    review workflow. High-risk geometry cannot feed production scoring or
    publication before `GEOLOGIST_APPROVED`.
-5. **AI-first profile.** Enable AI-suitable work by default only after evaluation
-   datasets, cost controls, replay coverage, deterministic QA/QC, and risk-based
-   review gates meet accepted criteria. Legacy and hybrid profiles remain
-   available during the migration window.
+6. **AI-first profile.** Enable AI-suitable work by default only after evaluation
+   datasets, cost controls, saved-response regression coverage, deterministic
+   QA/QC, and risk-based review gates meet accepted criteria. Legacy and hybrid
+   profiles remain available during the migration window.
 
 ## Offline foundation boundaries
 
-The first stage contains no live provider adapter, provider construction,
+The first stage contained no live provider adapter, provider construction,
 scheduler, QGIS plugin, raster tiling, coordinate conversion, or phase lifecycle
-change. Tests use deterministic fake and replay providers and require no network
-access. Prompt fixtures are harmless mechanism tests rather than production
-geological instructions.
+change. Test doubles are test-only and require no network access. Prompt fixtures
+are harmless mechanism tests rather than production geological instructions.
 
 The PR 1 artifact builder requires complete source, prompt, schema, request,
 model, response, generator, critic, content, confidence, limitation, risk,
@@ -94,13 +98,13 @@ request schema. Its semantic state must be represented by declared Pydantic
 fields and round-trip through standard Pydantic JSON without changing exact
 persisted bytes. Custom model or field serializers, computed fields, excluded
 semantic fields, structural look-alike models, and unsupported containers are
-outside this contract and fail closed. Fake and replay providers inspect live
-nested values independently of ordinary ``model_dump`` output and cannot emit
-human approval, rejection, or supersession authority.
+outside this contract and fail closed. Provider output inspection walks live nested
+values independently of ordinary ``model_dump`` output and cannot emit human
+approval, rejection, or supersession authority.
 
-## Enforcement deferred beyond PR 1
+## Production enforcement still deferred
 
-The following enforcement points are interfaces in PR 1, not production
+The following enforcement points remain interfaces, not production
 services:
 
 - durable, transactional artifact, source, request, response, job, attestation,
@@ -108,14 +112,15 @@ services:
 - authorization backed by production identity, qualification, revocation, and
   audit systems;
 - transactional uniqueness and concurrency control across processes;
-- operational egress approval, provider construction, cost controls, retries,
-  scheduling, and worker coordination.
+- production egress authorization, durable cost accounting, retries, scheduling,
+  and worker coordination.
 
 The in-memory resolvers and reviewer authorizer are deterministic offline test
 implementations. A later persistence/review-policy PR must implement these
-interfaces and enforce their checks at every durable write boundary. No live
-provider, Phase 00 enrichment, QGIS integration, job database, scheduler, or
-Phase 05 automation exists in PR 1.
+interfaces and enforce their checks at every durable write boundary. The keyless
+vertical slice adds optional provider adapters, run-local execution bookkeeping,
+and portable QGIS artifacts without implementing Phase 00 enrichment, a scheduler,
+production publication approval, or Phase 05 automation.
 
 Repository tests also enforce a reusable tracked-artifact and streamed secret
 policy. Pytest denies DNS, sockets, connection helpers, and HTTP entry points in

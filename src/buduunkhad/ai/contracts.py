@@ -182,6 +182,8 @@ class RiskLevel(StrEnum):
 
 
 class TaskType(StrEnum):
+    LEGEND_EXTRACTION = "legend_extraction"
+    MAP_FEATURE_INTERPRETATION = "map_feature_interpretation"
     DOCUMENT_EXTRACTION = "document_extraction"
     IMAGE_RASTER_INTERPRETATION = "image_raster_interpretation"
     GEOLOGICAL_FEATURE_PROPOSAL = "geological_feature_proposal"

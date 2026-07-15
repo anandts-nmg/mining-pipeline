@@ -28,6 +28,7 @@ GEOMETRY_ATTR = {
     "Polygon": "Polygon",
     "MultiPolygon": "Polygon",
     "None": "No geometry",
+    "Raster": "Raster",
 }
 
 
@@ -47,6 +48,8 @@ class QgzLayer:
     geometry: str
     symbol: tuple[str, dict[str, str]] | None = None
     visible: bool = True
+    group: str = "Layers"
+    provider: str = "ogr"
 
 
 def polygon_outline(color_rgba: str, width_mm: float, *, dash: bool = False):
@@ -76,6 +79,21 @@ def line_symbol(color_rgba: str, width_mm: float, *, dash: bool = False):
             "line_width_unit": "MM",
             "joinstyle": "bevel",
             "capstyle": "square",
+        },
+    )
+
+
+def point_symbol(color_rgba: str, size_mm: float):
+    """A simple deterministic circle marker symbol."""
+    return (
+        "marker",
+        {
+            "color": color_rgba,
+            "name": "circle",
+            "outline_color": "0,0,0,255",
+            "outline_width": "0.2",
+            "size": str(size_mm),
+            "size_unit": "MM",
         },
     )
 
@@ -113,7 +131,7 @@ def _renderer_element(symbol: tuple[str, dict[str, str]]) -> ET.Element:
         "symbol",
         {"type": sym_type, "name": "0", "alpha": "1", "clip_to_extent": "1", "force_rhr": "0"},
     )
-    cls = "SimpleFill" if sym_type == "fill" else "SimpleLine"
+    cls = {"fill": "SimpleFill", "line": "SimpleLine", "marker": "SimpleMarker"}[sym_type]
     layer = ET.SubElement(sym, "layer", {"class": cls, "enabled": "1", "locked": "0", "pass": "0"})
     for k, v in sorted(props.items()):
         ET.SubElement(layer, "prop", {"k": k, "v": v})
@@ -148,34 +166,45 @@ def write_layered_qgz(
     tree_group = ET.SubElement(qgis, "layer-tree-group")
     project_layers = ET.SubElement(qgis, "projectlayers")
     layer_order = ET.SubElement(qgis, "layerorder")
+    groups: dict[str, ET.Element] = {}
 
     for lyr in layers:
         geometry_attr = GEOMETRY_ATTR[lyr.geometry]
         lid = _layer_id(lyr.name)
+        layer_group = groups.get(lyr.group)
+        if layer_group is None:
+            layer_group = ET.SubElement(
+                tree_group,
+                "layer-tree-group",
+                {"name": lyr.group, "checked": "Qt::Checked", "expanded": "1"},
+            )
+            groups[lyr.group] = layer_group
         ET.SubElement(
-            tree_group,
+            layer_group,
             "layer-tree-layer",
             {
                 "name": lyr.name,
                 "id": lid,
                 "source": lyr.source,
-                "providerKey": "ogr",
+                "providerKey": lyr.provider,
                 "checked": "Qt::Checked" if lyr.visible else "Qt::Unchecked",
                 "expanded": "1",
             },
         )
-        maplayer = ET.SubElement(
-            project_layers,
-            "maplayer",
-            {"type": "vector", "geometry": geometry_attr, "autoRefreshEnabled": "0"},
-        )
+        attributes = {
+            "type": "raster" if lyr.provider == "gdal" else "vector",
+            "autoRefreshEnabled": "0",
+        }
+        if lyr.provider != "gdal":
+            attributes["geometry"] = geometry_attr
+        maplayer = ET.SubElement(project_layers, "maplayer", attributes)
         ET.SubElement(maplayer, "id").text = lid
         ET.SubElement(maplayer, "datasource").text = lyr.source
         ET.SubElement(maplayer, "layername").text = lyr.name
         srs = ET.SubElement(maplayer, "srs")
         srs.append(_srs_element(epsg))
-        ET.SubElement(maplayer, "provider", {"encoding": "UTF-8"}).text = "ogr"
-        if lyr.symbol is not None and geometry_attr != "No geometry":
+        ET.SubElement(maplayer, "provider", {"encoding": "UTF-8"}).text = lyr.provider
+        if lyr.symbol is not None and geometry_attr not in {"No geometry", "Raster"}:
             maplayer.append(_renderer_element(lyr.symbol))
         ET.SubElement(layer_order, "layer", {"id": lid})
 
@@ -204,7 +233,7 @@ def read_qgz_layers(path: Path) -> list[dict[str, str]]:
                 "id": ml.findtext("id") or "",
                 "name": ml.findtext("layername") or "",
                 "datasource": ml.findtext("datasource") or "",
-                "geometry": ml.get("geometry") or "",
+                "geometry": ml.get("geometry") or ("Raster" if ml.get("type") == "raster" else ""),
             }
         )
     return out

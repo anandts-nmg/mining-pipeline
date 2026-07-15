@@ -1,0 +1,1 @@
+Inspect the approved map tiles and describe visible points, lines and polygons. Bind every observation to its exact tile and source reference, state evidence observations, confidence and limitations, and do not infer unseen continuity.

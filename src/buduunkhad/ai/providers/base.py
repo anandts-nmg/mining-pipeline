@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Iterable
 from dataclasses import fields as dataclass_fields
@@ -10,17 +11,19 @@ from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path, PurePath
-from typing import Protocol, TypeVar, cast
+from typing import Literal, Protocol, TypeVar, cast
 
-from pydantic import AliasChoices, AliasPath, BaseModel, ValidationError
+from pydantic import AliasChoices, AliasPath, BaseModel, ValidationError, field_validator
 
 from buduunkhad.ai.contracts import (
     AIJob,
     AIRequest,
-    AIResponse,
+    AIUsage,
     CanonicalJSONValue,
     FrozenModel,
     ReviewStatus,
+    TaskType,
+    require_aware_datetime,
 )
 from buduunkhad.ai.fingerprint import persisted_model_bytes, request_fingerprint, sha256_value
 
@@ -31,19 +34,112 @@ class AIProviderError(RuntimeError):
     """Base provider failure."""
 
 
+class ProviderDependencyError(AIProviderError):
+    """The optional SDK for a selected provider is not installed."""
+
+
+class ProviderCredentialError(AIProviderError):
+    """A provider key was unavailable at the moment execution was requested."""
+
+
+class ProviderResponseError(AIProviderError):
+    """A live provider returned an unusable response envelope."""
+
+
+class ProviderImage(FrozenModel):
+    """One approved image sent to a live vision provider.
+
+    The bytes exist only in memory for the duration of execution. They are never
+    serialized into request manifests or provider response files.
+    """
+
+    tile_id: str
+    media_type: Literal["image/png", "image/jpeg"]
+    sha256: str
+    data: bytes
+
+    def model_post_init(self, _context: object) -> None:
+        if hashlib.sha256(self.data).hexdigest() != self.sha256:
+            raise ValueError("provider image bytes do not match the approved SHA-256")
+
+
+class ProviderCall(FrozenModel):
+    """Provider-neutral, inspectable live-execution input."""
+
+    request_id: str
+    request_fingerprint: str
+    task_type: TaskType
+    provider: Literal["openai", "anthropic"]
+    model: str
+    system_prompt: str
+    user_prompt: str
+    output_schema: CanonicalJSONValue
+    images: tuple[ProviderImage, ...]
+    timeout_seconds: float
+    max_output_tokens: int
+
+    @field_validator("output_schema", mode="before")
+    @classmethod
+    def _canonical_output_schema(cls, value: object) -> object:
+        return CanonicalJSONValue.from_input(value)
+
+
+class ProviderExecutionResult(FrozenModel):
+    """Provider-neutral result before response-ingestion validation."""
+
+    provider: Literal["openai", "anthropic"]
+    model: str
+    response_id: str
+    created_at: datetime
+    payload: CanonicalJSONValue
+    usage: AIUsage
+
+    @classmethod
+    def from_payload(
+        cls,
+        *,
+        provider: Literal["openai", "anthropic"],
+        model: str,
+        response_id: str,
+        created_at: datetime,
+        payload: object,
+        usage: AIUsage,
+    ) -> ProviderExecutionResult:
+        return cls(
+            provider=provider,
+            model=model,
+            response_id=response_id,
+            created_at=require_aware_datetime(created_at, "created_at"),
+            payload=CanonicalJSONValue.from_input(payload),
+            usage=usage,
+        )
+
+
 class AIProvider(Protocol):
-    """Minimal typed interface implemented by offline and future providers."""
+    """Provider-neutral live boundary; implementations may be dependency-optional."""
 
     @property
     def name(self) -> str: ...
 
-    def generate(
-        self,
-        request: AIRequest,
-        output_model: type[OutputT],
-        *,
-        resolver: ProviderExecutionResolver,
-    ) -> AIResponse[OutputT]: ...
+    def execute(self, call: ProviderCall) -> ProviderExecutionResult: ...
+
+
+def decode_provider_json(text: str) -> object:
+    """Decode one structured provider payload and reject duplicate object keys."""
+
+    try:
+        return json.loads(text, object_pairs_hook=_unique_provider_object)
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise ProviderResponseError("provider response is not valid unique-key JSON") from exc
+
+
+def _unique_provider_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    value: dict[str, object] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError(f"duplicate provider response key: {key}")
+        value[key] = item
+    return value
 
 
 class ProviderExecutionResolver(Protocol):

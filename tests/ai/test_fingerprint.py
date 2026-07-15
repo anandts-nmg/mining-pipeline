@@ -73,8 +73,8 @@ def _request(*, reverse: bool = False, request_id: str = "request-1") -> AIReque
             "output_schema": SchemaIdentity(schema_id="fixture", version="1.0.0", sha256=SHA_B),
             "provider": ProviderConfiguration.model_validate(
                 {
-                    "provider": "fake",
-                    "model": "fake-model",
+                    "provider": "test-provider",
+                    "model": "test-model",
                     "parameters": provider_parameters,
                 }
             ),

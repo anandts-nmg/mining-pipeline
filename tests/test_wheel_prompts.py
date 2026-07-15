@@ -40,6 +40,22 @@ def test_installed_wheel_loads_packaged_prompt_registry(tmp_path: Path) -> None:
         "buduunkhad/prompt_data/fixtures/document_extraction/1.0.0/user.txt",
         "buduunkhad/prompt_data/fixtures/feature_critique/1.0.0/system.txt",
         "buduunkhad/prompt_data/fixtures/feature_critique/1.0.0/user.txt",
+        "buduunkhad/prompt_data/vertical/geological_feature_proposal/1.0.0/system.txt",
+        "buduunkhad/prompt_data/vertical/geological_feature_proposal/1.0.0/user.txt",
+        "buduunkhad/prompt_data/vertical/legend_extraction/1.0.0/system.txt",
+        "buduunkhad/prompt_data/vertical/legend_extraction/1.0.0/user.txt",
+        "buduunkhad/prompt_data/vertical/map_feature_interpretation/1.0.0/system.txt",
+        "buduunkhad/prompt_data/vertical/map_feature_interpretation/1.0.0/user.txt",
+        "buduunkhad/prompt_data/vertical/feature_critique/1.0.0/system.txt",
+        "buduunkhad/prompt_data/vertical/feature_critique/1.0.0/user.txt",
+        "buduunkhad/methodology_data/authority.yaml",
+        "buduunkhad/methodology_data/discrepancies.yaml",
+        "buduunkhad/methodology_data/phase00.yaml",
+        "buduunkhad/methodology_data/phase01.yaml",
+        "buduunkhad/methodology_data/phase02.yaml",
+        "buduunkhad/methodology_data/phase03.yaml",
+        "buduunkhad/methodology_data/phase04.yaml",
+        "buduunkhad/methodology_data/phase05.yaml",
     }
     assert expected_resources <= names
     subprocess.run(
@@ -66,13 +82,26 @@ def test_installed_wheel_loads_packaged_prompt_registry(tmp_path: Path) -> None:
 from pathlib import Path
 import buduunkhad
 from buduunkhad.ai.prompts import PromptRegistry, default_schema_registry
+from buduunkhad.geospatial_ai.methodology import (
+    load_authority_registry,
+    load_discrepancy_registry,
+    load_phase_methodology,
+)
 
 assert str(Path(buduunkhad.__file__).resolve()).startswith(str(Path({target_repr}).resolve()))
 registry = PromptRegistry.load_packaged(schema_registry=default_schema_registry())
 prompt = registry.get("fixture.document-extraction", "1.0.0")
 critic = registry.get("fixture.feature-critique", "1.0.0")
+vertical = registry.get("vertical.geological-feature-proposal", "1.0.0")
+authority = load_authority_registry()
+phase05 = load_phase_methodology("05")
+discrepancies = load_discrepancy_registry()
 assert prompt.components[0].text
 assert critic.components[0].text
+assert vertical.components[0].text
+assert authority.sources
+assert phase05.phase_id == "05"
+assert len(discrepancies.discrepancies) == 4
 print(prompt.identity.sha256)
 """
     result = subprocess.run(

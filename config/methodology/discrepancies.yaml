@@ -1,0 +1,46 @@
+format_version: 1.0.0
+discrepancies:
+  - discrepancy_id: METH-DISC-001
+    subject: methodology-input-count
+    compared_sources:
+      - methodology.master-v9
+      - config/input_register.csv
+    statement: The methodology identifies 78 inputs while the registered repository input set contains 79.
+    operational_impact: Do not change registered raw identity or silently discard either count.
+    status: unresolved
+    resolution: null
+    approver: null
+    effective_version: null
+  - discrepancy_id: METH-DISC-002
+    subject: methodology-version-label
+    compared_sources:
+      - methodology.master-v9 filename
+      - methodology.master-v9 internal heading
+    statement: The repository filename identifies v9 while the internal methodology heading identifies v8.
+    operational_impact: Version labels alone do not establish authority.
+    status: unresolved
+    resolution: null
+    approver: null
+    effective_version: null
+  - discrepancy_id: METH-DISC-003
+    subject: phase04-delineation-method
+    compared_sources:
+      - phase04.guide
+      - src/buduunkhad/phases/phase04_prospect_ranking.py
+    statement: Phase 04 methodology describes hand-drawn geological polygons while the current implementation uses a fixed evidence grid.
+    operational_impact: Retain the fixed-grid implementation until a separately approved migration replaces it.
+    status: unresolved
+    resolution: null
+    approver: null
+    effective_version: null
+  - discrepancy_id: METH-DISC-004
+    subject: phase05-implementation-status
+    compared_sources:
+      - phase05.guide
+      - src/buduunkhad/phases/phase05_drone_lidar.py
+    statement: Phase 05 has detailed methodology while the current implementation remains a registered stub.
+    operational_impact: Do not infer operational thresholds or claim Phase 05 implementation.
+    status: unresolved
+    resolution: null
+    approver: null
+    effective_version: null

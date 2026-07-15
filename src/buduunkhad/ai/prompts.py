@@ -212,6 +212,13 @@ class SchemaRegistry:
 
 
 def default_schema_registry() -> SchemaRegistry:
+    from buduunkhad.geospatial_ai.schemas import (
+        FeatureCritiqueBatch,
+        GeologicalFeatureProposalBatch,
+        LegendExtraction,
+        MapFeatureInterpretation,
+    )
+
     return SchemaRegistry(
         (
             SchemaRegistration.for_model(
@@ -222,6 +229,26 @@ def default_schema_registry() -> SchemaRegistry:
             SchemaRegistration.for_model(
                 FeatureCritique,
                 schema_id="buduunkhad.ai.feature_critique",
+                version="1.0.0",
+            ),
+            SchemaRegistration.for_model(
+                LegendExtraction,
+                schema_id="buduunkhad.ai.legend_extraction",
+                version="1.0.0",
+            ),
+            SchemaRegistration.for_model(
+                MapFeatureInterpretation,
+                schema_id="buduunkhad.ai.map_feature_interpretation",
+                version="1.0.0",
+            ),
+            SchemaRegistration.for_model(
+                GeologicalFeatureProposalBatch,
+                schema_id="buduunkhad.ai.geological_feature_proposal_batch",
+                version="1.0.0",
+            ),
+            SchemaRegistration.for_model(
+                FeatureCritiqueBatch,
+                schema_id="buduunkhad.ai.feature_critique_batch",
                 version="1.0.0",
             ),
         )

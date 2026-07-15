@@ -1,0 +1,11 @@
+format_version: 1.0.0
+phase_id: "02"
+requirements:
+  - requirement_id: P02-RASTER-MATH-001
+    statement: Reprojection, clipping, spectral arithmetic, masks and terrain measurements remain deterministic.
+    source_refs: [agents.repository-authority, phase02.guide]
+    status: adopted
+  - requirement_id: P02-AI-INTERPRET-001
+    statement: AI interpretations of validated imagery remain draft support evidence.
+    source_refs: [agents.repository-authority, phase02.guide]
+    status: adopted

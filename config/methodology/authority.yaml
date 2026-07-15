@@ -1,0 +1,27 @@
+format_version: 1.0.0
+sources:
+  - source_id: agents.repository-authority
+    repository_path: AGENTS.md
+    role: repository-governance
+  - source_id: methodology.master-v9
+    repository_path: docs/XV-023222_Buduunkhad_Exploration_Workflow_Methodology_78Inputs_v9_25km_Clickable_TOC_PageNumbers.md
+    role: methodology-source
+  - source_id: phase01.guide
+    repository_path: docs/phase_01/XV-023222_Buduunkhad_Phase1_Methodology.md
+    role: phase-source
+  - source_id: phase02.guide
+    repository_path: docs/phase_02/Phase_2_Remote_Sensing_Preprocessing_Guide_MN.md
+    role: phase-source
+  - source_id: phase03.guide
+    repository_path: docs/phase_03/Phase_3_Geological_Metallogenic_and_CMCS_Synthesis_Guide_MN.md
+    role: phase-source
+  - source_id: phase04.guide
+    repository_path: docs/phase_04/Phase_4_Preliminary_Prospect_Delineation_and_Ranking_Guide_MN.md
+    role: phase-source
+  - source_id: phase05.guide
+    repository_path: docs/phase_05/Phase_5_Drone_LiDAR_Photogrammetry_Detailed_Guide_MN.md
+    role: phase-source
+precedence:
+  - agents.repository-authority
+  - methodology.master-v9
+  - phase-specific-approved-source

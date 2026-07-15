@@ -1,0 +1,1 @@
+Using only the approved tiles, propose source-linked draft geology units, structures, contacts, dykes or veins, occurrences, alteration zones or prospect proposals. Supply exact tile identity, feature type, legend code where visible, attributes, confidence, observations and limitations.

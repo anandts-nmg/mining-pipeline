@@ -217,13 +217,13 @@ def test_named_parameters_reject_duplicates_and_sort_canonically() -> None:
     )
     with pytest.raises(ValidationError, match="duplicate names"):
         ProviderConfiguration.model_validate(
-            {"provider": "fake", "model": "offline", "parameters": duplicate}
+            {"provider": "test-provider", "model": "offline", "parameters": duplicate}
         )
     first = ProviderConfiguration.model_validate(
-        {"provider": "fake", "model": "offline", "parameters": {"z": 1, "a": 2}}
+        {"provider": "test-provider", "model": "offline", "parameters": {"z": 1, "a": 2}}
     )
     second = ProviderConfiguration.model_validate(
-        {"provider": "fake", "model": "offline", "parameters": {"a": 2, "z": 1}}
+        {"provider": "test-provider", "model": "offline", "parameters": {"a": 2, "z": 1}}
     )
     assert first.parameters == second.parameters
     assert tuple(item.name for item in first.parameters) == ("a", "z")

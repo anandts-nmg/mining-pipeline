@@ -16,6 +16,7 @@ from pathlib import Path
 
 import typer
 
+from buduunkhad.ai_cli import ai_app
 from buduunkhad.core.raw_guard import RawIntegrityError
 from buduunkhad.pipeline import (
     PHASE_CLASSES,
@@ -35,6 +36,7 @@ app = typer.Typer(
     help="Buduunkhad / XV-023222 exploration workflow pipeline (phases 00-99).",
     no_args_is_help=True,
 )
+app.add_typer(ai_app, name="ai")
 
 _CONFIG_OPT = typer.Option("config/project.yaml", "--config", "-c", help="Path to project.yaml.")
 

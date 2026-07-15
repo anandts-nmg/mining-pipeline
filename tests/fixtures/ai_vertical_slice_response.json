@@ -1,0 +1,135 @@
+{
+  "limitations": [
+    "Synthetic fixture for deterministic vertical-slice testing only."
+  ],
+  "proposals": [
+    {
+      "attributes": {
+        "observation": "synthetic point"
+      },
+      "confidence": 0.91,
+      "confidence_components": [
+        {
+          "name": "visibility",
+          "rationale": "Unambiguous synthetic mark.",
+          "score": 0.91
+        }
+      ],
+      "evidence_observations": [
+        "A synthetic occurrence marker is visible."
+      ],
+      "feature_id": "synthetic-point-1",
+      "feature_type": "mineral-occurrence",
+      "geometry": {
+        "coordinates": [
+          1.0,
+          1.0
+        ],
+        "type": "Point"
+      },
+      "geometry_tile_id": "__TILE_ID__",
+      "layer": "mineral_occurrences",
+      "legend_code": "MO",
+      "limitations": [
+        "Synthetic geometry."
+      ],
+      "risk_level": "MEDIUM",
+      "review_status": "AI_DRAFT",
+      "source_references": []
+    },
+    {
+      "attributes": {
+        "observation": "synthetic line"
+      },
+      "confidence": 0.82,
+      "confidence_components": [
+        {
+          "name": "visibility",
+          "rationale": "The synthetic line is fully visible.",
+          "score": 0.82
+        }
+      ],
+      "evidence_observations": [
+        "A synthetic line crosses the tile."
+      ],
+      "feature_id": "synthetic-line-1",
+      "feature_type": "fault",
+      "geometry": {
+        "coordinates": [
+          [
+            1.0,
+            2.0
+          ],
+          [
+            5.0,
+            4.0
+          ]
+        ],
+        "type": "LineString"
+      },
+      "geometry_tile_id": "__TILE_ID__",
+      "layer": "faults_structures",
+      "legend_code": "F",
+      "limitations": [
+        "Synthetic geometry."
+      ],
+      "risk_level": "MEDIUM",
+      "review_status": "AI_DRAFT",
+      "source_references": []
+    },
+    {
+      "attributes": {
+        "observation": "synthetic polygon"
+      },
+      "confidence": 0.87,
+      "confidence_components": [
+        {
+          "name": "closure",
+          "rationale": "The synthetic polygon ring is visibly closed.",
+          "score": 0.87
+        }
+      ],
+      "evidence_observations": [
+        "A closed synthetic unit boundary is visible."
+      ],
+      "feature_id": "synthetic-polygon-1",
+      "feature_type": "geology-unit",
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              2.0,
+              2.0
+            ],
+            [
+              6.0,
+              2.0
+            ],
+            [
+              6.0,
+              6.0
+            ],
+            [
+              2.0,
+              6.0
+            ],
+            [
+              2.0,
+              2.0
+            ]
+          ]
+        ],
+        "type": "Polygon"
+      },
+      "geometry_tile_id": "__TILE_ID__",
+      "layer": "geology_units",
+      "legend_code": "GU",
+      "limitations": [
+        "Synthetic geometry."
+      ],
+      "risk_level": "MEDIUM",
+      "review_status": "AI_DRAFT",
+      "source_references": []
+    }
+  ]
+}

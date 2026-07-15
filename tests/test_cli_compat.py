@@ -19,6 +19,23 @@ def test_help_lists_stable_core_commands() -> None:
         assert command in result.stdout
 
 
+def test_ai_help_is_additive_and_keeps_execution_steps_separate() -> None:
+    result = runner.invoke(app, ["ai", "--help"])
+    assert result.exit_code == 0
+    for command in (
+        "snapshot-create",
+        "snapshot-verify",
+        "prepare",
+        "approve-egress",
+        "execute",
+        "ingest-response",
+        "process-response",
+        "evaluate",
+        "inspect-job",
+    ):
+        assert command in result.stdout
+
+
 def test_list_and_info_preserve_legacy_contract(project) -> None:
     config, _register, work = project
     config_path = work / "config" / "project.yaml"

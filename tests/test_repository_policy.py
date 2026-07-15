@@ -111,6 +111,15 @@ def test_representative_namespaced_secret_assignments_are_detected(
     assert "suspicious secret assignment" in secret_findings(path)
 
 
+def test_environment_key_lookup_is_not_mistaken_for_a_stored_secret(tmp_path: Path) -> None:
+    path = tmp_path / "provider.py"
+    path.write_text(
+        'api_key = os.environ.get("OPENAI_API_KEY")\n',
+        encoding="utf-8",
+    )
+    assert "suspicious secret assignment" not in secret_findings(path)
+
+
 @pytest.mark.parametrize(
     "token",
     [

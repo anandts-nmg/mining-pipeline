@@ -1,0 +1,11 @@
+format_version: 1.0.0
+phase_id: "04"
+requirements:
+  - requirement_id: P04-PROPOSAL-ONLY-001
+    statement: AI may propose prospect geometry, rationale and limitations but cannot publish or approve it.
+    source_refs: [agents.repository-authority, phase04.guide]
+    status: adopted
+  - requirement_id: P04-LEGACY-COMPARATOR-001
+    statement: The fixed-grid evidence method remains unchanged as the legacy comparator in this migration slice.
+    source_refs: [agents.repository-authority, METH-DISC-003]
+    status: adopted-with-unresolved-discrepancy

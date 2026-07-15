@@ -1,0 +1,11 @@
+format_version: 1.0.0
+phase_id: "01"
+requirements:
+  - requirement_id: P01-SPATIAL-AUDIT-001
+    statement: Spatial and raster audit results remain deterministic authority.
+    source_refs: [agents.repository-authority, phase01.guide]
+    status: adopted
+  - requirement_id: P01-GEOREF-REVIEW-001
+    statement: AI may suggest map control evidence, but deterministic residual checks and human review remain required.
+    source_refs: [agents.repository-authority, phase01.guide]
+    status: adopted

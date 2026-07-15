@@ -1,4 +1,4 @@
-"""Offline AI contracts, provenance, review, prompt, and replay foundation.
+"""AI contracts, provenance, review, prompt, and schema foundation.
 
 Importing this package constructs no provider and performs no network I/O.
 """

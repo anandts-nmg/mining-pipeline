@@ -1,0 +1,1 @@
+Inspect the approved legend tiles. Return source-linked legend entries using only evidence visible in those tiles. Preserve uncertainty and record illegible or missing content as limitations.

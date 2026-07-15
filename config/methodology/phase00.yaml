@@ -1,0 +1,11 @@
+format_version: 1.0.0
+phase_id: "00"
+requirements:
+  - requirement_id: P00-RAW-IDENTITY-001
+    statement: Raw identity, checksums, bundle relationships and immutability remain deterministic and authoritative.
+    source_refs: [agents.repository-authority]
+    status: adopted
+  - requirement_id: P00-AI-SUGGESTION-001
+    statement: AI metadata suggestions must not change raw identity or placement automatically.
+    source_refs: [agents.repository-authority]
+    status: adopted

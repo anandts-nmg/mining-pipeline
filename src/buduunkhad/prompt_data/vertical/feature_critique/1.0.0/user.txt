@@ -1,0 +1,1 @@
+Check source linkage, tile-pixel geometry, visible evidence, internal consistency, confidence and limitations for each proposal. Return schema-bound findings and a critique verdict without creating human review state.

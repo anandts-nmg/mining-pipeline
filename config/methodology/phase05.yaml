@@ -1,0 +1,11 @@
+format_version: 1.0.0
+phase_id: "05"
+requirements:
+  - requirement_id: P05-STUB-PRESERVATION-001
+    statement: The current Phase 05 stub remains unchanged in this migration slice.
+    source_refs: [agents.repository-authority, METH-DISC-004]
+    status: adopted-with-unresolved-discrepancy
+  - requirement_id: P05-NO-NEW-THRESHOLD-001
+    statement: No undocumented flight, survey or accuracy threshold may become authoritative.
+    source_refs: [agents.repository-authority, phase05.guide]
+    status: adopted

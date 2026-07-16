@@ -24,7 +24,7 @@ from buduunkhad.ai.contracts import (
     RasterTileLocator,
     TaskType,
 )
-from buduunkhad.ai.fingerprint import request_fingerprint, sha256_file
+from buduunkhad.ai.fingerprint import request_fingerprint, sha256_file, sha256_value
 from buduunkhad.ai.prompts import PromptRegistry, default_schema_registry
 from buduunkhad.ai.providers import (
     ProviderCredentialError,
@@ -362,11 +362,23 @@ def test_legacy_request_package_schema_identity_remains_verifiable(
     prompt = PromptRegistry.load_packaged(schema_registry=schemas).resolve(package.prompt)
     legacy_request = package.request.model_copy(update={"output_schema": prompt.output_schema})
     legacy_fingerprint = request_fingerprint(legacy_request)
+    # A historical package stores the schema representation its legacy fingerprint was
+    # derived from; the checked-in copy keeps this reproducible on every runtime.
+    legacy_schema = json.loads(
+        (
+            Path(__file__).parent
+            / "fixtures"
+            / "schema_identity"
+            / "legacy_geological_feature_proposal_batch_schema.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert sha256_value(legacy_schema) == prompt.output_schema.sha256
     legacy_package = package.model_copy(
         update={
             "request": legacy_request,
             "request_fingerprint": legacy_fingerprint,
             "schema_identity": prompt.output_schema,
+            "output_schema_json": CanonicalJSONValue.from_value(legacy_schema),
         }
     )
     manifest = directory / "request-package.json"

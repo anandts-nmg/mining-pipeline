@@ -326,6 +326,15 @@ def _with_pydantic_2_7_style_literals(node: object) -> object:
     return node
 
 
+def _count_const_enum_pairs(node: object) -> int:
+    if isinstance(node, dict):
+        total = sum(_count_const_enum_pairs(item) for item in node.values())
+        return total + (1 if "const" in node and "enum" in node else 0)
+    if isinstance(node, list):
+        return sum(_count_const_enum_pairs(item) for item in node)
+    return 0
+
+
 def test_synthetic_dual_literal_emission_matches_every_checked_contract() -> None:
     models: dict[str, type[BaseModel]] = {
         "buduunkhad.ai.document_extraction": DocumentExtraction,
@@ -335,14 +344,13 @@ def test_synthetic_dual_literal_emission_matches_every_checked_contract() -> Non
         "buduunkhad.ai.geological_feature_proposal_batch": GeologicalFeatureProposalBatch,
         "buduunkhad.ai.feature_critique_batch": FeatureCritiqueBatch,
     }
-    exercised = 0
+    dual_nodes = 0
     for (schema_id, _version), record in load_packaged_schema_contracts().items():
-        schema = models[schema_id].model_json_schema()
-        dual = _with_pydantic_2_7_style_literals(schema)
-        if dual != schema:
-            exercised += 1
+        dual = _with_pydantic_2_7_style_literals(models[schema_id].model_json_schema())
+        # Older Pydantic already emits the pairs; on newer Pydantic the transform adds them.
+        dual_nodes += _count_const_enum_pairs(dual)
         assert semantic_schema_sha256(dual) == record.sha256
-    assert exercised  # the transform must actually rewrite constants somewhere
+    assert dual_nodes  # the dual-emission representation class must actually be exercised
 
 
 def test_default_schema_registry_constructs_under_synthetic_dual_emission(

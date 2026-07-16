@@ -9,3 +9,7 @@ requirements:
     statement: The fixed-grid evidence method remains unchanged as the legacy comparator in this migration slice.
     source_refs: [agents.repository-authority, METH-DISC-003]
     status: adopted-with-unresolved-discrepancy
+  - requirement_id: P04-SCORING-MATRIX-PRESERVATION-001
+    statement: The implemented Phase 04 desktop matrix follows the resolved decision METH-DISC-006; the master lifecycle matrix stays reserved for the Phase 10 final integrated ranking and must not be imported without an approved migration.
+    source_refs: [agents.repository-authority, METH-DISC-006]
+    status: adopted

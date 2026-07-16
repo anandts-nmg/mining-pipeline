@@ -1,6 +1,7 @@
 """Phase 02 — Remote Sensing Preprocessing (BUILD).
 
-Implements the *automatable* core of the four `docs/phase_02/` QGIS-4.0.2 guides:
+Implements the adopted automatable Phase 02 core recorded in
+``config/methodology/phase02.yaml`` and the approved external methodology:
 
 1. Reproject every received raster to EPSG:32647 and **clip to the methodology's
    per-product buffer** (DEM = 5 km, Sentinel = licence boundary, basemap = 1 km),
@@ -958,8 +959,8 @@ _ASTER_NOTE = (
     "+ 0.06013·chlorite + 0.04511·mgoh + 0.03008·carbonate + 0.01503·carbonate_swir\n"
     "+ 0.03760·structure_v1 + 0.10527·lithology — mixes spectral scores with non-spectral\n"
     "inputs (structure_v1, lithology) whose derivations are not documented in any available\n"
-    "source; retained for reference only (see METHODOLOGY_DISCREPANCIES.md 02-3).\n"
-    + _SUPPORT_FOOTER
+    "source; retained for reference only (see config/methodology/discrepancies.yaml, "
+    "METH-DISC-005).\n" + _SUPPORT_FOOTER
 )
 
 _KOMPSAT_NOTE = (

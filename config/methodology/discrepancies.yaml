@@ -1,4 +1,9 @@
-format_version: 1.0.0
+format_version: 1.1.0
+# Append-only methodology decision register. Complete history — unresolved, resolved,
+# superseded, and withdrawn records. Resolved history is never erased; a later issue
+# gets a new linked record instead of reopening one. Historical records migrated from
+# the deleted METHODOLOGY_DISCREPANCIES.md carry a migration_source and use the
+# explicit marker "historical-unknown" where an approver or date was not recorded.
 discrepancies:
   - discrepancy_id: METH-DISC-001
     subject: methodology-input-count
@@ -7,10 +12,14 @@ discrepancies:
       - config/input_register.csv
     statement: The methodology identifies 78 inputs while the registered repository input set contains 79.
     operational_impact: Do not change registered raw identity or silently discard either count.
-    status: unresolved
-    resolution: null
-    approver: null
-    effective_version: null
+    status: resolved
+    resolution: Adopt 79 registered inputs — the 78 methodology inputs plus the reconciled SAS hand-interpreted 1-to-25k geology scan registered as input 79.
+    rationale: Doc-versus-disk count drift; the 79th file exists in the canonical archive and was never added to the master document. Physical reality is reconciled by filename plus pinned Drive file ID, never by count or folder name.
+    approver: historical-unknown
+    resolved_on: historical-unknown
+    effective_version: v0.1.0
+    implementation_evidence: config/input_register.csv rows 1-79 (evidence group 05 count 17); verified go/go on the real archive at tag v0.1.0.
+    migration_source: METHODOLOGY_DISCREPANCIES.md (doc-vs-reality, 78-vs-79)
   - discrepancy_id: METH-DISC-002
     subject: methodology-version-label
     compared_sources:
@@ -19,9 +28,10 @@ discrepancies:
     statement: The repository filename identifies v9 while the internal methodology heading identifies v8.
     operational_impact: Version labels alone do not establish authority.
     status: unresolved
-    resolution: null
-    approver: null
-    effective_version: null
+    proposed_resolution: Confirm the authoritative edition label with the methodology owner and record it in the authority registry.
+    required_approver: methodology-owner
+    remaining_actions:
+      - Confirm the authoritative version label for the v8/v9 edition with the methodology owner.
   - discrepancy_id: METH-DISC-003
     subject: phase04-delineation-method
     compared_sources:
@@ -30,9 +40,10 @@ discrepancies:
     statement: Phase 04 methodology describes hand-drawn geological polygons while the current implementation uses a fixed evidence grid.
     operational_impact: Retain the fixed-grid implementation until a separately approved migration replaces it.
     status: unresolved
-    resolution: null
-    approver: null
-    effective_version: null
+    proposed_resolution: No proposal recorded — replacing the fixed grid with hand-drawn or model-assisted delineation would require a separately approved migration.
+    required_approver: methodology-owner
+    remaining_actions:
+      - Decide whether hand-drawn delineation ever replaces or complements the fixed evidence grid.
   - discrepancy_id: METH-DISC-004
     subject: phase05-implementation-status
     compared_sources:
@@ -41,6 +52,422 @@ discrepancies:
     statement: Phase 05 has detailed methodology while the current implementation remains a registered stub.
     operational_impact: Do not infer operational thresholds or claim Phase 05 implementation.
     status: unresolved
-    resolution: null
-    approver: null
-    effective_version: null
+    proposed_resolution: No proposal recorded — Phase 05 build awaits the drone campaign data and a scoped implementation task.
+    required_approver: project-owner
+    remaining_actions:
+      - Schedule the Phase 05 build once drone LiDAR data and build capacity are available.
+  - discrepancy_id: METH-DISC-005
+    subject: phase02-weighted-score-input-authority
+    compared_sources:
+      - phase02.guide
+      - src/buduunkhad/phases/phase02_remote_sensing.py
+    statement: The historical weighted Phase 02 score depends on structure and lithology inputs whose derivations are not established in the adopted repository contracts.
+    operational_impact: Retain the formula as a non-automated historical reference and do not make it authoritative until its input derivations are approved.
+    status: unresolved
+    proposed_resolution: Obtain approved derivations for the structure_v1 and lithology inputs, or formally retire the v5 weighted score from the methodology.
+    required_approver: methodology-owner
+    remaining_actions:
+      - Obtain or retire the undocumented structure_v1 and lithology input derivations.
+    migration_source: METHODOLOGY_DISCREPANCIES.md (02-3 residual follow-up; parent decision METH-DISC-020)
+  - discrepancy_id: METH-DISC-006
+    subject: phase04-versus-final-ranking-criteria
+    compared_sources:
+      - phase04.guide
+      - methodology.master-v9
+      - src/buduunkhad/phases/phase04_prospect_ranking.py
+    statement: The master v9 section-5 lifecycle scoring matrix (with field-pXRF and drone criteria) differs from the Phase-4 guide section-6 desktop matrix.
+    operational_impact: Preserve the adopted Phase 04 desktop matrix and do not import final-ranking criteria without an approved migration.
+    status: resolved
+    resolution: Adopt the Phase-4 guide section-6 desktop matrix for Phase 04 (geology 20, occurrence 15, geochem 20, remote sensing 15, structure 10, deposit-model fit 10, access 5, confidence 5). The master v9 section-5 lifecycle matrix is reserved for the Phase 10 final integrated target ranking where field, pXRF, and drone evidence exists.
+    rationale: The later per-phase deep-dive guide is the phase authority (the same rule applied for 01-1, 02-2, and 03-1). The v9 lifecycle criteria cannot score at desktop and would cap every desktop prospect at class B, contradicting the reference outputs.
+    approver: historical-unknown
+    resolved_on: "2026-07-06"
+    effective_version: v0.6.0
+    implementation_evidence: PROSPECT_CRITERIA in src/buduunkhad/phases/phase04_prospect_ranking.py; model-fit scored from the human-completed 03A matrix; discrete A/B/C class-band delineation.
+    migration_source: METHODOLOGY_DISCREPANCIES.md (04-1)
+  - discrepancy_id: METH-DISC-007
+    subject: phase00-existence
+    compared_sources:
+      - methodology.master (Doc A)
+      - phase01.guide (Doc B)
+    statement: The master defines a dedicated Phase 00 with its own decision gate while the standalone Phase-1 document folds raw archiving into Phase 1 Step 1.
+    operational_impact: Phase structure and gate ownership must be unambiguous before implementation.
+    status: resolved
+    resolution: Implement a dedicated Phase 00 per the master, with the four Phase-00 outputs and gate wording verbatim.
+    rationale: The master methodology is the structural source of truth; the standalone document is a later unreconciled deep-dive.
+    approver: historical-unknown
+    resolved_on: historical-unknown
+    effective_version: v0.1.0
+    implementation_evidence: src/buduunkhad/phases/phase00_archive.py; four Doc-A outputs emitted verbatim; verified at tag v0.1.0.
+    migration_source: METHODOLOGY_DISCREPANCIES.md (00-1)
+  - discrepancy_id: METH-DISC-008
+    subject: raw-archive-folder-name
+    compared_sources:
+      - methodology.master (Doc A)
+      - phase01.guide (Doc B)
+      - the real Drive archive
+    statement: Three names exist for the raw archive — 00_Raw_Files_Archive (master), 00_Raw_Input_Evidence_Library (standalone), and the real on-disk folder named 0. Raw Data.
+    operational_impact: Folder-name matching against the raw archive is unreliable.
+    status: resolved
+    resolution: The output archive uses the master name 00_Raw_Files_Archive; the input raw_root points at the real folder and every input is matched by filename plus pinned Drive file ID, never by folder name.
+    rationale: Physical reality is reconciled through the manifest; folder names carry no authority.
+    approver: historical-unknown
+    resolved_on: historical-unknown
+    effective_version: v0.1.0
+    implementation_evidence: core/paths.py; BUDUUNKHAD_RAW_ROOT override; config/raw_manifest.csv basename-plus-file-ID matching.
+    migration_source: METHODOLOGY_DISCREPANCIES.md (00-2; doc-vs-reality archive name)
+  - discrepancy_id: METH-DISC-009
+    subject: checksum-inventory-ownership
+    compared_sources:
+      - methodology.master (Doc A)
+      - phase01.guide (Doc B)
+    statement: The master assigns checksums and the master inventory to Phase 00 while the standalone document lists the same work as Phase 1 Day-1 deliverables.
+    operational_impact: Duplicate or missing integrity deliverables if ownership is ambiguous.
+    status: resolved
+    resolution: Phase 00 owns checksums, integrity log, master inventory, and the source-data readme per the master.
+    rationale: Follows the adopted Phase-00 structure (METH-DISC-007).
+    approver: historical-unknown
+    resolved_on: historical-unknown
+    effective_version: v0.1.0
+    implementation_evidence: Phase 00 outputs — 79-input master inventory, raw-data integrity log, SHA-256 checksum register, source-data readme.
+    migration_source: METHODOLOGY_DISCREPANCIES.md (00-3)
+  - discrepancy_id: METH-DISC-010
+    subject: phase01-folder-taxonomy
+    compared_sources:
+      - methodology.master (Doc A)
+      - phase01.guide (Doc B)
+    statement: The master and the standalone Phase-1 document define different eight-folder taxonomies with different organizing principles.
+    operational_impact: Later handoffs reference Phase-1 folder names verbatim.
+    status: resolved
+    resolution: Follow the master taxonomy (01_File_Inventory through 08_Master_QGIS_Project_Setup) plus an added 09_Handover_Package for the standalone document's extra deliverables.
+    rationale: Master is authoritative for structure; the standalone document is honoured as a deliverable superset, not a structural authority.
+    approver: historical-unknown
+    resolved_on: historical-unknown
+    effective_version: v0.1.0
+    implementation_evidence: core/paths.py PHASE01_SUBFOLDERS.
+    migration_source: METHODOLOGY_DISCREPANCIES.md (01-1)
+  - discrepancy_id: METH-DISC-011
+    subject: master-gpkg-and-project-location
+    compared_sources:
+      - methodology.master (Doc A)
+      - phase01.guide (Doc B)
+    statement: The master places the Master GeoPackage in folder 06 and the QGIS project in folder 08 while the standalone document places both in a single 05_Master_GIS_Database folder.
+    operational_impact: Consumers read these artifacts back by path.
+    status: resolved
+    resolution: Follow the master — GeoPackage in 06_Master_GeoPackage_Schema, QGIS project in 08_Master_QGIS_Project_Setup.
+    rationale: Consequence of the adopted Phase-1 taxonomy (METH-DISC-010).
+    approver: historical-unknown
+    resolved_on: historical-unknown
+    effective_version: v0.1.0
+    implementation_evidence: Phase 01 output layout.
+    migration_source: METHODOLOGY_DISCREPANCIES.md (01-2)
+  - discrepancy_id: METH-DISC-012
+    subject: phase01-deliverable-count
+    compared_sources:
+      - methodology.master (Doc A)
+      - phase01.guide (Doc B)
+    statement: The master lists four Phase-1 outputs while the standalone document lists eight plus admin files.
+    operational_impact: Granularity difference, not contradiction; the deliverable set must be explicit.
+    status: resolved
+    resolution: Emit the superset — the master's four core outputs plus the standalone document's extras and a Phase-2-ready dataset list (eleven artifacts).
+    rationale: The deep-dive's richer deliverable set is honoured as a superset of the master.
+    approver: historical-unknown
+    resolved_on: historical-unknown
+    effective_version: v0.1.0
+    implementation_evidence: Phase 01 handover package (file inventory, data-gap register, index map, desktop-study summary, Phase-2-ready list).
+    migration_source: METHODOLOGY_DISCREPANCIES.md (01-3)
+  - discrepancy_id: METH-DISC-013
+    subject: inventory-id-scheme
+    compared_sources:
+      - methodology.master (Doc A)
+      - phase01.guide (Doc B)
+    statement: The master keys inventory records by raw-input numbers 1-78 while the standalone document uses a BK-P1-nnn convention with richer columns.
+    operational_impact: One stable input-identity scheme is required across all phases.
+    status: resolved
+    resolution: Adopt the master numbering, extended to 1-79 for the reconciled 79th input; the BK-P1-nnn convention is not adopted.
+    rationale: The numbered register is the cross-phase identity used by the manifest and every phase's input numbers.
+    approver: historical-unknown
+    resolved_on: historical-unknown
+    effective_version: v0.1.0
+    implementation_evidence: config/input_register.csv numbering 1-79.
+    migration_source: METHODOLOGY_DISCREPANCIES.md (01-4)
+  - discrepancy_id: METH-DISC-014
+    subject: master-gpkg-schema
+    compared_sources:
+      - methodology.master (Doc A)
+      - phase01.guide (Doc B)
+    statement: The master enumerates 13 named Master-GeoPackage layers without grouping while the standalone document describes a four-group organization without naming the layers.
+    operational_impact: The schema is a persisted contract consumed by later phases.
+    status: resolved
+    resolution: Adopt the master's 13 named layers (polygon layers written as MultiPolygon).
+    rationale: Only the master defines the concrete layer schema; the grouping description adds no layer identity.
+    approver: historical-unknown
+    resolved_on: historical-unknown
+    effective_version: v0.1.0
+    implementation_evidence: config/project.yaml master_gpkg_layers.
+    migration_source: METHODOLOGY_DISCREPANCIES.md (01-5)
+  - discrepancy_id: METH-DISC-015
+    subject: buffer-creation-ownership
+    compared_sources:
+      - methodology.master (Doc A)
+      - phase01.guide (Doc B)
+      - phase02.guide prerequisites
+    statement: The standalone Phase-1 document makes buffer creation an explicit Phase-1 step while the master mentions buffers only as a register action and a Phase-3 input; Phase 02 consumes them.
+    operational_impact: A producer-consumer handoff needs a single owner.
+    status: resolved
+    resolution: Phase 01 builds the buffer rings; Phase 02 consumes them as clip AOIs (DEM 5 km, Sentinel licence boundary, basemap 1 km).
+    rationale: Matches the standalone document and the register action for input 8, and gives Phase 02 a clean prerequisite.
+    approver: historical-unknown
+    resolved_on: historical-unknown
+    effective_version: v0.1.0
+    implementation_evidence: Phase 01 buffer output; Phase 02 per-product clip AOIs.
+    migration_source: METHODOLOGY_DISCREPANCIES.md (01-6, H-3)
+  - discrepancy_id: METH-DISC-016
+    subject: downstream-phase-folder-names
+    compared_sources:
+      - methodology.master (Doc A)
+      - phase01.guide (Doc B)
+    statement: The master uses long Phase-3/Phase-4 folder names (with CMCS and Delineation) while the standalone document uses shortened forms.
+    operational_impact: Folder names are load-bearing — later handoffs reference them verbatim.
+    status: resolved
+    resolution: Follow the master's long names; the standalone Phase-1 document is superseded for folder structure.
+    rationale: The master is the authoritative 00-99 source and the longer names are self-documenting; this ratified the implemented status quo.
+    approver: historical-unknown
+    resolved_on: "2026-06-30"
+    effective_version: v0.1.0
+    implementation_evidence: core/paths.py PHASE_DIRS.
+    migration_source: METHODOLOGY_DISCREPANCIES.md (01-7)
+  - discrepancy_id: METH-DISC-017
+    subject: 25km-buffer-artefact-call
+    compared_sources:
+      - phase02.guide prerequisites
+      - methodology.master v5/v6 buffer list
+    statement: The Phase-2 guide's prerequisite filename includes a 25 km ring absent from the v5/v6 master buffer list (500 m, 1, 5, 10, 20 km).
+    operational_impact: Whether Phase 01 must emit a sixth ring.
+    status: superseded
+    resolution: Treat the 25 km ring as a lone Phase-2-guide copy-paste artefact; do not add it (add-on-demand only).
+    rationale: Based on the v5/v6 document set available at the time, no other source defined the ring.
+    approver: historical-unknown
+    resolved_on: "2026-06-30"
+    effective_version: v0.1.0
+    implementation_evidence: Original five-ring buffer output prior to v0.3.2.
+    superseded_by: METH-DISC-018
+    migration_source: METHODOLOGY_DISCREPANCIES.md (02-1, H-1 original decision)
+  - discrepancy_id: METH-DISC-018
+    subject: 25km-buffer-adoption
+    compared_sources:
+      - methodology.master-v9 (Phase 3 Step 7 and Step 7A)
+      - phase02.guide prerequisites
+    statement: The v8/v9 methodology edition formally defines the 25 km ring — Step 7 extends the CMCS contextual check to 5/10/20/25 km and Step 7A uses 25 km as the near-occurrence coverage buffer.
+    operational_impact: Phase 01 must emit six rings and Phase 03 must run the 25 km coverage check; the ring is explicitly not a mineralization-proof boundary.
+    status: resolved
+    resolution: Adopt the 25 km ring — boundary buffers become 500 m through 25 km; Phase 03 CMCS rings become 5/10/20/25 km with the near-occurrence coverage deliverables.
+    rationale: The newer v8/v9 edition documents the ring's purpose (the 20 km buffer missed near-occurrence points; 25 km covers them), superseding the earlier artefact reading that was based on the older document set alone.
+    approver: historical-unknown
+    resolved_on: "2026-07-06"
+    effective_version: v0.3.2 (coverage deliverables v0.3.3)
+    implementation_evidence: config/project.yaml boundary buffers include 25000 m; Phase 03 CMCS rings 5/10/20/25 km; 25 km coverage-check register emitted.
+    migration_source: METHODOLOGY_DISCREPANCIES.md (02-1, H-1 re-decision)
+  - discrepancy_id: METH-DISC-019
+    subject: phase02-folder-structure
+    compared_sources:
+      - methodology.master (Doc A, Phase 02 tree)
+      - phase02.guide section 3
+    statement: The master's Phase-02 tree has six folders while the detailed guide defines an eight-folder superset adding an input working copy and a dedicated basemap folder.
+    operational_impact: Phase-02 outputs land in these folders and downstream steps reference them.
+    status: resolved
+    resolution: Follow the detailed guide's eight-folder superset.
+    rationale: The later, more specific per-phase deep-dive is the phase authority (mirrors the Phase-1 precedent), and its tree keeps every master concept.
+    approver: historical-unknown
+    resolved_on: historical-unknown
+    effective_version: v0.2.0
+    implementation_evidence: Phase 02 custom subfolders.
+    migration_source: METHODOLOGY_DISCREPANCIES.md (02-2)
+  - discrepancy_id: METH-DISC-020
+    subject: aster-alteration-scoring-scheme
+    compared_sources:
+      - phase02.guide section 8.5 (workflow v5 weighted score)
+      - phase02.aster-sop
+    statement: The Phase-2 guide prescribes a 15-component weighted porphyry score with undocumented component formulas and two non-spectral inputs, while the geologist's later QGIS SOP defines a fully specified alternative — seven band-ratio indices, per-scene mean plus 1.5-sigma anomaly binaries, and a four-component weighted target score (2 x clay + ferric + chlorite + silica; polygons at score 3 or more and at least 0.5 ha).
+    operational_impact: Only one scheme is reproducible end-to-end; the automated chain must implement exactly one.
+    status: resolved
+    resolution: Automate the SOP scheme; retain the v5 weighted formula in the ASTER method note for reference only.
+    rationale: The later, more specific operator recipe is the phase authority (same rule as 01-1, 02-2, 03-1) and it is the only fully reproducible scheme — it produced the geologist's reference outputs.
+    approver: historical-unknown
+    resolved_on: "2026-07-07"
+    effective_version: v0.7.0
+    implementation_evidence: core/aster.py and the Phase 02 input-73 branch; georeferencing verified pixel-identical to the geologist's QGIS band exports; index rasters agree with the reference at correlation about 0.92-0.98.
+    remaining_actions:
+      - The v5 weighted score's undocumented inputs remain an open follow-up tracked as METH-DISC-005.
+    migration_source: METHODOLOGY_DISCREPANCIES.md (02-3)
+  - discrepancy_id: METH-DISC-021
+    subject: aster-threshold-statistics-basis
+    compared_sources:
+      - phase02.aster-sop text (implies full-scene statistics)
+      - the geologist's reference outputs (licence-clipped threshold basis)
+    statement: The SOP text implies full-scene statistics for the mean plus 1.5-sigma anomaly thresholds, but the reference outputs were thresholded on licence-clipped rasters (binary extents match the 5 km buffer to within a pixel).
+    operational_impact: The threshold basis changes which pixels are flagged anomalous.
+    status: resolved
+    resolution: Compute statistics from the licence-area subset (the 5 km buffer AOI) and apply the threshold full-scene; record the basis per row in the ASTER anomaly-threshold register.
+    rationale: Matches the geologist's actual practice while keeping district context; recorded as decided with the project user on 2026-07-07.
+    approver: historical-unknown
+    resolved_on: "2026-07-07"
+    effective_version: v0.7.0
+    implementation_evidence: ASTER anomaly-threshold register rows record the statistics basis; core/aster.py implements the licence-AOI basis.
+    migration_source: METHODOLOGY_DISCREPANCIES.md (02-3 threshold-basis sub-decision)
+  - discrepancy_id: METH-DISC-022
+    subject: phase03-folder-tree
+    compared_sources:
+      - methodology.master (Doc A section 03)
+      - phase03.guide section 03.3
+    statement: The master lists nine Phase-3 subfolders while the detailed guide lists a twelve-folder finer superset.
+    operational_impact: The Phase-3 scaffold and register locations depend on the adopted tree.
+    status: resolved
+    resolution: Follow the guide's twelve-folder superset under the master's long phase name.
+    rationale: Same superset rule as 01-1 and 02-2; every master concept is present in the guide's tree.
+    approver: historical-unknown
+    resolved_on: "2026-07-01"
+    effective_version: v0.3.1
+    implementation_evidence: Phase 03 custom subfolders.
+    migration_source: METHODOLOGY_DISCREPANCIES.md (03-1)
+  - discrepancy_id: METH-DISC-023
+    subject: phase03-deposit-model-folder-label
+    compared_sources:
+      - methodology.master (Doc A)
+      - phase03.guide
+    statement: The master's 07_Preliminary_Deposit_Model_Preparation and the guide's 10_Preliminary_Deposit_Model_03A are the same 03A sub-workflow under different labels.
+    operational_impact: One folder label must be chosen for the scaffold.
+    status: resolved
+    resolution: Use the guide's 10_Preliminary_Deposit_Model_03A label.
+    rationale: Consistent with the adopted twelve-folder guide tree (METH-DISC-022).
+    approver: historical-unknown
+    resolved_on: "2026-07-01"
+    effective_version: v0.3.1
+    implementation_evidence: Phase 03 folder tree.
+    migration_source: METHODOLOGY_DISCREPANCIES.md (03-2)
+  - discrepancy_id: METH-DISC-024
+    subject: phase03-feature-id-scheme
+    compared_sources:
+      - methodology.master (Doc A, Appendix A)
+      - phase03.guide
+    statement: The master's Appendix A defines BUD- feature-ID prefixes per evidence layer while the guide names layers by filename only.
+    operational_impact: Feature identity must be stable across the evidence GeoPackage.
+    status: resolved
+    resolution: Adopt the Appendix-A BUD- prefixes as a feature_id column alongside the guide's thirteen mandatory provenance fields (fourteen columns total). The BUD-RC/CH/SOIL/STR/HM tokens elsewhere in the master are Phase-7/8 field sample IDs — a different namespace; BUD-HM-AN and BUD-SS-AN are reserved for the Phase-8/9 anomaly layers.
+    rationale: Appendix A is the only defined feature-ID standard; the guide's provenance fields complement it.
+    approver: historical-unknown
+    resolved_on: "2026-07-01"
+    effective_version: v0.3.1
+    implementation_evidence: Phase 03 evidence-GPKG schema (EVIDENCE_FIELDS and EVIDENCE_LAYERS with BUD- prefixes).
+    migration_source: METHODOLOGY_DISCREPANCIES.md (03-3)
+  - discrepancy_id: METH-DISC-025
+    subject: sentinel-utm46n-reprojection-ownership
+    compared_sources:
+      - phase01.guide (Doc B caution)
+      - methodology.master (Doc A phase assignment)
+    statement: The standalone Phase-1 document flags that the Sentinel T46 tile may be UTM zone 46N and cautions to reproject, while the master assigns the actual reprojection to Phase 2.
+    operational_impact: Exactly one phase must own the reprojection.
+    status: resolved
+    resolution: Phase 02 reprojects (per the master); Phase 01 only records the caution in its CRS audit.
+    rationale: Preprocessing belongs to the remote-sensing phase; confirmed live — inputs 77 and 78 are zone 46N and Phase 02 reprojects them to EPSG:32647.
+    approver: historical-unknown
+    resolved_on: historical-unknown
+    effective_version: v0.2.0
+    implementation_evidence: Phase 02 Sentinel path; Phase 01 CRS audit rows.
+    migration_source: METHODOLOGY_DISCREPANCIES.md (H-2)
+  - discrepancy_id: METH-DISC-026
+    subject: phase03-remote-sensing-support-gap
+    compared_sources:
+      - methodology.master (Doc A 03A.2)
+      - phase03.guide Step-1 readiness
+      - Phase 02 method-note outputs
+    statement: Both sources expect Phase-2 Sentinel/ASTER/KOMPSAT/DEM derivatives as Phase-3 support evidence, but Phase 02 emitted ASTER (before v0.7.0) and KOMPSAT as method notes only.
+    operational_impact: Phase 03 readiness cannot require layers Phase 02 does not produce.
+    status: resolved
+    resolution: Treat the gap as real but non-blocking — record it in the Phase-3 data-gap register and proceed.
+    rationale: All remote sensing is support evidence worth 10 of 100 scoring points, and the master's required Phase-3 handover layers do not include remote sensing.
+    approver: historical-unknown
+    resolved_on: "2026-07-01"
+    effective_version: v0.3.1
+    implementation_evidence: Phase-3 data-gap register rows; the ASTER chain was later automated (METH-DISC-020).
+    migration_source: METHODOLOGY_DISCREPANCIES.md (H-4)
+  - discrepancy_id: METH-DISC-027
+    subject: evidence-group-versus-theme-taxonomy
+    compared_sources:
+      - methodology.master (7 evidence groups)
+      - the real Drive archive (11 themes)
+      - the DataRoom 9-section tree
+    statement: Three competing folder taxonomies exist for the same 79 files.
+    operational_impact: Input resolution must not depend on which taxonomy a file sits in.
+    status: resolved
+    resolution: The register keeps the methodology's 7 evidence groups; the manifest maps each input to its real 11-theme folder and pinned file ID; the DataRoom 9-section tree is informational only.
+    rationale: Register semantics stay methodology-faithful while physical lookup is manifest-driven by filename and file ID.
+    approver: historical-unknown
+    resolved_on: historical-unknown
+    effective_version: v0.1.0
+    implementation_evidence: config/input_register.csv evidence groups; config/raw_manifest.csv drive_theme_folder and drive_file_id columns.
+    migration_source: METHODOLOGY_DISCREPANCIES.md (doc-vs-reality taxonomy)
+  - discrepancy_id: METH-DISC-028
+    subject: phase03-georeferencing-ownership
+    compared_sources:
+      - methodology.master (Doc A, Appendix E)
+      - phase03.guide Steps 3-5
+    statement: The master assigns scan georeferencing ownership and the Georeferencer SOP to Phase 1 while the Phase-3 guide performs the actual georeferencing in-phase.
+    operational_impact: Georeferencing of the geology, metallogenic, and mineral-resources scans needs one owner and a carried-forward QA/QC log.
+    status: resolved
+    resolution: Phase 03 owns the actual georeferencing of those scans; Phase 01 scaffolds the georeference QA/QC log that carries forward.
+    rationale: The Phase-3 guide is the operative recipe for those inputs; the master's Appendix-E SOP still governs method quality.
+    approver: historical-unknown
+    resolved_on: "2026-07-01"
+    effective_version: v0.3.1
+    implementation_evidence: Phase 03 ingest of human-georeferenced layers; Phase 01 georeference QA/QC scaffold.
+    migration_source: METHODOLOGY_DISCREPANCIES.md (georeferencing straddle under H-4)
+  - discrepancy_id: METH-DISC-029
+    subject: kompsat-eula-licence-gap
+    compared_sources:
+      - config/input_register.csv (input 23)
+      - config/raw_manifest.csv (MISSING_in_0_Raw_Data)
+    statement: Registered input 23 (KOMPSATEULAForm_3.1.pdf) is absent from the canonical raw archive, so the KOMPSAT imagery licence terms are not on file.
+    operational_impact: Acknowledged non-blocking data gap. Licensing permission must not be inferred — external processing or provider egress of KOMPSAT-derived imagery must not be approved on the basis of an unseen licence.
+    status: unresolved
+    proposed_resolution: Source the EULA document from the vendor or owner, or record a permanent documented gap with owner sign-off.
+    required_approver: project-owner and legal
+    remaining_actions:
+      - Obtain the KOMPSAT EULA or record a permanent owner-approved gap.
+    migration_source: METHODOLOGY_DISCREPANCIES.md (still-open items); DRIVE_MAP.md
+  - discrepancy_id: METH-DISC-030
+    subject: bmp-content-in-jpg-raw-scans
+    compared_sources:
+      - config/input_register.csv (inputs 3-6 filenames)
+      - the files' actual content type
+    statement: Registered raw inputs 3-6 (the four MUGZ500_Geomed2013 explanatory-text scan pages) carry a .jpg filename extension but contain BMP image content (four distinct BMP pages).
+    operational_impact: Safe reading rule — open by detected content type (BMP) from the Phase-00 working copies; never rename, convert, or repair the raw files in place. A controlled derivative (for example a georeferenced conversion) is permitted only as a phase output carrying full provenance (source input number, SHA-256, processing note, limitation).
+    status: unresolved
+    proposed_resolution: Confirm the characterization when Phase 03 georeferences the four scans, then record the final handling decision.
+    required_approver: project-geologist
+    remaining_actions:
+      - Confirm the BMP characterization at Phase-03 georeferencing of inputs 3-6.
+    migration_source: METHODOLOGY_DISCREPANCIES.md (still-open items); DRIVE_MAP.md
+  - discrepancy_id: METH-DISC-031
+    subject: phase-gate-provisional-advance
+    compared_sources:
+      - core/gates.py evaluate_gate (implemented behavior)
+      - PROJECT_STATUS.md open decision (2026-07-08)
+    statement: A phase that is automatically complete but still awaiting a human sign-off currently advances with the gate marked provisional (GO with pending QA/QC items); the competing desired behavior is to pause the pipeline at the gate until sign-off.
+    operational_impact: Provisional advance can let downstream phases consume outputs whose human review is still pending; risk is bounded because pending state and provisional gates are recorded and outputs stay stamped as support evidence.
+    status: unresolved
+    proposed_resolution: No proposal recorded — the owner must choose pause-at-gate versus advance-with-provisional-flag.
+    required_approver: project-owner
+    remaining_actions:
+      - Record the owner's decision and align core/gates.py evaluate_gate if pause-at-gate is chosen.
+    migration_source: PROJECT_STATUS.md (open decision, 2026-07-08)
+  - discrepancy_id: METH-DISC-032
+    subject: master-document-internal-version-drift
+    compared_sources:
+      - methodology.master v5/v6 filename
+      - methodology.master v5/v6 internal body heading
+    statement: The superseded master document's filename said v6 while its body self-identified as v5 with a v2-v4 lineage.
+    operational_impact: None remaining — the document was replaced by the v8/v9 edition.
+    status: withdrawn
+    withdrawal_reason: Informational drift inside the superseded v5/v6 master; the v8/v9 edition replaced that document and its successor label question is tracked as METH-DISC-002.
+    migration_source: METHODOLOGY_DISCREPANCIES.md (intra-document version drift)

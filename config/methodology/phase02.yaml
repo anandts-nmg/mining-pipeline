@@ -9,3 +9,7 @@ requirements:
     statement: AI interpretations of validated imagery remain draft support evidence.
     source_refs: [agents.repository-authority, phase02.guide]
     status: adopted
+  - requirement_id: P02-WEIGHTED-SCORE-DEFERRED-001
+    statement: The historical weighted score remains non-automated until every input derivation has an approved authority record.
+    source_refs: [agents.repository-authority, METH-DISC-005]
+    status: adopted-with-unresolved-discrepancy

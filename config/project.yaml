@@ -37,8 +37,8 @@ input_register:
 
 raw_manifest:
   # Optional: pins each raw input to its canonical Google Drive file ID + size
-  # (see DRIVE_MAP.md and docs/adr/0001). Used for provenance + coverage checks;
-  # the pipeline still reads bytes from a local raw_root.
+  # for provenance and coverage checks; the pipeline still reads bytes from a
+  # local raw_root and never writes to the protected source archive.
   path: "config/raw_manifest.csv"
 
 boundary:

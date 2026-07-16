@@ -14,12 +14,37 @@ class MethodologyError(ValueError):
     """A methodology authority resource is malformed or unavailable."""
 
 
+#: Explicit marker for migrated historical decisions whose approver or date was not recorded.
+HISTORICAL_UNKNOWN = "historical-unknown"
+
+DiscrepancyStatus = Literal["unresolved", "resolved", "superseded", "withdrawn"]
+AuthorityStatus = Literal["adopted", "reference-only", "pending-review", "obsolete"]
+
+
 class MethodologySource(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     source_id: str
-    repository_path: str
     role: str
+    repository_path: str | None = None
+    external_reference: str | None = None
+    authority_status: AuthorityStatus = "adopted"
+    expected_document: str | None = None
+    repository_copy: str | None = None
+    existence_verified: bool = False
+    superseding_contract: str | None = None
+    remaining_actions: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def _has_exactly_one_location(self) -> MethodologySource:
+        locations = (self.repository_path, self.external_reference)
+        if sum(item is not None for item in locations) != 1:
+            raise ValueError("methodology source requires exactly one location")
+        if self.external_reference is not None and not self.external_reference.startswith(
+            "BUDUUNKHAD_WORKFLOW_DOCS_ROOT::"
+        ):
+            raise ValueError("external methodology must use BUDUUNKHAD_WORKFLOW_DOCS_ROOT")
+        return self
 
 
 class MethodologyRequirement(BaseModel):
@@ -49,12 +74,19 @@ class PhaseMethodology(BaseModel):
 class AuthorityRegistry(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    format_version: Literal["1.0.0"]
+    format_version: Literal["1.1.0"]
     sources: tuple[MethodologySource, ...]
     precedence: tuple[str, ...]
 
 
 class MethodologyDiscrepancy(BaseModel):
+    """One record in the append-only methodology decision register.
+
+    The register is the complete decision history: unresolved obligations plus
+    resolved, superseded, and withdrawn records. Resolved history is never
+    erased; a later issue gets a new linked record instead of reopening one.
+    """
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     discrepancy_id: str
@@ -62,25 +94,144 @@ class MethodologyDiscrepancy(BaseModel):
     compared_sources: tuple[str, ...] = Field(min_length=2)
     statement: str
     operational_impact: str
-    status: str
-    resolution: str | None
-    approver: str | None
-    effective_version: str | None
+    status: DiscrepancyStatus
+    proposed_resolution: str | None = None
+    required_approver: str | None = None
+    remaining_actions: tuple[str, ...] = ()
+    resolution: str | None = None
+    rationale: str | None = None
+    approver: str | None = None
+    resolved_on: str | None = None
+    effective_version: str | None = None
+    implementation_evidence: str | None = None
+    superseded_by: str | None = None
+    withdrawal_reason: str | None = None
+    migration_source: str | None = None
 
     @model_validator(mode="after")
-    def _unresolved_has_no_approval(self) -> MethodologyDiscrepancy:
-        if self.status == "unresolved" and any(
-            (self.resolution, self.approver, self.effective_version)
-        ):
-            raise ValueError("unresolved discrepancies cannot contain an adopted resolution")
+    def _status_requirements(self) -> MethodologyDiscrepancy:
+        if self.status == "unresolved":
+            if not (self.proposed_resolution and self.required_approver):
+                raise ValueError(
+                    "unresolved discrepancies require a proposed resolution (or an explicit "
+                    "statement that none exists) and a required approver"
+                )
+            if not self.remaining_actions:
+                raise ValueError("unresolved discrepancies require remaining actions")
+            adopted = (
+                self.resolution,
+                self.rationale,
+                self.approver,
+                self.resolved_on,
+                self.effective_version,
+                self.superseded_by,
+                self.withdrawal_reason,
+            )
+            if any(adopted):
+                raise ValueError("unresolved discrepancies cannot carry adopted-resolution fields")
+        elif self.status in {"resolved", "superseded"}:
+            required = (
+                self.resolution,
+                self.rationale,
+                self.approver,
+                self.resolved_on,
+                self.effective_version,
+            )
+            if not all(required):
+                raise ValueError(
+                    "resolved discrepancies require resolution, rationale, approver, "
+                    f"resolution date, and effective version (use {HISTORICAL_UNKNOWN!r} "
+                    "for unrecorded historical approvers or dates)"
+                )
+            if not (self.implementation_evidence or self.remaining_actions):
+                raise ValueError(
+                    "resolved discrepancies require implementation evidence or remaining actions"
+                )
+            if self.withdrawal_reason is not None:
+                raise ValueError("only withdrawn discrepancies carry a withdrawal reason")
+            if self.status == "superseded" and self.superseded_by is None:
+                raise ValueError("superseded discrepancies require a superseded_by link")
+            if self.status == "resolved" and self.superseded_by is not None:
+                raise ValueError("resolved discrepancies cannot carry a superseded_by link")
+        else:  # withdrawn
+            if not self.withdrawal_reason:
+                raise ValueError("withdrawn discrepancies require a withdrawal reason")
+            if any((self.resolution, self.superseded_by)):
+                raise ValueError("withdrawn discrepancies cannot carry resolution fields")
         return self
 
 
 class DiscrepancyRegistry(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    format_version: Literal["1.0.0"]
+    format_version: Literal["1.1.0"]
     discrepancies: tuple[MethodologyDiscrepancy, ...]
+
+    @model_validator(mode="after")
+    def _links_are_valid(self) -> DiscrepancyRegistry:
+        identities = tuple(item.discrepancy_id for item in self.discrepancies)
+        if len(set(identities)) != len(identities):
+            raise ValueError("methodology discrepancies contain duplicate stable IDs")
+        known = set(identities)
+        successors = {
+            item.discrepancy_id: item.superseded_by
+            for item in self.discrepancies
+            if item.superseded_by is not None
+        }
+        for origin, target in successors.items():
+            if target not in known:
+                raise ValueError(f"superseded_by references an unknown record: {origin}")
+            seen = {origin}
+            cursor: str | None = target
+            while cursor is not None:
+                if cursor in seen:
+                    raise ValueError(f"supersession chain is cyclic at: {cursor}")
+                seen.add(cursor)
+                cursor = successors.get(cursor)
+        return self
+
+    def unresolved(self) -> tuple[MethodologyDiscrepancy, ...]:
+        """Filtered view of open obligations; never removes records from the register."""
+
+        return tuple(item for item in self.discrepancies if item.status == "unresolved")
+
+
+class AutomationBoundary(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    phase_id: str = Field(pattern=r"^(0[0-9]|1[01]|99)$")
+    automation_category: Literal[
+        "desktop-deterministic",
+        "desktop-orchestrated",
+        "field-acquisition",
+        "desktop-integration",
+        "desktop-planning",
+        "desktop-packaging",
+    ]
+    deterministic_authority: tuple[str, ...] = Field(min_length=1)
+    human_review_boundary: tuple[str, ...] = Field(min_length=1)
+    ai_permitted: tuple[str, ...] = ()
+    ai_prohibited: tuple[str, ...] = Field(min_length=1)
+    blocking_dependencies: tuple[str, ...] = ()
+    status: Literal["implemented", "stub"]
+    migration_source: str
+
+
+class AutomationBoundariesRegistry(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    format_version: Literal["1.0.0"]
+    boundaries: tuple[AutomationBoundary, ...]
+
+    @model_validator(mode="after")
+    def _covers_every_registered_phase(self) -> AutomationBoundariesRegistry:
+        expected = {f"{value:02d}" for value in range(12)} | {"99"}
+        actual = tuple(item.phase_id for item in self.boundaries)
+        if len(set(actual)) != len(actual):
+            raise ValueError("automation boundaries contain duplicate phase IDs")
+        if set(actual) != expected:
+            raise ValueError("automation boundaries must cover phases 00-11 and 99 exactly")
+        return self
 
 
 def load_phase_methodology(phase_id: str) -> PhaseMethodology:
@@ -94,11 +245,13 @@ def load_authority_registry() -> AuthorityRegistry:
 
 
 def load_discrepancy_registry() -> DiscrepancyRegistry:
-    registry = DiscrepancyRegistry.model_validate(_load_packaged_yaml("discrepancies.yaml"))
-    identities = tuple(item.discrepancy_id for item in registry.discrepancies)
-    if len(set(identities)) != len(identities):
-        raise MethodologyError("methodology discrepancies contain duplicate stable IDs")
-    return registry
+    return DiscrepancyRegistry.model_validate(_load_packaged_yaml("discrepancies.yaml"))
+
+
+def load_automation_boundaries() -> AutomationBoundariesRegistry:
+    return AutomationBoundariesRegistry.model_validate(
+        _load_packaged_yaml("automation_boundaries.yaml")
+    )
 
 
 def _load_packaged_yaml(filename: str) -> object:

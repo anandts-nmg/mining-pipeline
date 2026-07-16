@@ -179,7 +179,7 @@ def test_text_like_file_with_invalid_utf8_fails_closed(tmp_path: Path) -> None:
     assert secret_findings(path) == ("unscannable text encoding",)
 
 
-@pytest.mark.parametrize("name", ["README.md", ".env.example", "CLAUDE.md", "file.weird"])
+@pytest.mark.parametrize("name", ["AGENTS.md", ".env.example", "notes.md", "file.weird"])
 def test_every_text_filename_is_scanned(tmp_path: Path, name: str) -> None:
     path = tmp_path / name
     path.write_text("API" + "_KEY=" + "sensitive_value_123456", encoding="utf-8")

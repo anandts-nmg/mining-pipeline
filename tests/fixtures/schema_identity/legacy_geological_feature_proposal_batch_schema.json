@@ -1,0 +1,481 @@
+{
+  "$defs": {
+    "CanonicalJSONValue": {
+      "additionalProperties": false,
+      "description": "Immutable canonical representation of an otherwise nested JSON-like value.",
+      "properties": {
+        "canonical_json": {
+          "minLength": 1,
+          "title": "Canonical Json",
+          "type": "string"
+        }
+      },
+      "required": [
+        "canonical_json"
+      ],
+      "title": "CanonicalJSONValue",
+      "type": "object"
+    },
+    "ConfidenceComponent": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Score",
+          "type": "number"
+        },
+        "rationale": {
+          "minLength": 1,
+          "title": "Rationale",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "score",
+        "rationale"
+      ],
+      "title": "ConfidenceComponent",
+      "type": "object"
+    },
+    "DraftLayerName": {
+      "enum": [
+        "geology_units",
+        "faults_structures",
+        "intrusive_contacts",
+        "dykes_veins",
+        "mineral_occurrences",
+        "alteration_zones",
+        "prospect_proposals"
+      ],
+      "title": "DraftLayerName",
+      "type": "string"
+    },
+    "NamedJSONValue": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/CanonicalJSONValue"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "title": "NamedJSONValue",
+      "type": "object"
+    },
+    "PageLocator": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "page",
+          "default": "page",
+          "title": "Kind",
+          "type": "string"
+        },
+        "page_number": {
+          "minimum": 1,
+          "title": "Page Number",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "page_number"
+      ],
+      "title": "PageLocator",
+      "type": "object"
+    },
+    "PixelLineString": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "LineString",
+          "default": "LineString",
+          "title": "Type",
+          "type": "string"
+        },
+        "coordinates": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "minItems": 2,
+          "title": "Coordinates",
+          "type": "array"
+        }
+      },
+      "required": [
+        "coordinates"
+      ],
+      "title": "PixelLineString",
+      "type": "object"
+    },
+    "PixelPoint": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "Point",
+          "default": "Point",
+          "title": "Type",
+          "type": "string"
+        },
+        "coordinates": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Coordinates",
+          "type": "array"
+        }
+      },
+      "required": [
+        "coordinates"
+      ],
+      "title": "PixelPoint",
+      "type": "object"
+    },
+    "PixelPolygon": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "Polygon",
+          "default": "Polygon",
+          "title": "Type",
+          "type": "string"
+        },
+        "coordinates": {
+          "items": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            "type": "array"
+          },
+          "minItems": 1,
+          "title": "Coordinates",
+          "type": "array"
+        }
+      },
+      "required": [
+        "coordinates"
+      ],
+      "title": "PixelPolygon",
+      "type": "object"
+    },
+    "RasterTileLocator": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "raster_tile",
+          "default": "raster_tile",
+          "title": "Kind",
+          "type": "string"
+        },
+        "tile_id": {
+          "minLength": 1,
+          "title": "Tile Id",
+          "type": "string"
+        },
+        "x_offset": {
+          "minimum": 0,
+          "title": "X Offset",
+          "type": "integer"
+        },
+        "y_offset": {
+          "minimum": 0,
+          "title": "Y Offset",
+          "type": "integer"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "title": "Width",
+          "type": "integer"
+        },
+        "height": {
+          "exclusiveMinimum": 0,
+          "title": "Height",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "tile_id",
+        "x_offset",
+        "y_offset",
+        "width",
+        "height"
+      ],
+      "title": "RasterTileLocator",
+      "type": "object"
+    },
+    "RiskLevel": {
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ],
+      "title": "RiskLevel",
+      "type": "string"
+    },
+    "SourceFeatureLocator": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "source_feature",
+          "default": "source_feature",
+          "title": "Kind",
+          "type": "string"
+        },
+        "layer_name": {
+          "minLength": 1,
+          "title": "Layer Name",
+          "type": "string"
+        },
+        "feature_id": {
+          "minLength": 1,
+          "title": "Feature Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "layer_name",
+        "feature_id"
+      ],
+      "title": "SourceFeatureLocator",
+      "type": "object"
+    },
+    "SourceReference": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "minLength": 1,
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "locators": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "page": "#/$defs/PageLocator",
+                "raster_tile": "#/$defs/RasterTileLocator",
+                "source_feature": "#/$defs/SourceFeatureLocator"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/PageLocator"
+              },
+              {
+                "$ref": "#/$defs/RasterTileLocator"
+              },
+              {
+                "$ref": "#/$defs/SourceFeatureLocator"
+              }
+            ]
+          },
+          "minItems": 1,
+          "title": "Locators",
+          "type": "array"
+        }
+      },
+      "required": [
+        "asset_id",
+        "sha256",
+        "locators"
+      ],
+      "title": "SourceReference",
+      "type": "object"
+    },
+    "VerticalFeatureProposal": {
+      "additionalProperties": false,
+      "description": "One provider proposal expressed only in source-tile pixel coordinates.",
+      "properties": {
+        "feature_id": {
+          "title": "Feature Id",
+          "type": "string"
+        },
+        "layer": {
+          "$ref": "#/$defs/DraftLayerName"
+        },
+        "feature_type": {
+          "title": "Feature Type",
+          "type": "string"
+        },
+        "legend_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Legend Code"
+        },
+        "geometry": {
+          "discriminator": {
+            "mapping": {
+              "LineString": "#/$defs/PixelLineString",
+              "Point": "#/$defs/PixelPoint",
+              "Polygon": "#/$defs/PixelPolygon"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/PixelPoint"
+            },
+            {
+              "$ref": "#/$defs/PixelLineString"
+            },
+            {
+              "$ref": "#/$defs/PixelPolygon"
+            }
+          ],
+          "title": "Geometry"
+        },
+        "geometry_tile_id": {
+          "title": "Geometry Tile Id",
+          "type": "string"
+        },
+        "attributes": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/NamedJSONValue"
+          },
+          "title": "Attributes",
+          "type": "array"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "confidence_components": {
+          "items": {
+            "$ref": "#/$defs/ConfidenceComponent"
+          },
+          "minItems": 1,
+          "title": "Confidence Components",
+          "type": "array"
+        },
+        "source_references": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "minItems": 1,
+          "title": "Source References",
+          "type": "array"
+        },
+        "evidence_observations": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Evidence Observations",
+          "type": "array"
+        },
+        "limitations": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Limitations",
+          "type": "array"
+        },
+        "risk_level": {
+          "$ref": "#/$defs/RiskLevel"
+        },
+        "review_status": {
+          "const": "AI_DRAFT",
+          "default": "AI_DRAFT",
+          "title": "Review Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "feature_id",
+        "layer",
+        "feature_type",
+        "geometry",
+        "geometry_tile_id",
+        "confidence",
+        "confidence_components",
+        "source_references",
+        "evidence_observations",
+        "limitations",
+        "risk_level"
+      ],
+      "title": "VerticalFeatureProposal",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "proposals": {
+      "items": {
+        "$ref": "#/$defs/VerticalFeatureProposal"
+      },
+      "minItems": 1,
+      "title": "Proposals",
+      "type": "array"
+    },
+    "limitations": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Limitations",
+      "type": "array"
+    }
+  },
+  "required": [
+    "proposals"
+  ],
+  "title": "GeologicalFeatureProposalBatch",
+  "type": "object"
+}

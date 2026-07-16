@@ -1,0 +1,72 @@
+{
+  "format_version": "1.0.0",
+  "fingerprint_algorithm": "buduunkhad-json-schema-semantic-v1",
+  "schemas": [
+    {
+      "schema_id": "buduunkhad.ai.document_extraction",
+      "version": "1.0.0",
+      "sha256": "45f056f872672825181c98ce57d2d6cd036296bb11256b980e4109477d11c490",
+      "legacy_fingerprints": [
+        {
+          "fingerprint_algorithm": "pydantic-model-json-schema-v1",
+          "sha256": "07648e6fb2ab8366064869571d8e4d0169b2121d049cb88b4af4ed70f6323f5f"
+        }
+      ]
+    },
+    {
+      "schema_id": "buduunkhad.ai.feature_critique",
+      "version": "1.0.0",
+      "sha256": "1528421e9e0bb2db291e884f9eb26f3086b63dd333f85e26321983bd9b6c0ef4",
+      "legacy_fingerprints": [
+        {
+          "fingerprint_algorithm": "pydantic-model-json-schema-v1",
+          "sha256": "c3e39c65c163fbcae546e8561ca5c0aa6dcc0f341af80bc1955e389867275e33"
+        }
+      ]
+    },
+    {
+      "schema_id": "buduunkhad.ai.legend_extraction",
+      "version": "1.0.0",
+      "sha256": "14b7599186ab851bb3b09ea900b15a608a2de525877f863fee7788b9fdd2d7b1",
+      "legacy_fingerprints": [
+        {
+          "fingerprint_algorithm": "pydantic-model-json-schema-v1",
+          "sha256": "a936d0a50e67ee4381d237946cca1d9d3edba503fac20a835bc769142db8848b"
+        }
+      ]
+    },
+    {
+      "schema_id": "buduunkhad.ai.map_feature_interpretation",
+      "version": "1.0.0",
+      "sha256": "132ee1c2ec1effc07afe27a1317d1b604f356af9551013432f7c1cea78b5302b",
+      "legacy_fingerprints": [
+        {
+          "fingerprint_algorithm": "pydantic-model-json-schema-v1",
+          "sha256": "fbb8b284243e25128544206f3af891da2c6255a300ea1c68a13d793912c0eb35"
+        }
+      ]
+    },
+    {
+      "schema_id": "buduunkhad.ai.geological_feature_proposal_batch",
+      "version": "1.0.0",
+      "sha256": "ddea03102150d2d9b5cacee59f88aeec4354843fa93583f0fee63ea563a4762b",
+      "legacy_fingerprints": [
+        {
+          "fingerprint_algorithm": "pydantic-model-json-schema-v1",
+          "sha256": "9b869540ad998ff8073e9674c52b4fb8d499cb835c4e477c65854b561682db5e"
+        }
+      ]
+    },
+    {
+      "schema_id": "buduunkhad.ai.feature_critique_batch",
+      "version": "1.0.0",
+      "sha256": "9af0620156d6b3dc96d374324dcd3753372326424a4627f56d3083c010a51389",
+      "legacy_fingerprints": [
+        {
+          "fingerprint_algorithm": "pydantic-model-json-schema-v1",
+          "sha256": "9885cf2a42ff6cefd80928c3707e3e98bfad143827288a7ab1e6e335fcfa9719"
+        }
+      ]
+    }
+  ]
+}

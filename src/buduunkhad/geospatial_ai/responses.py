@@ -61,10 +61,10 @@ def ingest_saved_response(
     if response.received_at < package.request.created_at:
         raise ResponseIngestionError("saved response predates its request")
     schemas = default_schema_registry()
-    prompt = PromptRegistry.load_packaged(schema_registry=schemas).resolve(response.prompt)
-    if prompt.output_schema != response.schema_identity:
-        raise ResponseIngestionError("saved response prompt/schema binding is invalid")
     registration = schemas.resolve(response.schema_identity)
+    prompt = PromptRegistry.load_packaged(schema_registry=schemas).resolve(response.prompt)
+    if not registration.accepts(prompt.output_schema):
+        raise ResponseIngestionError("saved response prompt/schema binding is invalid")
     payload = response.payload.to_python()
     try:
         output = registration.output_model.model_validate(payload)

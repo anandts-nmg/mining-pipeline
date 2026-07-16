@@ -14,6 +14,12 @@ from typing import TYPE_CHECKING, TypeVar, cast
 
 from pydantic import BaseModel
 
+from buduunkhad.ai.schema_identity import (
+    LEGACY_SCHEMA_FINGERPRINT_ALGORITHM,
+    SEMANTIC_SCHEMA_FINGERPRINT_ALGORITHM,
+    semantic_schema_sha256,
+)
+
 if TYPE_CHECKING:
     from buduunkhad.ai.contracts import AIRequest, SchemaIdentity
 
@@ -91,14 +97,28 @@ def sha256_file(path: Path) -> str:
 def schema_identity_for_model(
     model: type[ModelT], *, schema_id: str, version: str
 ) -> SchemaIdentity:
-    """Build a SchemaIdentity without creating an import cycle at module import."""
+    """Build the current, framework-independent identity for a Pydantic model."""
     from buduunkhad.ai.contracts import SchemaIdentity
 
     return SchemaIdentity(
         schema_id=schema_id,
         version=version,
-        sha256=sha256_value(model.model_json_schema()),
+        sha256=semantic_schema_sha256(model.model_json_schema()),
+        fingerprint_algorithm=SEMANTIC_SCHEMA_FINGERPRINT_ALGORITHM,
     )
+
+
+def schema_identity_fingerprint_value(identity: SchemaIdentity) -> dict[str, str]:
+    """Project an identity into higher-level hashes without rewriting legacy history."""
+
+    value = {
+        "schema_id": identity.schema_id,
+        "version": identity.version,
+        "sha256": identity.sha256,
+    }
+    if identity.fingerprint_algorithm != LEGACY_SCHEMA_FINGERPRINT_ALGORITHM:
+        value["fingerprint_algorithm"] = identity.fingerprint_algorithm
+    return value
 
 
 def request_fingerprint(request: AIRequest) -> str:
@@ -121,7 +141,7 @@ def request_fingerprint(request: AIRequest) -> str:
         "task_type": request.task_type,
         "sources": tuple(sources),
         "prompt": request.prompt,
-        "schema": request.output_schema,
+        "schema": schema_identity_fingerprint_value(request.output_schema),
         "provider": request.provider,
         "interpretation_parameters": request.interpretation_parameters,
         "subject": request.subject,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from importlib import resources
@@ -25,7 +26,19 @@ from buduunkhad.ai.contracts import (
     Sha256,
     TaskType,
 )
-from buduunkhad.ai.fingerprint import schema_identity_for_model, sha256_bytes, sha256_value
+from buduunkhad.ai.fingerprint import (
+    schema_identity_fingerprint_value,
+    schema_identity_for_model,
+    sha256_bytes,
+    sha256_value,
+)
+from buduunkhad.ai.schema_identity import (
+    LEGACY_SCHEMA_FINGERPRINT_ALGORITHM,
+    SEMANTIC_SCHEMA_FINGERPRINT_ALGORITHM,
+    SchemaContractRecord,
+    SchemaFingerprintError,
+    load_packaged_schema_contracts,
+)
 
 
 class PromptRegistryError(ValueError):
@@ -135,8 +148,13 @@ class ResolvedPrompt(FrozenModel):
 class SchemaRegistration:
     identity: SchemaIdentity
     output_model: type[FrozenModel]
+    legacy_identities: tuple[SchemaIdentity, ...] = ()
 
     def __post_init__(self) -> None:
+        if self.identity.fingerprint_algorithm != SEMANTIC_SCHEMA_FINGERPRINT_ALGORITHM:
+            raise PromptSchemaMismatchError(
+                "current schema registrations must use semantic identity"
+            )
         current = schema_identity_for_model(
             self.output_model,
             schema_id=self.identity.schema_id,
@@ -147,6 +165,22 @@ class SchemaRegistration:
                 f"schema registration hash is not current: "
                 f"{self.identity.schema_id}@{self.identity.version}"
             )
+        seen: set[str] = set()
+        for legacy in self.legacy_identities:
+            if legacy.fingerprint_algorithm != LEGACY_SCHEMA_FINGERPRINT_ALGORITHM:
+                raise PromptSchemaMismatchError(
+                    "legacy schema aliases must use the legacy algorithm"
+                )
+            if (legacy.schema_id, legacy.version) != (
+                self.identity.schema_id,
+                self.identity.version,
+            ):
+                raise PromptSchemaMismatchError(
+                    "legacy schema alias identity does not match registration"
+                )
+            if legacy.sha256 in seen:
+                raise PromptSchemaMismatchError("duplicate legacy schema alias")
+            seen.add(legacy.sha256)
 
     @classmethod
     def for_model(
@@ -155,6 +189,8 @@ class SchemaRegistration:
         *,
         schema_id: str,
         version: str,
+        expected_sha256: str | None = None,
+        legacy_sha256: tuple[str, ...] = (),
     ) -> SchemaRegistration:
         identity = schema_identity_for_model(
             output_model,
@@ -163,7 +199,20 @@ class SchemaRegistration:
         )
         if not isinstance(identity, SchemaIdentity):  # narrow the local import-cycle return type
             raise TypeError("schema identity construction failed")
-        return cls(identity=identity, output_model=output_model)
+        if expected_sha256 is not None and identity.sha256 != expected_sha256:
+            raise PromptSchemaMismatchError(
+                f"semantic schema contract mismatch: {schema_id}@{version}"
+            )
+        aliases = tuple(
+            SchemaIdentity(schema_id=schema_id, version=version, sha256=digest)
+            for digest in legacy_sha256
+        )
+        return cls(identity=identity, output_model=output_model, legacy_identities=aliases)
+
+    def accepts(self, identity: SchemaIdentity) -> bool:
+        """Accept only the current identity or an exact registered historical identity."""
+
+        return identity == self.identity or identity in self.legacy_identities
 
 
 class SchemaRegistry:
@@ -195,7 +244,7 @@ class SchemaRegistry:
             raise PromptSchemaMismatchError(
                 f"schema is not approved: {identity.schema_id}@{identity.version}"
             ) from exc
-        if registration.identity != identity:
+        if not registration.accepts(identity):
             raise PromptSchemaMismatchError(
                 f"schema hash mismatch: {identity.schema_id}@{identity.version}"
             )
@@ -219,39 +268,76 @@ def default_schema_registry() -> SchemaRegistry:
         MapFeatureInterpretation,
     )
 
-    return SchemaRegistry(
-        (
-            SchemaRegistration.for_model(
-                DocumentExtraction,
-                schema_id="buduunkhad.ai.document_extraction",
-                version="1.0.0",
-            ),
-            SchemaRegistration.for_model(
-                FeatureCritique,
-                schema_id="buduunkhad.ai.feature_critique",
-                version="1.0.0",
-            ),
-            SchemaRegistration.for_model(
-                LegendExtraction,
-                schema_id="buduunkhad.ai.legend_extraction",
-                version="1.0.0",
-            ),
-            SchemaRegistration.for_model(
-                MapFeatureInterpretation,
-                schema_id="buduunkhad.ai.map_feature_interpretation",
-                version="1.0.0",
-            ),
-            SchemaRegistration.for_model(
-                GeologicalFeatureProposalBatch,
-                schema_id="buduunkhad.ai.geological_feature_proposal_batch",
-                version="1.0.0",
-            ),
-            SchemaRegistration.for_model(
-                FeatureCritiqueBatch,
-                schema_id="buduunkhad.ai.feature_critique_batch",
-                version="1.0.0",
-            ),
-        )
+    try:
+        contracts = load_packaged_schema_contracts()
+    except SchemaFingerprintError as exc:
+        raise PromptSchemaMismatchError("packaged schema identity contracts are invalid") from exc
+    registrations = (
+        _contract_registration(
+            DocumentExtraction,
+            schema_id="buduunkhad.ai.document_extraction",
+            version="1.0.0",
+            contracts=contracts,
+        ),
+        _contract_registration(
+            FeatureCritique,
+            schema_id="buduunkhad.ai.feature_critique",
+            version="1.0.0",
+            contracts=contracts,
+        ),
+        _contract_registration(
+            LegendExtraction,
+            schema_id="buduunkhad.ai.legend_extraction",
+            version="1.0.0",
+            contracts=contracts,
+        ),
+        _contract_registration(
+            MapFeatureInterpretation,
+            schema_id="buduunkhad.ai.map_feature_interpretation",
+            version="1.0.0",
+            contracts=contracts,
+        ),
+        _contract_registration(
+            GeologicalFeatureProposalBatch,
+            schema_id="buduunkhad.ai.geological_feature_proposal_batch",
+            version="1.0.0",
+            contracts=contracts,
+        ),
+        _contract_registration(
+            FeatureCritiqueBatch,
+            schema_id="buduunkhad.ai.feature_critique_batch",
+            version="1.0.0",
+            contracts=contracts,
+        ),
+    )
+    registered_keys = {
+        (registration.identity.schema_id, registration.identity.version)
+        for registration in registrations
+    }
+    if set(contracts) != registered_keys:
+        raise PromptSchemaMismatchError("packaged schema contract catalogue has unused entries")
+    return SchemaRegistry(registrations)
+
+
+def _contract_registration(
+    output_model: type[FrozenModel],
+    *,
+    schema_id: str,
+    version: str,
+    contracts: Mapping[tuple[str, str], SchemaContractRecord],
+) -> SchemaRegistration:
+    try:
+        contract = contracts[(schema_id, version)]
+    except KeyError as exc:
+        raise PromptSchemaMismatchError(
+            f"schema has no checked contract: {schema_id}@{version}"
+        ) from exc
+    return SchemaRegistration.for_model(
+        output_model,
+        schema_id=schema_id,
+        version=version,
+        expected_sha256=contract.sha256,
+        legacy_sha256=contract.legacy_sha256,
     )
 
 
@@ -282,7 +368,7 @@ def _prompt_content_hash(
             "version": version,
             "task_type": task_type,
             "components": tuple(sorted(components, key=lambda item: item[0])),
-            "output_schema": output_schema,
+            "output_schema": schema_identity_fingerprint_value(output_schema),
         }
     )
 

@@ -103,7 +103,8 @@ assert critic.components[0].text
 assert vertical.components[0].text
 assert authority.sources
 assert phase05.phase_id == "05"
-assert len(discrepancies.discrepancies) == 4
+assert len(discrepancies.discrepancies) == 32
+assert discrepancies.unresolved()
 print(prompt.identity.sha256)
 """
     result = subprocess.run(

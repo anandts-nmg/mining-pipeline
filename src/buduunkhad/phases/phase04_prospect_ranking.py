@@ -16,7 +16,9 @@ dirs (whitelisted by keyword, so pipeline outputs never match): **focused altera
 (argillic / porphyry / sericite / silica, or hand-digitized alteration) activates the ``rs``
 criterion, and **geochem-anomaly** polygons drive ``geochem`` and populate each prospect's
 ``elements`` from the anomaly's element attribute. Regional chlorite-epidote *propylitic halo* is
-deliberately excluded as context — it blankets the district and would re-saturate the score.
+deliberately excluded as context — it blankets the district and would re-saturate the score. Any
+layer carrying the AI handoff lifecycle is also excluded until an authoritative integration adapter
+is adopted; file proximity is never sufficient authority.
 
 **Honesty (invariant #8).** Criteria whose evidence is absent (``rs`` without fed alteration,
 ``model_fit`` until the human completes the 03A score matrix, ``access`` without a roads layer)
@@ -263,8 +265,13 @@ class Phase04ProspectRanking(Phase):
 
     def _evidence_gpkg(self, ctx: RunContext) -> Path | None:
         p03 = ctx.phase_dir("03") / "09_Geological_Evidence_Layers_GPKG"
-        gpkgs = sorted(p03.glob("*Geological_Evidence*.gpkg"))
-        return gpkgs[0] if gpkgs else None
+        expected = p03 / naming.data_name(
+            ctx.config.data_prefix,
+            "Geological_Evidence_Layers",
+            version=1,
+            ext="gpkg",
+        )
+        return expected if expected.is_file() else None
 
     def _load_evidence(self, gpkg: Path) -> dict:  # type: ignore[type-arg]
         """Load the non-empty layers of the Phase 03 evidence GPKG into {name: GeoDataFrame}."""
@@ -275,7 +282,9 @@ class Phase04ProspectRanking(Phase):
             except Exception:
                 continue
             if g is not None and len(g):
-                ev[layer] = g
+                eligible = self._legacy_evidence_rows(g)
+                if len(eligible):
+                    ev[layer] = eligible
         return ev
 
     def _load_boundary(self, ctx: RunContext, ev: dict):  # type: ignore[no-untyped-def,type-arg]
@@ -311,6 +320,8 @@ class Phase04ProspectRanking(Phase):
             if not base.exists():
                 continue
             for src in sorted(base.rglob("*.gpkg")):
+                if "AI_DRAFT" in src.name.upper():
+                    continue
                 try:
                     layers = vector_io.list_gpkg_layers(src)
                 except Exception:
@@ -327,6 +338,9 @@ class Phase04ProspectRanking(Phase):
                     except Exception:
                         continue
                     if g is None or len(g) == 0:
+                        continue
+                    g = self._legacy_evidence_rows(g)
+                    if len(g) == 0:
                         continue
                     seen.add(key)
                     g = g.to_crs(epsg=ctx.config.target_epsg)
@@ -348,6 +362,27 @@ class Phase04ProspectRanking(Phase):
             "geochem_union": _union(geochem_gdfs),
             "geochem_gdfs": geochem_gdfs,
         }
+
+    @staticmethod
+    def _legacy_evidence_rows(gdf):  # type: ignore[no-untyped-def]
+        """Exclude every AI-lifecycle row until an authoritative adapter exists.
+
+        Untagged layers retain the legacy human-authored behavior. A standalone Phase 03 handoff
+        package is not an authoritative Phase 04 input merely because it was copied beneath a
+        discovered directory, even when it carries ``ACCEPTED_EVIDENCE``. A future integration
+        must resolve that package explicitly before the fixed-grid comparator can consume it.
+        """
+
+        lifecycle = {
+            "proposal_state",
+            "review_state",
+            "evidence_state",
+            "review_decision",
+            "review_status",
+        }
+        if not lifecycle & set(gdf.columns):
+            return gdf
+        return gdf.iloc[0:0].copy()
 
     def _load_model_fit(self, ctx: RunContext) -> None:
         """Score guide §6.7 (deposit-model fit, 10 pts) from the Phase 03 03A score matrix.

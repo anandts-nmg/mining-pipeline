@@ -17,6 +17,13 @@ ai_app = typer.Typer(
     no_args_is_help=True,
 )
 
+phase03_ai_app = typer.Typer(
+    add_completion=False,
+    help="Package validated AI_DRAFT geometry for human Phase 03 review and promotion.",
+    no_args_is_help=True,
+)
+ai_app.add_typer(phase03_ai_app, name="phase03")
+
 
 def _context(config_path: Path):  # type: ignore[no-untyped-def]
     from buduunkhad.config import load_config
@@ -283,3 +290,67 @@ def inspect_job(
     except (OSError, ValueError, RuntimeError) as exc:
         _abort(exc)
     typer.echo(view.model_dump_json(indent=2))
+
+
+@phase03_ai_app.command("import-ai-draft")
+def phase03_import_ai_draft(
+    run_id: str = typer.Option(..., "--run-id"),
+    draft: Path = typer.Option(..., "--draft", exists=True, dir_okay=False),
+    review_package: Path = typer.Option(..., "--review-package", file_okay=False),
+    config: Path = typer.Option("config/project.yaml", "--config", "-c"),
+) -> None:
+    """Create an isolated Phase 03 QGIS review package from one authoritative AI draft."""
+
+    from buduunkhad.core import naming, paths
+    from buduunkhad.geospatial_ai.phase03_handoff import import_ai_draft_review_package
+
+    try:
+        project, roots = _context(config)
+        evidence_directory = (
+            paths.phase_dir(project.output_root, "03") / "09_Geological_Evidence_Layers_GPKG"
+        )
+        expected_name = naming.data_name(
+            project.data_prefix,
+            "Geological_Evidence_Layers",
+            version=1,
+            ext="gpkg",
+        )
+        existing = evidence_directory / expected_name
+        manifest = import_ai_draft_review_package(
+            draft,
+            review_package,
+            roots=roots,
+            run_id=run_id,
+            expected_target_crs=project.crs.target_authority,
+            existing_evidence=existing if existing.is_file() else None,
+        )
+    except (OSError, ValueError, RuntimeError) as exc:
+        _abort(exc)
+    typer.echo(f"Phase 03 review package: {review_package}")
+    typer.echo(f"Review package ID: {manifest.package_id}")
+    typer.echo("Original AI_DRAFT and authoritative Phase 03 evidence were not modified.")
+
+
+@phase03_ai_app.command("promote-reviewed")
+def phase03_promote_reviewed(
+    review_package: Path = typer.Option(..., "--review-package", exists=True, file_okay=False),
+    output: Path = typer.Option(..., "--output", dir_okay=False),
+    config: Path = typer.Option("config/project.yaml", "--config", "-c"),
+) -> None:
+    """Promote only explicitly accepted human-reviewed features into standalone evidence."""
+
+    from buduunkhad.geospatial_ai.phase03_handoff import promote_reviewed_evidence
+
+    try:
+        _project, roots = _context(config)
+        result = promote_reviewed_evidence(
+            review_package,
+            output,
+            roots=roots,
+        )
+    except (OSError, ValueError, RuntimeError) as exc:
+        _abort(exc)
+    action = "Created" if result.created else "Verified existing"
+    typer.echo(f"{action} accepted Phase 03 evidence: {result.output}")
+    typer.echo(f"Promoted features: {len(result.promoted_feature_ids)}")
+    typer.echo(f"Append-only promotion audit: {result.audit_ledger}")

@@ -172,6 +172,8 @@ def _write_geopackage(
         "properties": {
             "feature_id": "str",
             "feature_ver": "int",
+            "feature_type": "str",
+            "legend_code": "str",
             "parent_ids": "str",
             "run_id": "str",
             "phase_id": "str",
@@ -288,6 +290,8 @@ def _properties(
     return {
         "feature_id": proposal.feature_id,
         "feature_ver": 1,
+        "feature_type": proposal.feature_type,
+        "legend_code": proposal.legend_code or "",
         "parent_ids": "[]",
         "run_id": package.request.run_id,
         "phase_id": package.request.phase_id,

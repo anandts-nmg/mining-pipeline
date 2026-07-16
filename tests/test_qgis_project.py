@@ -79,9 +79,14 @@ def test_qgz_tree_projectlayers_and_order_consistent(tmp_path):
 
 
 def test_write_layered_qgz_is_deterministic(tmp_path):
-    a = write_layered_qgz(tmp_path / "a.qgz", epsg=32647, title="T", layers=_layers())
-    b = write_layered_qgz(tmp_path / "b.qgz", epsg=32647, title="T", layers=_layers())
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    a = write_layered_qgz(first / "project.qgz", epsg=32647, title="T", layers=_layers())
+    b = write_layered_qgz(second / "project.qgz", epsg=32647, title="T", layers=_layers())
     with zipfile.ZipFile(a) as za, zipfile.ZipFile(b) as zb:
         xa = za.read(next(n for n in za.namelist() if n.endswith(".qgs")))
         xb = zb.read(next(n for n in zb.namelist() if n.endswith(".qgs")))
     assert xa == xb
+    assert a.read_bytes() == b.read_bytes()

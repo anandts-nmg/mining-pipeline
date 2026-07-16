@@ -40,7 +40,11 @@ class QgzLayer:
     ``../06_Master_GeoPackage_Schema/Master.gpkg|layername=license_boundary``.
     ``geometry`` uses the config vocabulary (keys of :data:`GEOMETRY_ATTR`).
     ``symbol`` is an optional ("fill"|"line", properties) pair for a deterministic
-    single-symbol renderer; layers without one get QGIS defaults on open.
+    single-symbol renderer; layers without one get QGIS defaults on open. ``subset_string``
+    provides an ordinary QGIS layer filter, ``epsg`` may override the project CRS for a
+    source layer such as a georeferenced review preview, and ``read_only`` prevents ordinary
+    edits through the generated project. Read-only project metadata remains defense in depth;
+    callers must still validate source bytes before consuming them.
     """
 
     name: str
@@ -50,6 +54,9 @@ class QgzLayer:
     visible: bool = True
     group: str = "Layers"
     provider: str = "ogr"
+    subset_string: str | None = None
+    epsg: int | None = None
+    read_only: bool = False
 
 
 def polygon_outline(color_rgba: str, width_mm: float, *, dash: bool = False):
@@ -201,8 +208,11 @@ def write_layered_qgz(
         ET.SubElement(maplayer, "id").text = lid
         ET.SubElement(maplayer, "datasource").text = lyr.source
         ET.SubElement(maplayer, "layername").text = lyr.name
+        if lyr.subset_string is not None:
+            ET.SubElement(maplayer, "subsetString").text = lyr.subset_string
+        ET.SubElement(maplayer, "readOnly").text = "1" if lyr.read_only else "0"
         srs = ET.SubElement(maplayer, "srs")
-        srs.append(_srs_element(epsg))
+        srs.append(_srs_element(lyr.epsg or epsg))
         ET.SubElement(maplayer, "provider", {"encoding": "UTF-8"}).text = lyr.provider
         if lyr.symbol is not None and geometry_attr not in {"No geometry", "Raster"}:
             maplayer.append(_renderer_element(lyr.symbol))
@@ -213,7 +223,10 @@ def write_layered_qgz(
     if path.exists():
         path.unlink()
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(f"{path.stem}.qgs", qgs_xml)
+        member = zipfile.ZipInfo(f"{path.stem}.qgs", date_time=(1980, 1, 1, 0, 0, 0))
+        member.compress_type = zipfile.ZIP_DEFLATED
+        member.external_attr = 0o600 << 16
+        zf.writestr(member, qgs_xml.encode("utf-8"))
     return path
 
 
@@ -234,6 +247,7 @@ def read_qgz_layers(path: Path) -> list[dict[str, str]]:
                 "name": ml.findtext("layername") or "",
                 "datasource": ml.findtext("datasource") or "",
                 "geometry": ml.get("geometry") or ("Raster" if ml.get("type") == "raster" else ""),
+                "subset": ml.findtext("subsetString") or "",
             }
         )
     return out

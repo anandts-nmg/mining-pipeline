@@ -10,6 +10,7 @@ those points so cells there score (geology-contact 20 + structure 15 + geochem 1
 from __future__ import annotations
 
 import openpyxl
+import pytest
 
 from buduunkhad.core import paths, vector_io
 from buduunkhad.core.gates import GateStatus
@@ -286,3 +287,114 @@ def test_phase04_attribute_evidence_activates_rs_and_elements(raw_archive):
     # geology 20 + occurrence 15 + geochem 20 + rs 15 + structure 10 + confidence -> class A
     assert int(g["max_score"].max()) >= 75
     assert (g["prospect_class"] == "A").any()
+
+
+@pytest.mark.parametrize(
+    ("review_state", "evidence_state", "review_decision"),
+    [
+        ("PENDING", "NOT_ACCEPTED", "pending"),
+        ("HUMAN_REVIEWED", "ACCEPTED_EVIDENCE", "accepted"),
+    ],
+)
+def test_phase04_results_ignore_ai_handoff_attribute_evidence_without_authoritative_adapter(
+    raw_archive,
+    review_state: str,
+    evidence_state: str,
+    review_decision: str,
+):
+    """File proximity alone cannot activate handoff evidence in the Phase 04 comparator."""
+
+    import geopandas as gpd
+
+    config, register, _raw = raw_archive
+    ctx = _ctx(config, register)
+    _run_to_03(ctx)
+    Phase03GeologySynthesis().run(ctx)
+
+    baseline = Phase04ProspectRanking()
+    baseline.prepare(ctx)
+    baseline.run(ctx)
+    baseline_candidates = baseline._n_candidates
+    baseline_available = dict(baseline._criteria_available)
+
+    p03_input = _evidence_gpkg_03(config).parent.parent / "01_Input_Working_Copy"
+    p03_input.mkdir(parents=True, exist_ok=True)
+    boundary = vector_io.read_layer(_evidence_gpkg_03(config), "license_boundary")
+    geometry = boundary.geometry.union_all().buffer(100)
+    gpd.GeoDataFrame(
+        {
+            "proposal_state": ["AI_DRAFT"],
+            "review_state": [review_state],
+            "evidence_state": [evidence_state],
+            "review_decision": [review_decision],
+            "geometry": [geometry],
+        },
+        crs=f"EPSG:{config.target_epsg}",
+    ).to_file(
+        p03_input / "unreviewed_aster_alteration.gpkg",
+        layer="aster_alteration_zones",
+        driver="GPKG",
+    )
+
+    after = Phase04ProspectRanking()
+    after.prepare(ctx)
+    after.run(ctx)
+    assert after._n_candidates == baseline_candidates
+    assert after._criteria_available == baseline_available
+    assert after._criteria_available["rs"] is False
+
+
+def test_phase04_uses_only_the_exact_legacy_evidence_package_identity(raw_archive):
+    """A lookalike GeoPackage cannot replace the configured Phase 03 evidence input by sorting."""
+
+    import geopandas as gpd
+
+    config, register, _raw = raw_archive
+    ctx = _ctx(config, register)
+    _run_to_03(ctx)
+    Phase03GeologySynthesis().run(ctx)
+
+    baseline = Phase04ProspectRanking()
+    baseline.prepare(ctx)
+    baseline.run(ctx)
+    baseline_candidates = baseline._n_candidates
+    baseline_available = dict(baseline._criteria_available)
+
+    evidence_directory = _evidence_gpkg_03(config).parent
+    boundary = vector_io.read_layer(_evidence_gpkg_03(config), "license_boundary")
+    gpd.GeoDataFrame(
+        {
+            "proposal_state": ["AI_DRAFT"],
+            "review_state": ["PENDING"],
+            "evidence_state": ["NOT_ACCEPTED"],
+            "geometry": [boundary.geometry.union_all()],
+        },
+        crs=f"EPSG:{config.target_epsg}",
+    ).to_file(
+        evidence_directory / "000_Geological_Evidence_AI_DRAFT.gpkg",
+        layer="geology_units_50k_polygon",
+        driver="GPKG",
+    )
+
+    after = Phase04ProspectRanking()
+    after.prepare(ctx)
+    after.run(ctx)
+    assert after._n_candidates == baseline_candidates
+    assert after._criteria_available == baseline_available
+
+
+def test_phase04_direct_evidence_loader_fails_closed_for_ai_lifecycle(tmp_path):
+    import geopandas as gpd
+    from shapely.geometry import Point
+
+    path = tmp_path / "canonical-looking.gpkg"
+    gpd.GeoDataFrame(
+        {
+            "proposal_state": ["AI_DRAFT"],
+            "review_state": ["HUMAN_REVIEWED"],
+            "evidence_state": ["ACCEPTED_EVIDENCE"],
+            "geometry": [Point(500_000, 5_200_000)],
+        },
+        crs="EPSG:32647",
+    ).to_file(path, layer="mineral_occurrences_point", driver="GPKG")
+    assert Phase04ProspectRanking()._load_evidence(path) == {}

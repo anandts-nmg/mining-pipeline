@@ -415,6 +415,41 @@ def test_phase03_ingest_human_layer(raw_archive):
     assert ingested["validation_status"].iloc[0] == "Historical only"
 
 
+def test_phase03_keeps_ai_handoff_evidence_out_of_legacy_schema_normalization(raw_archive):
+    """Rich AI review lineage must not be stripped by the legacy 14-column normalizer."""
+
+    import geopandas as gpd
+    from shapely.geometry import LineString, MultiLineString
+
+    config, register, _raw = raw_archive
+    ctx = _ctx(config, register)
+    Phase00Archive().run(ctx)
+    phase1 = Phase01DataAudit()
+    phase1.prepare(ctx)
+    phase1.run(ctx)
+    phase = Phase03GeologySynthesis()
+    phase.prepare(ctx)
+    source = paths.phase_dir(config.output_root, "03") / "01_Input_Working_Copy"
+    source.mkdir(parents=True, exist_ok=True)
+    tagged = source / "accepted-ai-evidence.gpkg"
+    gpd.GeoDataFrame(
+        {
+            "feature_id": ["BUD-STR-ACCEPTED"],
+            "proposal_state": ["AI_DRAFT"],
+            "review_state": ["HUMAN_REVIEWED"],
+            "evidence_state": ["ACCEPTED_EVIDENCE"],
+            "request_fingerprint": ["a" * 64],
+            "geometry": [MultiLineString([LineString([(500000, 5200000), (500100, 5200100)])])],
+        },
+        crs=f"EPSG:{config.target_epsg}",
+    ).to_file(tagged, layer="faults_structures_line", driver="GPKG")
+
+    phase.run(ctx)
+    evidence = vector_io.read_layer(_evidence_gpkg(config), "faults_structures_line")
+    assert len(evidence) == 0
+    assert any("kept separate from legacy normalization" in note for note in phase._notes)
+
+
 def test_phase03_qaqc_items_and_gate_go(raw_archive):
     config, register, _raw = raw_archive
     ctx, phase, _result = _run_real(config, register)

@@ -116,6 +116,7 @@ jobs:
             tests/ai/test_review.py \
             tests/ai/test_providers.py \
             tests/ai/test_prompts.py \
+            tests/ai/test_schema_identity.py \
             tests/ai/test_fingerprint.py \
             tests/ai/test_config.py \
             tests/test_ai_vertical_slice.py \

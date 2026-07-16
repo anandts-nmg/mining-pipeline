@@ -20,6 +20,12 @@ from buduunkhad.ai.contracts import (
 )
 from buduunkhad.ai.fingerprint import request_fingerprint, sha256_file, sha256_value
 from buduunkhad.ai.prompts import PromptRegistry, default_schema_registry
+from buduunkhad.ai.schema_identity import (
+    LEGACY_SCHEMA_FINGERPRINT_ALGORITHM,
+    SEMANTIC_SCHEMA_FINGERPRINT_ALGORITHM,
+    SchemaFingerprintError,
+    semantic_schema_sha256,
+)
 from buduunkhad.geospatial_ai.ledger import (
     AIJobLedger,
     LedgerJobCreate,
@@ -142,7 +148,7 @@ def prepare_request_package(
         created_at=timestamp,
         source_references=(source_reference,),
         prompt=prompt.identity,
-        output_schema=prompt.output_schema,
+        output_schema=schema.identity,
         provider=ProviderConfiguration(
             provider=provider,
             model=model or "not-selected",
@@ -249,8 +255,9 @@ def load_request_package(package_directory: Path) -> RequestPackageManifest:
     ):
         raise RequestPackageError("request package prompt or schema binding is inconsistent")
     schemas = default_schema_registry()
+    registration = schemas.resolve(package.schema_identity)
     prompt = PromptRegistry.load_packaged(schema_registry=schemas).resolve(package.prompt)
-    if prompt.output_schema != package.schema_identity:
+    if not registration.accepts(prompt.output_schema):
         raise RequestPackageError("request package prompt is not bound to its schema")
     expected_components = tuple(
         PromptTextComponent(name=item.name, text=item.text, sha256=item.sha256)
@@ -258,9 +265,7 @@ def load_request_package(package_directory: Path) -> RequestPackageManifest:
     )
     if package.prompt_components != expected_components:
         raise RequestPackageError("request package prompt text differs from the locked registry")
-    registration = schemas.resolve(package.schema_identity)
-    if registration.output_model.model_json_schema() != package.output_schema_json.to_python():
-        raise RequestPackageError("request package schema JSON differs from the registered model")
+    _validate_package_schema(package, registration.identity.sha256)
     if package.tile_manifest.source != package.source:
         raise RequestPackageError("request package tile/source records are inconsistent")
     try:
@@ -301,6 +306,30 @@ def load_request_package(package_directory: Path) -> RequestPackageManifest:
     if actual_bytes != package.estimated_request_bytes:
         raise RequestPackageError("request package size estimate differs from its actual payload")
     return package
+
+
+def _validate_package_schema(
+    package: RequestPackageManifest,
+    expected_semantic_sha256: str,
+) -> None:
+    stored_schema = package.output_schema_json.to_python()
+    try:
+        semantic_sha256 = semantic_schema_sha256(stored_schema)
+    except SchemaFingerprintError as exc:
+        raise RequestPackageError(
+            "request package schema JSON is unsupported or malformed"
+        ) from exc
+    if semantic_sha256 != expected_semantic_sha256:
+        raise RequestPackageError("request package schema JSON differs from the registered model")
+    identity = package.schema_identity
+    if identity.fingerprint_algorithm == SEMANTIC_SCHEMA_FINGERPRINT_ALGORITHM:
+        if semantic_sha256 != identity.sha256:
+            raise RequestPackageError("request package semantic schema fingerprint is invalid")
+    elif identity.fingerprint_algorithm == LEGACY_SCHEMA_FINGERPRINT_ALGORITHM:
+        if sha256_value(stored_schema) != identity.sha256:
+            raise RequestPackageError("request package legacy schema fingerprint is invalid")
+    else:  # SchemaIdentity validation currently makes this unreachable; keep the boundary closed.
+        raise RequestPackageError("request package schema fingerprint algorithm is unsupported")
 
 
 def approve_request_package_egress(

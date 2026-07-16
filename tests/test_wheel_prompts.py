@@ -48,6 +48,7 @@ def test_installed_wheel_loads_packaged_prompt_registry(tmp_path: Path) -> None:
         "buduunkhad/prompt_data/vertical/map_feature_interpretation/1.0.0/user.txt",
         "buduunkhad/prompt_data/vertical/feature_critique/1.0.0/system.txt",
         "buduunkhad/prompt_data/vertical/feature_critique/1.0.0/user.txt",
+        "buduunkhad/schema_data/contracts.json",
         "buduunkhad/methodology_data/authority.yaml",
         "buduunkhad/methodology_data/discrepancies.yaml",
         "buduunkhad/methodology_data/phase00.yaml",

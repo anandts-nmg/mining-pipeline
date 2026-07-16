@@ -1,0 +1,36 @@
+{
+  "title": "OlderGeneratedRoot",
+  "required": ["optional", "item"],
+  "properties": {
+    "optional": {
+      "title": "Older Optional Title",
+      "description": "Different annotation formatting only.",
+      "default": null,
+      "anyOf": [{"type": "null"}, {"type": "integer"}]
+    },
+    "item": {"$ref": "#/$defs/OlderGeneratedName"}
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "OlderGeneratedName": {
+      "title": "OlderGeneratedName",
+      "required": ["value", "kind"],
+      "properties": {
+        "value": {
+          "title": "Older Value Title",
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "title": "Older Kind Title",
+          "type": "string",
+          "enum": ["alpha"],
+          "default": "alpha"
+        }
+      },
+      "type": "object",
+      "additionalProperties": false
+    }
+  }
+}

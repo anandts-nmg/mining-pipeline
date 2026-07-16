@@ -660,6 +660,23 @@ class Phase03GeologySynthesis(Phase):
                     continue
                 if len(gdf) == 0:
                     continue
+                # AI review packages and promoted AI evidence carry a separate, richer
+                # provenance schema.  The legacy common-schema normalizer below intentionally
+                # reindexes to 14 columns, so auto-ingesting those files would discard their
+                # request/response/review lineage.  The opt-in Phase 03 handoff keeps them in a
+                # standalone accepted-evidence package until a provenance-preserving merge is
+                # explicitly implemented.
+                ai_lifecycle_fields = {
+                    "proposal_state",
+                    "review_state",
+                    "evidence_state",
+                    "review_decision",
+                }
+                if ai_lifecycle_fields & set(gdf.columns) or "AI_DRAFT" in src.name.upper():
+                    self._notes.append(
+                        f"AI handoff layer kept separate from legacy normalization: {src.name}:{layer}"
+                    )
+                    continue
                 gdf = self._prepare_evidence_gdf(gdf, layer, target_epsg=ctx.config.target_epsg)
                 vector_io.write_layer(gdf, evidence_path, layer=layer, mode="a")
                 self._ingested_layers.append(layer)

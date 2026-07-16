@@ -101,6 +101,72 @@ The processing command writes an AI_DRAFT GeoPackage and a portable `.qgz` proje
 QGIS to see source imagery, the seven ordered AI Draft vector layers, and validation findings. The
 project uses relative paths and the existing no-PyQGIS writer, so PyQGIS is not a base dependency.
 
+## Phase 03 hybrid review handoff
+
+The Phase 03 bridge is opt-in and remains keyless. It accepts only the exact processed draft bound
+to the run's request package, source registration, validated response, locked prompt/schema, and
+append-only job ledger:
+
+```bash
+buduunkhad ai phase03 import-ai-draft --run-id run-001 \
+  --draft /work/buduunkhad-ai/runs/run-001/gis/job_AI_DRAFT.gpkg \
+  --review-package /work/buduunkhad-ai/runs/run-001/phase03-review/geology
+```
+
+The review directory contains a portable QGIS project, georeferenced copies of the source tiles,
+an optional copy of existing Phase 03 evidence, validation findings, read-only `Original AI_DRAFT`
+layers, and separate editable `Pending Review` layers. Promotion does not rely on the QGIS flag: it
+re-derives and hashes those originals against the ledger-bound draft before accepting them. Saved
+or manually obtained responses retain
+their actual provider/model identity while `response_origin = saved_response` records that this
+workflow did not execute the provider locally.
+
+In QGIS, edit only the pending review layers. Set `review_state = HUMAN_REVIEWED` and
+`review_decision` to `accepted`, `accepted_with_edits`, or `rejected`, then record `reviewer`, an
+aware ISO-8601 `reviewed_at`, and a non-empty `review_note`. Geometry edits belong only in the
+review layer; the original proposal and its pre/post-repair geometry remain separately traceable.
+Use `accepted_with_edits` whenever the exact geometry changed.
+
+Promotion is a separate deterministic operation:
+
+```bash
+buduunkhad ai phase03 promote-reviewed \
+  --review-package /work/buduunkhad-ai/runs/run-001/phase03-review/geology \
+  --output /work/buduunkhad-ai/runs/run-001/promotions/accepted-phase03.gpkg
+```
+
+`AI_DRAFT`, `HUMAN_REVIEWED`, and `ACCEPTED_EVIDENCE` are separate fields and stages. Promotion
+requires complete reviewer metadata, includes only accepted decisions, mints hash-derived stable
+feature IDs, preserves original and reviewed geometry provenance, and writes a one-shot audit
+sidecar that normal application paths never update or delete. The feature ID represents the
+original proposal identity and provenance; the reviewed geometry, decision, reviewer, and note have
+separate content digests in the output and audit. IDs therefore remain stable across row order,
+package relocation, and accepted geometry edits without conflating those edits with identical
+content.
+It is idempotent and never modifies the draft, review package, legacy Phase 03 evidence, or an
+external publication destination. `ACCEPTED_EVIDENCE` here is a Phase 03 handoff state; it does not
+claim production reviewer qualification, `GEOLOGIST_APPROVED`, or publication approval.
+Once an output path has been promoted, application code treats its evidence and audit as immutable;
+changed decisions require a new versioned output path rather than rewriting the prior record. This
+is application-controlled append-only behavior, not cryptographic protection against a filesystem
+administrator who can replace both files.
+Promotion stages both files, holds an exclusive output lock, and removes a newly created output if
+the audit commit fails. Because two filesystem entries cannot be committed as one transaction, an
+abrupt process or operating-system failure between final renames can still leave an incomplete
+pair; subsequent promotion refuses that state, and a stale `.promotion.lock` requires inspection
+before retrying.
+
+Phase 04 continues to use its deterministic fixed-grid comparator. Untagged legacy human evidence
+remains compatible, but every AI-lifecycle-labelled layer—including standalone
+`ACCEPTED_EVIDENCE`—is ignored until a future authoritative Phase 03-to-04 adapter is adopted.
+Copying a draft, review package, or promotion near Phase 04 inputs therefore cannot affect scoring.
+
+The accepted-evidence GeoPackage preserves feature classification, legend code, arbitrary
+schema-bound interpretation attributes, confidence components, source references, validation and
+repair records, prompt/schema identities, original pixel geometry, deterministic draft geometry,
+and reviewed geometry provenance. It remains standalone: this PR does not normalize it into the
+legacy 14-column evidence schema or satisfy scientific/geologist approval gates.
+
 ## Evaluate
 
 Reference data stays outside Git beneath `BUDUUNKHAD_EVAL_ROOT`. Matching parameters are required
@@ -118,8 +184,9 @@ Hausdorff distance, polygon IoU, position error, and unmatched summaries where a
 
 ## Deliberately not included
 
-This slice does not add a QGIS plugin UI, human approval authority, production publication
-approval, scheduling/retries, Phase 00 enrichment, Phase 01–05 AI behavior, or a replacement for
-the Phase 04 deterministic workflow. The isolated `qgis_process` adapter is only a future-ready
-boundary for validity, repair, reprojection, clipping, spatial indexing, and packaging algorithms.
-Later phase integration must remain additive and retain the legacy regression baseline.
+This slice does not add a QGIS plugin UI, production reviewer-qualification authority, production
+publication approval, scheduling/retries, Phase 00 enrichment, broad Phase 01–05 AI behavior, or a
+replacement for the Phase 04 deterministic workflow. The Phase 03 handoff supplies a controlled
+review and promotion path but does not solve the interpretation bottleneck or mark Phase 03
+scientifically complete. The isolated `qgis_process` adapter remains a future-ready boundary for
+validity, repair, reprojection, clipping, spatial indexing, and packaging algorithms.

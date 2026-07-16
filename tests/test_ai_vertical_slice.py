@@ -302,6 +302,8 @@ def test_complete_keyless_vertical_slice(ai_roots: StorageRoots, tmp_path: Path)
         assert CRS.from_wkt(collection.crs_wkt) == CRS.from_epsg(32647)
         assert point_record["properties"]["review_status"] == "AI_DRAFT"
         assert point_record["properties"]["feature_ver"] == 1
+        assert point_record["properties"]["feature_type"] == "mineral-occurrence"
+        assert point_record["properties"]["legend_code"] == "MO"
         assert point_record["properties"]["source_sha"] == package.source.sha256
         assert point_record["properties"]["prompt_sha"] == package.prompt.sha256
         assert point_record["properties"]["schema_sha"] == package.schema_identity.sha256

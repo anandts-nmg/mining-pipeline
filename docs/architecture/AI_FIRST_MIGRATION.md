@@ -19,25 +19,30 @@ protection.
    prompt registrations, append-only review events, typed resolver interfaces,
    and deterministic test doubles outside production. This stage does not change any
    phase or pipeline lifecycle.
-2. **Keyless AI-to-QGIS vertical slice (current migration PR).** Add protected
+2. **Keyless AI-to-QGIS vertical slice.** Add protected
    snapshots, inspectable tiled request packages, optional OpenAI/Anthropic
    boundaries, explicit saved-response ingestion, pixel-to-world transformation,
    AI_DRAFT GeoPackage/QGIS output, and offline evaluation without changing a
    phase lifecycle.
-3. **Phase 00 metadata enrichment.** Add an opt-in AI job that may propose
+3. **Phase 03 AI-draft handoff (current migration PR).** Resolve validated vertical-slice
+   outputs into an isolated portable QGIS review package. Preserve integrity-sealed proposal geometry,
+   keep human decisions and edits separate, and promote only explicitly accepted records into a
+   standalone, audited Phase 03 evidence package. This is not production reviewer qualification,
+   automatic approval, or an in-place merge into the legacy evidence GeoPackage.
+4. **Phase 00 metadata enrichment.** Add an opt-in AI job that may propose
    document metadata, file roles, sensor or product types, relationships,
    duplicate candidates, and evidence-group classifications. Raw identity,
    checksum, filename, bundle membership, and immutability remain exclusively
    deterministic and authoritative. AI metadata stays `AI_DRAFT` until its
    required validation and review are complete.
-4. **Hybrid phase adapters.** Introduce opt-in phase services one bounded task at
+5. **Hybrid phase adapters.** Introduce opt-in phase services one bounded task at
    a time, retaining deterministic results as regression comparators. Phase
    execution and CLI defaults remain backward compatible.
-5. **Geospatial interpretation and review.** Integrate tiled image interpretation,
+6. **Geospatial interpretation and review.** Integrate tiled image interpretation,
    deterministic pixel-to-world conversion, validation, stitching, and a QGIS
    review workflow. High-risk geometry cannot feed production scoring or
    publication before `GEOLOGIST_APPROVED`.
-6. **AI-first profile.** Enable AI-suitable work by default only after evaluation
+7. **AI-first profile.** Enable AI-suitable work by default only after evaluation
    datasets, cost controls, saved-response regression coverage, deterministic
    QA/QC, and risk-based review gates meet accepted criteria. Legacy and hybrid
    profiles remain available during the migration window.

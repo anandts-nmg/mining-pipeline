@@ -73,6 +73,24 @@ packages, ingests saved responses, creates AI_DRAFT GIS/QGIS outputs, and evalua
 provider key. Only the separately gated `ai execute` operation needs a provider SDK and key. See
 [`docs/AI_TO_QGIS_VERTICAL_SLICE.md`](docs/AI_TO_QGIS_VERTICAL_SLICE.md).
 
+Validated Phase 03 drafts can be handed to a geologist without changing the legacy phase runner:
+
+```bash
+buduunkhad ai phase03 import-ai-draft --run-id run-001 \
+  --draft /work/buduunkhad-ai/runs/run-001/gis/job_AI_DRAFT.gpkg \
+  --review-package /work/buduunkhad-ai/runs/run-001/phase03-review/geology
+
+buduunkhad ai phase03 promote-reviewed \
+  --review-package /work/buduunkhad-ai/runs/run-001/phase03-review/geology \
+  --output /work/buduunkhad-ai/runs/run-001/promotions/accepted-phase03.gpkg
+```
+
+The portable review project marks proposal layers read-only and cryptographically reconciles them
+with the ledger-bound draft before promotion; separate review layers remain editable.
+Only records explicitly marked `accepted` or `accepted_with_edits`, with reviewer identity, time,
+and note, enter the standalone `ACCEPTED_EVIDENCE` output. This is a controlled hybrid handoff—not
+automatic geological approval, publication, or completion of Phase 03 interpretation.
+
 ## Usage
 
 ```bash

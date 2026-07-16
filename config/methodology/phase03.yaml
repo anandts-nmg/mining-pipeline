@@ -9,3 +9,7 @@ requirements:
     statement: CRS, registration, geometry, topology, attribution and provenance validation remain deterministic.
     source_refs: [agents.repository-authority, phase03.guide]
     status: adopted
+  - requirement_id: P03-AI-HUMAN-HANDOFF-001
+    statement: Validated AI draft geometry remains isolated until a named human records an explicit review decision and a separate deterministic operation promotes accepted evidence.
+    source_refs: [agents.repository-authority, phase03.guide]
+    status: adopted

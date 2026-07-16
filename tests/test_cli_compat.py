@@ -35,6 +35,11 @@ def test_ai_help_is_additive_and_keeps_execution_steps_separate() -> None:
     ):
         assert command in result.stdout
 
+    phase03 = runner.invoke(app, ["ai", "phase03", "--help"])
+    assert phase03.exit_code == 0
+    assert "import-ai-draft" in phase03.stdout
+    assert "promote-reviewed" in phase03.stdout
+
 
 def test_list_and_info_preserve_legacy_contract(project) -> None:
     config, _register, work = project

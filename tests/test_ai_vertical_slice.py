@@ -20,12 +20,16 @@ from shapely.geometry import LineString, Polygon, box, shape
 from buduunkhad.ai.contracts import (
     AIUsage,
     ArtifactSubjectIdentity,
+    CanonicalJSONValue,
     RasterTileLocator,
     TaskType,
 )
+from buduunkhad.ai.fingerprint import request_fingerprint, sha256_file, sha256_value
+from buduunkhad.ai.prompts import PromptRegistry, default_schema_registry
 from buduunkhad.ai.providers import (
     ProviderCredentialError,
 )
+from buduunkhad.ai.schema_identity import SEMANTIC_SCHEMA_FINGERPRINT_ALGORITHM
 from buduunkhad.config import (
     AIConfig,
     AIProviderSelection,
@@ -40,7 +44,12 @@ from buduunkhad.geospatial_ai.geometry_validation import (
     GeometryValidationError,
     validate_geometry,
 )
-from buduunkhad.geospatial_ai.ledger import AIJobLedger, JobLedgerError, LedgerStatus
+from buduunkhad.geospatial_ai.ledger import (
+    AIJobLedger,
+    JobLedgerError,
+    LedgerJobCreate,
+    LedgerStatus,
+)
 from buduunkhad.geospatial_ai.manifests import (
     EgressDecision,
     EgressDecisionStatus,
@@ -57,6 +66,7 @@ from buduunkhad.geospatial_ai.requests import (
     approve_request_package_egress,
     load_request_package,
     prepare_request_package,
+    validate_package_ledger,
     verify_package_source,
 )
 from buduunkhad.geospatial_ai.responses import ResponseIngestionError, ingest_saved_response
@@ -233,6 +243,13 @@ def test_complete_keyless_vertical_slice(ai_roots: StorageRoots, tmp_path: Path)
         now=datetime(2026, 7, 15, tzinfo=UTC),
     )
     assert source.read_bytes() == source_before
+    assert package.schema_identity.fingerprint_algorithm == SEMANTIC_SCHEMA_FINGERPRINT_ALGORITHM
+    ledger_view = AIJobLedger(
+        ai_roots.run_directory("vertical-run") / "ai_jobs.sqlite",
+        roots=ai_roots,
+        run_id="vertical-run",
+    ).inspect(package.request.job_id)
+    assert ledger_view.job.schema_identity == package.schema_identity
     assert "openai" not in sys.modules
     assert "anthropic" not in sys.modules
     assert package.source.nodata == 0
@@ -337,6 +354,90 @@ def test_complete_keyless_vertical_slice(ai_roots: StorageRoots, tmp_path: Path)
     assert report_csv.is_file()
     assert all(item["precision"] == 1 and item["recall"] == 1 for item in report["layers"])
     assert source.read_bytes() == source_before
+
+
+def test_legacy_request_package_schema_identity_remains_verifiable(
+    ai_roots: StorageRoots,
+) -> None:
+    directory, package = _prepare(ai_roots, run_id="legacy-package-run")
+    schemas = default_schema_registry()
+    prompt = PromptRegistry.load_packaged(schema_registry=schemas).resolve(package.prompt)
+    legacy_request = package.request.model_copy(update={"output_schema": prompt.output_schema})
+    legacy_fingerprint = request_fingerprint(legacy_request)
+    # A historical package stores the schema representation its legacy fingerprint was
+    # derived from; the checked-in copy keeps this reproducible on every runtime.
+    legacy_schema = json.loads(
+        (
+            Path(__file__).parent
+            / "fixtures"
+            / "schema_identity"
+            / "legacy_geological_feature_proposal_batch_schema.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert sha256_value(legacy_schema) == prompt.output_schema.sha256
+    legacy_package = package.model_copy(
+        update={
+            "request": legacy_request,
+            "request_fingerprint": legacy_fingerprint,
+            "schema_identity": prompt.output_schema,
+            "output_schema_json": CanonicalJSONValue.from_value(legacy_schema),
+        }
+    )
+    manifest = directory / "request-package.json"
+    manifest.write_text(legacy_package.model_dump_json(indent=2), encoding="utf-8", newline="\n")
+
+    loaded = load_request_package(directory)
+    assert loaded.schema_identity == prompt.output_schema
+    assert loaded.request_fingerprint == legacy_fingerprint
+
+    altered_schema = loaded.output_schema_json.to_python()
+    assert isinstance(altered_schema, dict)
+    altered_schema["title"] = "Representational annotation changed after persistence"
+    tampered = loaded.model_copy(
+        update={"output_schema_json": CanonicalJSONValue.from_value(altered_schema)}
+    )
+    manifest.write_text(tampered.model_dump_json(indent=2), encoding="utf-8", newline="\n")
+    with pytest.raises(RequestPackageError, match="legacy schema fingerprint"):
+        load_request_package(directory)
+    manifest.write_text(loaded.model_dump_json(indent=2), encoding="utf-8", newline="\n")
+
+    ledger_path = ai_roots.run_directory("legacy-package-run") / "ai_jobs.sqlite"
+    ledger_path.unlink()
+    compatibility_ledger = AIJobLedger(
+        ledger_path,
+        roots=ai_roots,
+        run_id="legacy-package-run",
+    )
+    compatibility_ledger.add_job(
+        LedgerJobCreate(
+            job_id=loaded.request.job_id,
+            run_id=loaded.request.run_id,
+            phase_id=loaded.request.phase_id,
+            task_type=loaded.request.task_type,
+            request_fingerprint=loaded.request_fingerprint,
+            package_manifest_sha256=sha256_file(manifest),
+            source_assets=((loaded.source.asset_id, loaded.source.sha256),),
+            prompt=loaded.prompt,
+            schema_identity=loaded.schema_identity,
+            provider=loaded.request.provider.provider,
+            model=loaded.request.provider.model,
+            created_at=loaded.request.created_at,
+        )
+    )
+    assert validate_package_ledger(loaded, compatibility_ledger, directory).job.schema_identity == (
+        prompt.output_schema
+    )
+    response_path = _saved_response(
+        loaded,
+        ai_roots.run_directory("legacy-package-run") / "external" / "legacy-response.json",
+    )
+    _validated_path, validated = ingest_saved_response(
+        directory,
+        response_path,
+        roots=ai_roots,
+        now=datetime(2026, 7, 15, 0, 2, tzinfo=UTC),
+    )
+    assert validated.schema_identity == prompt.output_schema
 
 
 def test_tile_offset_and_out_of_bounds_are_exact(ai_roots: StorageRoots) -> None:
@@ -554,6 +655,30 @@ def test_saved_response_cross_links_are_revalidated(
     )
     value = json.loads(response_path.read_text(encoding="utf-8"))
     value[field] = replacement
+    response_path.write_text(json.dumps(value), encoding="utf-8")
+    with pytest.raises(ResponseIngestionError, match=message):
+        ingest_saved_response(package_directory, response_path, roots=ai_roots)
+
+
+@pytest.mark.parametrize(
+    ("algorithm", "message"),
+    [
+        ("pydantic-model-json-schema-v1", "schema mismatch"),
+        ("unknown-schema-algorithm", "saved provider response is invalid"),
+    ],
+)
+def test_saved_response_schema_algorithm_cannot_be_downgraded_or_confused(
+    ai_roots: StorageRoots,
+    algorithm: str,
+    message: str,
+) -> None:
+    package_directory, package = _prepare(ai_roots, run_id=f"algorithm-{algorithm[:8]}")
+    response_path = _saved_response(
+        package,
+        ai_roots.run_directory(package.request.run_id) / "external" / "response.json",
+    )
+    value = json.loads(response_path.read_text(encoding="utf-8"))
+    value["schema_identity"]["fingerprint_algorithm"] = algorithm
     response_path.write_text(json.dumps(value), encoding="utf-8")
     with pytest.raises(ResponseIngestionError, match=message):
         ingest_saved_response(package_directory, response_path, roots=ai_roots)

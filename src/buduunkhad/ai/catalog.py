@@ -428,7 +428,7 @@ class InMemoryProvenanceResolver:
             else self.resolve_prompt(request.prompt)
         )
         schema = self.resolve_schema(request.output_schema)
-        if prompt.task_type is not request.task_type or prompt.output_schema != schema.identity:
+        if prompt.task_type is not request.task_type or not schema.accepts(prompt.output_schema):
             raise ArtifactIdentityCollisionError("request prompt/schema/task binding is invalid")
 
     def _validate_job_record(self, job: AIJob) -> None:

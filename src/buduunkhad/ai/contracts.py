@@ -25,6 +25,10 @@ from buduunkhad.ai.fingerprint import (
     canonical_json_text,
     canonical_value_from_text,
 )
+from buduunkhad.ai.schema_identity import (
+    LEGACY_SCHEMA_FINGERPRINT_ALGORITHM,
+    SchemaFingerprintAlgorithm,
+)
 
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 Sha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
@@ -362,6 +366,7 @@ class SchemaIdentity(FrozenModel):
     schema_id: NonEmptyStr
     version: SemanticVersion
     sha256: Sha256
+    fingerprint_algorithm: SchemaFingerprintAlgorithm = LEGACY_SCHEMA_FINGERPRINT_ALGORITHM
 
 
 class ProviderConfiguration(FrozenModel):

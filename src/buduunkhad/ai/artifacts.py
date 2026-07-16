@@ -439,7 +439,7 @@ def build_artifact(
     resolved_prompt = resolver.resolve_prompt(request.prompt)
     if resolved_prompt.task_type is not request.task_type:
         raise ArtifactContractError("resolved prompt task does not match request task")
-    if resolved_prompt.output_schema != schema_registration.identity:
+    if not schema_registration.accepts(resolved_prompt.output_schema):
         raise ArtifactContractError("locked prompt schema does not match approved schema")
     if type(payload) is not schema_registration.output_model:
         raise ArtifactContractError("payload type is not the registered output model")
@@ -547,7 +547,7 @@ def validate_artifact_authority(
     resolved_prompt = resolver.resolve_historical_prompt(content.prompt)
     if resolved_prompt.task_type is not content.task_type:
         raise ArtifactContractError("artifact prompt task mismatch")
-    if resolved_prompt.output_schema != schema_registration.identity:
+    if not schema_registration.accepts(resolved_prompt.output_schema):
         raise ArtifactContractError("artifact prompt/schema binding mismatch")
     decoded = canonical_value_from_text(content.payload_canonical_json)
     try:
@@ -1007,7 +1007,7 @@ def _validate_job_request_response(
     if prompt.task_type is not request.task_type:
         raise ArtifactContractError("request prompt task mismatch")
     schema = resolver.resolve_schema(request.output_schema)
-    if prompt.output_schema != schema.identity:
+    if not schema.accepts(prompt.output_schema):
         raise ArtifactContractError("request prompt/schema binding mismatch")
     if response.output is None or type(response.output) is not schema.output_model:
         raise ArtifactContractError("response output has the wrong registered model type")

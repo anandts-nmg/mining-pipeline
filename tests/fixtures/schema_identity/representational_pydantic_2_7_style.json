@@ -25,6 +25,7 @@
         "kind": {
           "title": "Older Kind Title",
           "type": "string",
+          "const": "alpha",
           "enum": ["alpha"],
           "default": "alpha"
         }

@@ -331,17 +331,23 @@ def _normalise_schema_keywords(
         elif key == "required":
             result[key] = _sorted_unique_strings(item, "required")
         elif key == "enum":
+            if "const" in value:
+                continue  # reduced to the constant by the const branch
             enum_values = _normalise_enum(item)
             if len(enum_values) == 1:
-                if "const" in value:
-                    raise SchemaFingerprintError("schema cannot contain both const and enum")
                 result["const"] = enum_values[0]
             else:
                 result[key] = enum_values
         elif key == "const":
+            constant = _normalise_literal(item)
             if "enum" in value:
-                continue
-            result[key] = _normalise_literal(item)
+                # const and enum apply conjunctively: a member constant reduces the
+                # accepted values to the constant alone (older Pydantic emits both
+                # for single-value Literal fields); a non-member cannot validate.
+                members = {_semantic_bytes(member) for member in _normalise_enum(value["enum"])}
+                if _semantic_bytes(constant) not in members:
+                    raise SchemaFingerprintError("const is not a member of the enum values")
+            result[key] = constant
         elif key in {"properties", "patternProperties", "dependentSchemas"}:
             result[key] = _normalise_schema_mapping(
                 item,

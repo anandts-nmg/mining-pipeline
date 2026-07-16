@@ -6,11 +6,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from buduunkhad.ai.contracts import (
     AIRequest,
     DocumentExtraction,
+    FeatureCritique,
     PageLocator,
     PromptIdentity,
     ProviderConfiguration,
@@ -28,8 +29,15 @@ from buduunkhad.ai.schema_identity import (
     LEGACY_SCHEMA_FINGERPRINT_ALGORITHM,
     SEMANTIC_SCHEMA_FINGERPRINT_ALGORITHM,
     SchemaFingerprintError,
+    load_packaged_schema_contracts,
     semantic_schema_document,
     semantic_schema_sha256,
+)
+from buduunkhad.geospatial_ai.schemas import (
+    FeatureCritiqueBatch,
+    GeologicalFeatureProposalBatch,
+    LegendExtraction,
+    MapFeatureInterpretation,
 )
 
 DOCUMENT_SCHEMA_ID = "buduunkhad.ai.document_extraction"
@@ -268,6 +276,94 @@ def test_boolean_and_composition_schemas_have_explicit_semantics() -> None:
         "allOf": [{"required": ["value"]}, {"type": "object"}],
     }
     assert semantic_schema_sha256(left) == semantic_schema_sha256(right)
+
+
+def test_matching_const_and_enum_reduce_to_the_constant() -> None:
+    constant_only = {"type": "string", "const": "a"}
+    expected = semantic_schema_sha256(constant_only)
+    assert semantic_schema_sha256({"type": "string", "enum": ["a"]}) == expected
+    assert semantic_schema_sha256({"type": "string", "const": "a", "enum": ["a"]}) == expected
+    assert semantic_schema_sha256({"type": "string", "const": "a", "enum": ["a", "b"]}) == expected
+    # The conjunctive reduction keeps only the constant — no enum alternative survives.
+    assert semantic_schema_document({"type": "string", "const": "a", "enum": ["a", "b"]}) == {
+        "const": "a",
+        "type": "string",
+    }
+    assert semantic_schema_sha256({"const": 1, "enum": [1.0]}) == semantic_schema_sha256(
+        {"const": 1}
+    )
+
+
+@pytest.mark.parametrize(
+    ("schema", "message"),
+    [
+        pytest.param({"const": "c", "enum": ["a", "b"]}, "member", id="not-a-member"),
+        pytest.param({"const": True, "enum": [1]}, "member", id="bool-is-not-number"),
+        pytest.param({"const": "1", "enum": [1]}, "member", id="string-is-not-number"),
+        pytest.param({"const": 2, "enum": [1.0, 3]}, "member", id="number-outside-enum"),
+        pytest.param({"const": "a", "enum": []}, "empty", id="empty-enum"),
+        pytest.param({"const": "a", "enum": ["a", "a"]}, "duplicate", id="duplicate-enum"),
+    ],
+)
+def test_conflicting_or_malformed_const_enum_pairs_fail_closed(
+    schema: object,
+    message: str,
+) -> None:
+    with pytest.raises(SchemaFingerprintError, match=message):
+        semantic_schema_sha256(schema)
+
+
+def _with_pydantic_2_7_style_literals(node: object) -> object:
+    """Synthesize the const-plus-singleton-enum dual emission for every constant node."""
+
+    if isinstance(node, dict):
+        rebuilt = {key: _with_pydantic_2_7_style_literals(item) for key, item in node.items()}
+        if "const" in rebuilt and "enum" not in rebuilt:
+            rebuilt["enum"] = [deepcopy(rebuilt["const"])]
+        return rebuilt
+    if isinstance(node, list):
+        return [_with_pydantic_2_7_style_literals(item) for item in node]
+    return node
+
+
+def test_synthetic_dual_literal_emission_matches_every_checked_contract() -> None:
+    models: dict[str, type[BaseModel]] = {
+        "buduunkhad.ai.document_extraction": DocumentExtraction,
+        "buduunkhad.ai.feature_critique": FeatureCritique,
+        "buduunkhad.ai.legend_extraction": LegendExtraction,
+        "buduunkhad.ai.map_feature_interpretation": MapFeatureInterpretation,
+        "buduunkhad.ai.geological_feature_proposal_batch": GeologicalFeatureProposalBatch,
+        "buduunkhad.ai.feature_critique_batch": FeatureCritiqueBatch,
+    }
+    exercised = 0
+    for (schema_id, _version), record in load_packaged_schema_contracts().items():
+        schema = models[schema_id].model_json_schema()
+        dual = _with_pydantic_2_7_style_literals(schema)
+        if dual != schema:
+            exercised += 1
+        assert semantic_schema_sha256(dual) == record.sha256
+    assert exercised  # the transform must actually rewrite constants somewhere
+
+
+def test_default_schema_registry_constructs_under_synthetic_dual_emission(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dual = _with_pydantic_2_7_style_literals(DocumentExtraction.model_json_schema())
+    monkeypatch.setattr(
+        DocumentExtraction,
+        "model_json_schema",
+        classmethod(lambda cls, **kwargs: deepcopy(dual)),
+    )
+    registration = default_schema_registry().resolve(
+        SchemaIdentity(
+            schema_id=DOCUMENT_SCHEMA_ID,
+            version=DOCUMENT_SCHEMA_VERSION,
+            sha256=DOCUMENT_SEMANTIC_SHA256,
+            fingerprint_algorithm=SEMANTIC_SCHEMA_FINGERPRINT_ALGORITHM,
+        )
+    )
+    assert registration.output_model is DocumentExtraction
+    assert registration.accepts(_legacy_document_identity())
 
 
 @pytest.mark.parametrize(

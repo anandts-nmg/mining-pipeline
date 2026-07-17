@@ -5,11 +5,18 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
+from buduunkhad.core.publication_manifest import (
+    CompatibilityRunManifest,
+    PublicationProjectReference,
+    PublishedPhase,
+    publication_id_for,
+)
 from buduunkhad.core.publish import (
     PublishError,
     backup_raw_archive,
@@ -19,6 +26,43 @@ from buduunkhad.core.publish import (
     publish,
     verify_publication_package,
 )
+
+
+def _recompute_publication_id(data: dict[str, object]) -> None:
+    phases = tuple(PublishedPhase.model_validate(value) for value in data["phases"])  # type: ignore[union-attr]
+    project = PublicationProjectReference.model_validate(data["project"])
+    compatibility = CompatibilityRunManifest.model_validate(data["compatibility_run_manifest"])
+    data["publication_id"] = publication_id_for(
+        project=project,
+        package_version=str(data["package_version"]),
+        git_commit_sha=data["git_commit_sha"] if isinstance(data["git_commit_sha"], str) else None,
+        phases=phases,
+        package_status=data["package_status"],  # type: ignore[arg-type]
+        compatibility_run_manifest=compatibility,
+        superseded_publication_id=(
+            data["superseded_publication_id"]
+            if isinstance(data["superseded_publication_id"], str)
+            else None
+        ),
+    )
+
+
+def _tamper_manifest(
+    package: Path, mutate: Callable[[dict[str, object]], None], *, recompute_id: bool = True
+) -> None:
+    path = package / "publication_manifest.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    mutate(data)
+    if recompute_id:
+        _recompute_publication_id(data)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+def _create_symlink_or_skip(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=target.is_dir())
+    except OSError as exc:
+        pytest.skip(f"operating system cannot create the required symlink: {exc}")
 
 
 def _write_register(path: Path, rows: list[tuple[str, str, bytes]]) -> None:
@@ -112,6 +156,7 @@ def _bind_publication_outputs(
     provisional: set[str] | None = None,
     pending: set[str] | None = None,
     gate_states: dict[str, str] | None = None,
+    legacy: bool = False,
 ) -> None:
     grouped: dict[str, list[Path]] = {}
     for path in collect_deliverables(output_root):
@@ -120,19 +165,28 @@ def _bind_publication_outputs(
     by_run: dict[str, list[dict[str, object]]] = {}
     for phase_id, paths in grouped.items():
         run_id = (phase_runs or {}).get(phase_id, "20260101T000000")
-        by_run.setdefault(run_id, []).append(
-            {
-                "phase_id": phase_id,
-                "status": "ok",
-                "outputs": [str(path.resolve()) for path in sorted(paths)],
-                "qaqc_passed": True,
-                "qaqc_pending": phase_id in (pending or set()),
-                "gate": {
-                    "status": (gate_states or {}).get(phase_id, "go"),
-                    "provisional": phase_id in (provisional or set()),
-                },
-            }
-        )
+        phase: dict[str, object] = {
+            "phase_id": phase_id,
+            "status": "ok",
+            "outputs": [str(path.resolve()) for path in sorted(paths)],
+            "qaqc_passed": True,
+            "qaqc_pending": phase_id in (pending or set()),
+            "pending_human_review_or_qaqc_count": (1 if phase_id in (pending or set()) else 0),
+            "gate": {
+                "status": (gate_states or {}).get(phase_id, "go"),
+                "provisional": phase_id in (provisional or set()),
+            },
+        }
+        if not legacy:
+            phase["output_artifacts"] = [
+                {
+                    "path": path.relative_to(output_root).as_posix(),
+                    "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                    "size_bytes": path.stat().st_size,
+                }
+                for path in sorted(paths)
+            ]
+        by_run.setdefault(run_id, []).append(phase)
     for run_id, phases in by_run.items():
         directory = runs_root / run_id
         directory.mkdir(parents=True)
@@ -140,6 +194,8 @@ def _bind_publication_outputs(
             json.dumps(
                 {
                     "run_id": run_id,
+                    "started_at": "2026-01-01T00:00:00+00:00",
+                    "finished_at": "2026-01-01T00:01:00+00:00",
                     "dry_run": False,
                     "phases": sorted(phases, key=lambda phase: str(phase["phase_id"])),
                 },
@@ -221,6 +277,11 @@ def test_publish_flattens_qgz_datasources(tmp_path):
     published = next(p for p in result.files if p.suffix == ".qgz")
     entries = read_qgz_layers(published)
     assert entries[0]["datasource"] == "./boundary.gpkg|layername=license_boundary"
+    recorded = load_publication_manifest(result.dest).phases[0].outputs[0]
+    assert recorded.source_sha256 == hashlib.sha256(qgz.read_bytes()).hexdigest()
+    assert recorded.sha256 == hashlib.sha256(published.read_bytes()).hexdigest()
+    assert recorded.source_sha256 != recorded.sha256
+    assert recorded.transformation_id == "qgz-flat-datasource-rewrite-v1"
 
 
 def test_publish_refuses_existing_nonempty_label(tmp_path):
@@ -236,13 +297,17 @@ def test_publish_refuses_existing_nonempty_label(tmp_path):
         publish(out, drive, "v1", runs_root=runs)
 
 
-def _write_manifest(runs_root, run_id, dry_run, phases):
+def _write_manifest(runs_root, run_id, dry_run, phases, *, finished_at=None):
     d = runs_root / run_id
     d.mkdir(parents=True)
+    completion = (
+        finished_at or datetime.strptime(run_id, "%Y%m%dT%H%M%S").replace(tzinfo=UTC).isoformat()
+    )
     (d / "run_manifest.json").write_text(
         json.dumps(
             {
                 "run_id": run_id,
+                "finished_at": completion,
                 "dry_run": dry_run,
                 "phases": [
                     {"phase_id": pid, "gate": {"status": st, "provisional": prov}}
@@ -266,6 +331,26 @@ def test_latest_gate_per_phase_ignores_dry_and_takes_most_recent(tmp_path):
     assert gates["00"]["status"] == "go" and not gates["00"]["provisional"]
     assert gates["02"]["provisional"] is True  # from the real run, not the dry one
     assert gates["02"]["run_id"] == "20260103T000000"
+
+
+def test_latest_gate_helper_uses_recorded_time_not_custom_run_id_order(tmp_path):
+    runs = tmp_path / "runs"
+    _write_manifest(
+        runs,
+        "zzz-older",
+        False,
+        [("04", "blocked", True)],
+        finished_at="2026-01-01T00:00:00+00:00",
+    )
+    _write_manifest(
+        runs,
+        "aaa-newer",
+        False,
+        [("04", "go", False)],
+        finished_at="2026-02-01T00:00:00+00:00",
+    )
+
+    assert latest_gate_per_phase(runs)["04"]["run_id"] == "aaa-newer"
 
 
 def test_publish_detects_name_collision(tmp_path):
@@ -302,6 +387,11 @@ def test_single_phase_publication_has_bound_provenance(tmp_path, monkeypatch):
     assert manifest.included_phase_ids == ("04",)
     assert manifest.phases[0].source_run_id == "20260101T000000"
     assert manifest.phases[0].outputs[0].path == "Phase04/ranking.csv"
+    assert manifest.phases[0].source_binding_mode == "SHA256_BOUND"
+    assert manifest.phases[0].outputs[0].source_sha256 == manifest.phases[0].outputs[0].sha256
+    assert (
+        manifest.phases[0].outputs[0].source_size_bytes == manifest.phases[0].outputs[0].size_bytes
+    )
     assert manifest.package_status == "PROVISIONAL"  # automated GO is not approval
     assert verify_publication_package(result.dest) == manifest
 
@@ -345,7 +435,7 @@ def test_pending_or_provisional_phase_marks_package_nonapproved(tmp_path):
     manifest = load_publication_manifest(result.dest)
 
     assert manifest.package_status == "HUMAN_REVIEW_PENDING"
-    assert manifest.phases[0].pending_human_review_or_qaqc_count is None
+    assert manifest.phases[0].pending_human_review_or_qaqc_count == 1
     index = (result.dest / "INDEX.md").read_text(encoding="utf-8")
     assert "**Package status:** HUMAN_REVIEW_PENDING" in index
     assert "human review / QA/QC pending" in index
@@ -506,6 +596,414 @@ def test_explicit_superseded_publication_id_is_recorded(tmp_path):
     assert load_publication_manifest(result.dest).superseded_publication_id == superseded
 
 
+def test_source_output_changed_after_run_is_rejected(tmp_path):
+    out = tmp_path / "out"
+    output = out / "04_Phase" / "ranking.csv"
+    output.parent.mkdir(parents=True)
+    output.write_bytes(b"sealed")
+    runs = tmp_path / "runs"
+    _bind_publication_outputs(runs, out)
+    output.write_bytes(b"changed")
+
+    with pytest.raises(PublishError, match="no SHA256-bound source run exactly matches"):
+        publish(out, tmp_path / "staging", "changed-source", runs_root=runs)
+
+
+def test_incorrect_source_artifact_size_is_rejected(tmp_path):
+    out = tmp_path / "out"
+    output = out / "02_Phase" / "derived.tif"
+    output.parent.mkdir(parents=True)
+    output.write_bytes(b"II*\x00payload")
+    runs = tmp_path / "runs"
+    _bind_publication_outputs(runs, out)
+    path = next(runs.glob("*/run_manifest.json"))
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["phases"][0]["output_artifacts"][0]["size_bytes"] += 1
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    with pytest.raises(PublishError, match="no SHA256-bound source run exactly matches"):
+        publish(out, tmp_path / "staging", "wrong-size", runs_root=runs)
+
+
+def test_sha256_source_selection_ignores_nonchronological_run_ids(tmp_path):
+    out = tmp_path / "out"
+    output = out / "04_Phase" / "ranking.csv"
+    output.parent.mkdir(parents=True)
+    output.write_bytes(b"current")
+    runs = tmp_path / "runs"
+    _bind_publication_outputs(runs, out, phase_runs={"04": "aaa-current"})
+    output.write_bytes(b"stale")
+    _bind_publication_outputs(runs, out, phase_runs={"04": "zzz-stale"})
+    output.write_bytes(b"current")
+
+    result = publish(out, tmp_path / "staging", "content-selected", runs_root=runs)
+
+    assert load_publication_manifest(result.dest).phases[0].source_run_id == "aaa-current"
+
+
+def test_sha256_artifact_paths_remain_portable_when_output_root_moves(tmp_path):
+    original = tmp_path / "original-output"
+    output = original / "04_Phase" / "ranking.csv"
+    output.parent.mkdir(parents=True)
+    output.write_bytes(b"ranking")
+    runs = tmp_path / "runs"
+    _bind_publication_outputs(runs, original)
+    moved = tmp_path / "moved-output"
+    original.rename(moved)
+
+    result = publish(moved, tmp_path / "staging", "moved", runs_root=runs)
+
+    manifest = verify_publication_package(result.dest)
+    assert manifest.phases[0].source_binding_mode == "SHA256_BOUND"
+    assert manifest.phases[0].outputs[0].source_path == "04_Phase/ranking.csv"
+
+
+def test_ambiguous_matching_runs_require_explicit_selector(tmp_path):
+    out = tmp_path / "out"
+    output = out / "03_Phase" / "evidence.csv"
+    output.parent.mkdir(parents=True)
+    output.write_bytes(b"same")
+    runs = tmp_path / "runs"
+    _bind_publication_outputs(runs, out, phase_runs={"03": "run-a"})
+    _bind_publication_outputs(runs, out, phase_runs={"03": "run-b"})
+
+    with pytest.raises(PublishError, match="matches multiple source runs"):
+        publish(out, tmp_path / "staging-one", "ambiguous", runs_root=runs)
+
+    result = publish(
+        out,
+        tmp_path / "staging-two",
+        "selected",
+        runs_root=runs,
+        source_runs={"03": "run-b"},
+    )
+    assert load_publication_manifest(result.dest).phases[0].source_run_id == "run-b"
+
+
+def test_internal_run_id_must_match_directory_name(tmp_path):
+    out = tmp_path / "out"
+    output = out / "01_Phase" / "master.csv"
+    output.parent.mkdir(parents=True)
+    output.write_bytes(b"master")
+    runs = tmp_path / "runs"
+    _bind_publication_outputs(runs, out, phase_runs={"01": "actual-run"})
+    manifest_path = runs / "actual-run" / "run_manifest.json"
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    data["run_id"] = "claimed-run"
+    manifest_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    with pytest.raises(PublishError, match="does not match its directory"):
+        publish(out, tmp_path / "staging", "mismatch", runs_root=runs)
+
+
+def test_legacy_manifest_is_path_only_and_can_never_be_approved(tmp_path):
+    out = tmp_path / "out"
+    output = out / "01_Phase" / "master.csv"
+    output.parent.mkdir(parents=True)
+    output.write_bytes(b"legacy")
+    runs = tmp_path / "runs"
+    _bind_publication_outputs(runs, out, legacy=True, gate_states={"01": "APPROVED"})
+
+    result = publish(out, tmp_path / "staging", "legacy", runs_root=runs)
+    manifest = load_publication_manifest(result.dest)
+
+    assert manifest.phases[0].source_binding_mode == "LEGACY_PATH_ONLY"
+    assert manifest.phases[0].outputs[0].source_sha256 is None
+    assert manifest.package_status == "PROVISIONAL"
+    index = (result.dest / "INDEX.md").read_text(encoding="utf-8")
+    assert "**Integrity limitation:**" in index
+    assert "cannot be APPROVED" in index
+
+
+def test_legacy_manifest_may_omit_historical_runner_qaqc_inventory(tmp_path):
+    out = tmp_path / "out"
+    phase_dir = out / "01_Phase"
+    phase_dir.mkdir(parents=True)
+    (phase_dir / "master.csv").write_bytes(b"legacy")
+    (phase_dir / "BUD_Phase01_QAQC_Log.xlsx").write_bytes(b"legacy-qaqc")
+    runs = tmp_path / "runs"
+    _bind_publication_outputs(runs, out, legacy=True)
+    source_manifest = next(runs.glob("*/run_manifest.json"))
+    data = json.loads(source_manifest.read_text(encoding="utf-8"))
+    data["phases"][0]["outputs"] = [
+        value for value in data["phases"][0]["outputs"] if not value.endswith("_QAQC_Log.xlsx")
+    ]
+    source_manifest.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    result = publish(out, tmp_path / "staging", "old-runner", runs_root=runs)
+
+    manifest = verify_publication_package(result.dest)
+    assert manifest.phases[0].source_binding_mode == "LEGACY_PATH_ONLY"
+    assert {output.path for output in manifest.phases[0].outputs} == {
+        "Phase01/BUD_Phase01_QAQC_Log.xlsx",
+        "Phase01/master.csv",
+    }
+
+
+def test_explicit_null_artifact_inventory_cannot_downgrade_to_legacy(tmp_path):
+    out = tmp_path / "out"
+    output = out / "01_Phase" / "master.csv"
+    output.parent.mkdir(parents=True)
+    output.write_bytes(b"sealed")
+    runs = tmp_path / "runs"
+    _bind_publication_outputs(runs, out)
+    source_manifest = next(runs.glob("*/run_manifest.json"))
+    data = json.loads(source_manifest.read_text(encoding="utf-8"))
+    data["phases"][0]["output_artifacts"] = None
+    source_manifest.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    with pytest.raises(PublishError, match="output_artifacts is invalid"):
+        publish(out, tmp_path / "staging", "null-inventory", runs_root=runs)
+
+
+def test_pending_count_tampering_fails_even_with_recomputed_publication_id(tmp_path):
+    out = tmp_path / "out"
+    output = out / "03_Phase" / "evidence.csv"
+    output.parent.mkdir(parents=True)
+    output.write_bytes(b"evidence")
+    runs = tmp_path / "runs"
+    _bind_publication_outputs(runs, out, pending={"03"})
+    result = publish(out, tmp_path / "staging", "pending-tamper", runs_root=runs)
+
+    def mutate(data: dict[str, object]) -> None:
+        data["phases"][0]["pending_human_review_or_qaqc_count"] = 9  # type: ignore[index]
+
+    _tamper_manifest(result.dest, mutate)
+    with pytest.raises(PublishError, match="gate provenance mismatch"):
+        verify_publication_package(result.dest)
+
+
+def test_source_artifact_metadata_tampering_fails_with_recomputed_id(tmp_path):
+    out = tmp_path / "out"
+    output = out / "02_Phase" / "derived.tif"
+    output.parent.mkdir(parents=True)
+    output.write_bytes(b"derived")
+    runs = tmp_path / "runs"
+    _bind_publication_outputs(runs, out)
+    result = publish(out, tmp_path / "staging", "artifact-tamper", runs_root=runs)
+    manifest = load_publication_manifest(result.dest)
+    source_copy = result.dest / manifest.phases[0].source_run_manifest_path
+    source_data = json.loads(source_copy.read_text(encoding="utf-8"))
+    source_data["phases"][0]["output_artifacts"][0]["sha256"] = "f" * 64
+    changed_bytes = (json.dumps(source_data, indent=2) + "\n").encode()
+    source_copy.write_bytes(changed_bytes)
+    (result.dest / "run_manifest.json").write_bytes(changed_bytes)
+    changed_hash = hashlib.sha256(changed_bytes).hexdigest()
+
+    def mutate(data: dict[str, object]) -> None:
+        data["phases"][0]["source_run_manifest_sha256"] = changed_hash  # type: ignore[index]
+        data["compatibility_run_manifest"]["sha256"] = changed_hash  # type: ignore[index]
+
+    _tamper_manifest(result.dest, mutate)
+    with pytest.raises(PublishError, match="source artifact identity mismatch"):
+        verify_publication_package(result.dest)
+
+
+def test_output_symlink_escape_is_rejected(tmp_path):
+    out = tmp_path / "out"
+    output = out / "01_Phase" / "master.csv"
+    output.parent.mkdir(parents=True)
+    external = tmp_path / "outside.csv"
+    external.write_bytes(b"outside")
+    _create_symlink_or_skip(output, external)
+    runs = tmp_path / "runs"
+    runs.mkdir()
+
+    with pytest.raises(PublishError, match="symlink"):
+        publish(out, tmp_path / "staging", "output-link", runs_root=runs)
+
+
+def test_source_run_manifest_symlink_escape_is_rejected(tmp_path):
+    out = tmp_path / "out"
+    output = out / "01_Phase" / "master.csv"
+    output.parent.mkdir(parents=True)
+    output.write_bytes(b"master")
+    runs = tmp_path / "runs"
+    _bind_publication_outputs(runs, out)
+    manifest_path = next(runs.glob("*/run_manifest.json"))
+    external = tmp_path / "outside-manifest.json"
+    external.write_bytes(manifest_path.read_bytes())
+    manifest_path.unlink()
+    _create_symlink_or_skip(manifest_path, external)
+
+    with pytest.raises(PublishError, match="symlink"):
+        publish(out, tmp_path / "staging", "manifest-link", runs_root=runs)
+
+
+def test_verification_rejects_substituted_output_symlink(tmp_path):
+    out = tmp_path / "out"
+    output = out / "01_Phase" / "master.csv"
+    output.parent.mkdir(parents=True)
+    output.write_bytes(b"master")
+    runs = tmp_path / "runs"
+    _bind_publication_outputs(runs, out)
+    result = publish(out, tmp_path / "staging", "package-link", runs_root=runs)
+    published = result.dest / "Phase01" / "master.csv"
+    external = tmp_path / "same-bytes.csv"
+    external.write_bytes(published.read_bytes())
+    published.unlink()
+    _create_symlink_or_skip(published, external)
+
+    with pytest.raises(PublishError, match="symlink"):
+        verify_publication_package(result.dest)
+
+
+def test_index_change_and_unexpected_file_are_rejected(tmp_path):
+    out = tmp_path / "out"
+    output = out / "01_Phase" / "master.csv"
+    output.parent.mkdir(parents=True)
+    output.write_bytes(b"master")
+    runs = tmp_path / "runs"
+    _bind_publication_outputs(runs, out)
+    first = publish(out, tmp_path / "one", "index", runs_root=runs)
+    (first.dest / "INDEX.md").write_text("misleading status", encoding="utf-8")
+    with pytest.raises(PublishError, match="INDEX.md"):
+        verify_publication_package(first.dest)
+
+    second = publish(out, tmp_path / "two", "extra", runs_root=runs)
+    (second.dest / "unrecorded-report.pdf").write_bytes(b"unrecorded")
+    with pytest.raises(PublishError, match="unexpected file"):
+        verify_publication_package(second.dest)
+
+
+def test_compatibility_manifest_change_is_rejected(tmp_path):
+    out = tmp_path / "out"
+    output = out / "04_Phase" / "ranking.csv"
+    output.parent.mkdir(parents=True)
+    output.write_bytes(b"ranking")
+    runs = tmp_path / "runs"
+    _bind_publication_outputs(runs, out)
+    result = publish(out, tmp_path / "staging", "compat-tamper", runs_root=runs)
+    (result.dest / "run_manifest.json").write_text("{}", encoding="utf-8")
+
+    with pytest.raises(PublishError, match="compatibility root"):
+        verify_publication_package(result.dest)
+
+
+def test_unrelated_dry_run_is_never_the_compatibility_manifest(tmp_path):
+    out = tmp_path / "out"
+    output = out / "04_Phase" / "ranking.csv"
+    output.parent.mkdir(parents=True)
+    output.write_bytes(b"ranking")
+    runs = tmp_path / "runs"
+    _bind_publication_outputs(runs, out, phase_runs={"04": "aaa-selected"})
+    dry_dir = runs / "zzz-dry-run"
+    dry_dir.mkdir(parents=True)
+    (dry_dir / "run_manifest.json").write_text(
+        json.dumps(
+            {
+                "run_id": "zzz-dry-run",
+                "started_at": "2026-07-17T10:00:00+00:00",
+                "finished_at": "2026-07-17T10:01:00+00:00",
+                "dry_run": True,
+                "phases": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = publish(out, tmp_path / "staging", "compat-source", runs_root=runs)
+    manifest = load_publication_manifest(result.dest)
+    assert manifest.compatibility_run_manifest.run_id == "aaa-selected"
+    assert json.loads((result.dest / "run_manifest.json").read_text())["run_id"] == "aaa-selected"
+
+
+def test_publication_roots_must_not_overlap(tmp_path):
+    out = tmp_path / "workspace" / "out"
+    output = out / "01_Phase" / "master.csv"
+    output.parent.mkdir(parents=True)
+    output.write_bytes(b"master")
+    runs = tmp_path / "workspace" / "runs"
+    _bind_publication_outputs(runs, out)
+
+    with pytest.raises(PublishError, match="must not overlap"):
+        publish(out, tmp_path / "workspace", "recursive", runs_root=runs)
+
+
+def test_publication_identity_changes_for_every_recorded_identity_group(tmp_path, monkeypatch):
+    out = tmp_path / "out"
+    output = out / "01_Phase" / "master.csv"
+    output.parent.mkdir(parents=True)
+    output.write_bytes(b"master")
+    runs = tmp_path / "runs"
+    _bind_publication_outputs(runs, out)
+    monkeypatch.setattr("buduunkhad.core.publish._git_commit_sha", lambda _root: "a" * 40)
+    result = publish(out, tmp_path / "staging", "identity", runs_root=runs)
+    manifest = load_publication_manifest(result.dest)
+    phase = manifest.phases[0]
+    output_record = phase.outputs[0]
+
+    variants = [
+        {"project": manifest.project.model_copy(update={"configuration_sha256": "b" * 64})},
+        {"package_version": "9.9.9"},
+        {"git_commit_sha": "c" * 40},
+        {
+            "phases": (
+                phase.model_copy(
+                    update={
+                        "outputs": (
+                            output_record.model_copy(update={"source_path": "01_Phase/other.csv"}),
+                        )
+                    }
+                ),
+            )
+        },
+        {"phases": (phase.model_copy(update={"source_run_id": "different-run"}),)},
+        {"phases": (phase.model_copy(update={"source_binding_mode": "LEGACY_PATH_ONLY"}),)},
+        {"phases": (phase.model_copy(update={"gate_state": "different-gate"}),)},
+        {
+            "phases": (
+                phase.model_copy(
+                    update={
+                        "outputs": (
+                            output_record.model_copy(
+                                update={
+                                    "sha256": "1" * 64,
+                                    "source_sha256": "1" * 64,
+                                }
+                            ),
+                        )
+                    }
+                ),
+            )
+        },
+        {
+            "phases": (
+                phase.model_copy(
+                    update={
+                        "outputs": (
+                            output_record.model_copy(
+                                update={"transformation_id": "qgz-flat-datasource-rewrite-v1"}
+                            ),
+                        )
+                    }
+                ),
+            )
+        },
+        {
+            "compatibility_run_manifest": manifest.compatibility_run_manifest.model_copy(
+                update={"sha256": "d" * 64}
+            )
+        },
+        {"superseded_publication_id": f"pub-{'e' * 32}"},
+    ]
+    for update in variants:
+        changed = publication_id_for(
+            project=update.get("project", manifest.project),
+            package_version=update.get("package_version", manifest.package_version),
+            git_commit_sha=update.get("git_commit_sha", manifest.git_commit_sha),
+            phases=update.get("phases", manifest.phases),
+            package_status=manifest.package_status,
+            compatibility_run_manifest=update.get(
+                "compatibility_run_manifest", manifest.compatibility_run_manifest
+            ),
+            superseded_publication_id=update.get(
+                "superseded_publication_id", manifest.superseded_publication_id
+            ),
+        )
+        assert changed != manifest.publication_id
+
+
 def test_publish_accepts_current_pipeline_run_manifest_contract(raw_archive):
     from buduunkhad.pipeline import run_pipeline
 
@@ -522,6 +1020,11 @@ def test_publish_accepts_current_pipeline_run_manifest_contract(raw_archive):
 
     manifest = verify_publication_package(result.dest)
     assert manifest.included_phase_ids == ("00",)
+    assert manifest.phases[0].source_binding_mode == "SHA256_BOUND"
+    assert any(
+        output.source_path.endswith("_Phase00_QAQC_Log.xlsx")
+        for output in manifest.phases[0].outputs
+    )
     assert manifest.phases[0].human_review_or_qaqc_pending is True
     assert manifest.package_status == "HUMAN_REVIEW_PENDING"
 
@@ -533,3 +1036,16 @@ def test_package_version_authorities_are_synchronized():
 
     project = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     assert project["project"]["version"] == __version__ == "0.8.1"
+
+
+def test_publish_cli_keeps_existing_options_and_adds_repeatable_source_run_selector():
+    from typer.testing import CliRunner
+
+    from buduunkhad.cli import app
+
+    result = CliRunner().invoke(app, ["publish", "--help"])
+
+    assert result.exit_code == 0
+    assert "--label" in result.stdout
+    assert "--supersedes" in result.stdout
+    assert "--source-run" in result.stdout

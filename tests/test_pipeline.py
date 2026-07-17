@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -111,6 +112,7 @@ def test_dry_run_builds_full_tree_and_manifest(project):
     data = json.loads(man_path.read_text())
     assert data["dry_run"] is True
     assert len(data["phases"]) == 13
+    assert all(not phase["output_artifacts"] for phase in data["phases"])
 
 
 def test_manifest_surfaces_qaqc_pending_alongside_passed(raw_archive):
@@ -131,6 +133,46 @@ def test_manifest_surfaces_qaqc_pending_alongside_passed(raw_archive):
     d00 = next(p for p in data["phases"] if p["phase_id"] == "00")
     assert d00["qaqc_passed"] is True
     assert d00["qaqc_pending"] is True
+    assert d00["pending_human_review_or_qaqc_count"] > 0
+
+
+def test_successful_run_manifest_seals_every_publishable_output_and_runner_qaqc(raw_archive):
+    from buduunkhad.core.run_artifacts import sha256_file
+
+    config, register, _raw = raw_archive
+    manifest = run_pipeline(config, register, only=["00"], dry_run=False)
+    phase = manifest.phases[0]
+
+    qaqc_outputs = [path for path in phase.outputs if path.endswith("_Phase00_QAQC_Log.xlsx")]
+    assert len(qaqc_outputs) == 1
+    artifacts = {artifact.path: artifact for artifact in phase.output_artifacts}
+    qaqc_relative = Path(qaqc_outputs[0]).resolve().relative_to(config.output_root.resolve())
+    assert qaqc_relative.as_posix() in artifacts
+    assert len(artifacts) == len(phase.output_artifacts)
+    for relative, artifact in artifacts.items():
+        output = config.output_root / Path(relative)
+        assert artifact.sha256 == sha256_file(output)
+        assert artifact.sha256 == artifact.sha256.lower()
+        assert artifact.size_bytes == output.stat().st_size
+
+    written = json.loads(
+        (config.runs_root / manifest.run_id / "run_manifest.json").read_text(encoding="utf-8")
+    )["phases"][0]
+    assert written["outputs"] == phase.outputs
+    assert written["output_artifacts"] == [
+        artifact.model_dump(mode="json") for artifact in phase.output_artifacts
+    ]
+
+
+def test_run_artifact_sealing_rejects_duplicate_portable_paths(tmp_path):
+    from buduunkhad.core.run_artifacts import ArtifactSealError, seal_output_artifacts
+
+    output = tmp_path / "01_Phase" / "master.csv"
+    output.parent.mkdir(parents=True)
+    output.write_bytes(b"master")
+
+    with pytest.raises(ArtifactSealError, match="duplicated"):
+        seal_output_artifacts(tmp_path, [output, output])
 
 
 def test_real_run_without_data_fails_loudly(project):
@@ -186,6 +228,7 @@ def test_stub_phase_real_run_records_not_implemented(raw_archive):
     manifest = run_pipeline(config, register, only=["05"], dry_run=False)
     assert manifest.stopped_at == "05"
     assert manifest.phases[0].status == "not-implemented"
+    assert manifest.phases[0].output_artifacts == []
     assert "build pending" in manifest.phases[0].error
 
 

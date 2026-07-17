@@ -11,16 +11,15 @@ re-upload duplicates of data that already lives in the Drive.
 from __future__ import annotations
 
 import csv
-import hashlib
 import json
 import os
 import re
 import shutil
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from pydantic import ValidationError
 
@@ -28,42 +27,26 @@ from buduunkhad import __version__
 from buduunkhad.core.publication_manifest import (
     AGGREGATION_NOTICE,
     PUBLICATION_MANIFEST_FORMAT_VERSION,
+    QGZ_FLAT_DATASOURCE_REWRITE,
+    CompatibilityRunManifest,
     PublicationManifest,
     PublicationProjectReference,
     PublishedOutput,
     PublishedPhase,
+    SourceBindingMode,
     publication_id_for,
     publication_status_for,
 )
-
-#: Deliverable file types. Derived rasters (``.tif`` COGs from Phase 02 onward) are
-#: deliverables; raw working copies are excluded by **folder** (see ``WORKING_COPY_DIRS``),
-#: not by extension, so raw ``.tif`` duplicates of the Drive archive are never re-uploaded.
-DELIVERABLE_SUFFIXES: frozenset[str] = frozenset(
-    {".gpkg", ".qgz", ".xlsx", ".csv", ".docx", ".pdf", ".md", ".json", ".tif"}
-)
-
-#: Folders that hold raw working copies — never published (belt-and-suspenders on top
-#: of the extension filter).
-WORKING_COPY_DIRS: frozenset[str] = frozenset(
-    {
-        "01_Tectonic_Terrane_KMZ",
-        "02_DEM_ALOS_ASTERGDEM",
-        "03_KOMPSAT2_MSC_L1G",
-        "04_HeavyMineral_StreamSediment_Field",
-        "05_Geology_Mineral_Prospectivity",
-        "06_Regional_Metallogenic_L47B",
-        "07_Basemap_Sentinel2_ASTER",
-        "01_Input_Working_Copy",
-        "00_Input_Working_Copy",
-        # ASTER per-band warp intermediates (re-derivable from #73; the deliverables are the
-        # index/score/target products in 04_Index_Calculation and 05_Score_Class_Binary).
-        "02_Band_Extraction",
-        "03_Project_UTM47",
-        # Phase-00 copies of UNREGISTERED raw docs (DataRoom registers, folder readme) —
-        # raw duplicates like the evidence-group folders above (also in the raw backup).
-        "08_Supplementary_Source_Documents",
-    }
+from buduunkhad.core.run_artifacts import (
+    DELIVERABLE_SUFFIXES,
+    WORKING_COPY_DIRS,
+    ArtifactSealError,
+    RunOutputArtifact,
+    has_symlink_component,
+    is_publishable_relative,
+    is_working_copy,
+    require_regular_file_under,
+    sha256_file,
 )
 
 
@@ -83,13 +66,28 @@ class _RunPhaseRecord:
     manifest_path: Path
     manifest_sha256: str
     run_id: str
+    started_at: str
+    finished_at: str
     phase_id: str
     execution_status: str
     outputs: tuple[Path, ...]
+    output_artifacts: tuple[RunOutputArtifact, ...] | None
     gate_state: str
     gate_provisional: bool
     human_review_or_qaqc_pending: bool
     pending_human_review_or_qaqc_count: int | None
+
+    @property
+    def binding_mode(self) -> SourceBindingMode:
+        return "SHA256_BOUND" if self.output_artifacts is not None else "LEGACY_PATH_ONLY"
+
+
+@dataclass(frozen=True)
+class _ObservedArtifact:
+    path: Path
+    relative: str
+    sha256: str
+    size_bytes: int
 
 
 def _require_safe_component(value: str, field_name: str) -> str:
@@ -103,7 +101,44 @@ def _require_safe_component(value: str, field_name: str) -> str:
 
 
 def _is_working_copy(rel: Path) -> bool:
-    return any(part in WORKING_COPY_DIRS for part in rel.parts)
+    return is_working_copy(rel)
+
+
+def _require_link_free_path(path: Path, description: str) -> Path:
+    absolute = Path(path).absolute()
+    if has_symlink_component(absolute):
+        raise PublishError(f"{description} must not use a symlink: {path}")
+    return absolute.resolve()
+
+
+def _require_root(path: Path, description: str, *, create: bool = False) -> Path:
+    absolute = Path(path).absolute()
+    if has_symlink_component(absolute):
+        raise PublishError(f"{description} must not use a symlink: {path}")
+    if create:
+        absolute.mkdir(parents=True, exist_ok=True)
+    resolved = _require_link_free_path(absolute, description)
+    if not resolved.is_dir():
+        raise PublishError(f"{description} is not a directory: {path}")
+    return resolved
+
+
+def _require_package_file(package_root: Path, relative: str, description: str) -> Path:
+    try:
+        return require_regular_file_under(
+            package_root, package_root / Path(relative), description=description
+        )
+    except ArtifactSealError as exc:
+        raise PublishError(str(exc)) from exc
+
+
+def _reject_overlapping_roots(*roots: tuple[str, Path]) -> None:
+    for index, (left_name, left) in enumerate(roots):
+        for right_name, right in roots[index + 1 :]:
+            if left == right or left in right.parents or right in left.parents:
+                raise PublishError(
+                    f"{left_name} and {right_name} must not overlap: {left} ; {right}"
+                )
 
 
 def _phase_tag(rel: Path) -> str:
@@ -120,26 +155,39 @@ def _phase_tag(rel: Path) -> str:
 
 def collect_deliverables(output_root: Path) -> list[Path]:
     """Deliverable files under ``output_root`` (excludes raw working copies)."""
-    output_root = Path(output_root)
+    output_root = _require_root(Path(output_root), "output root")
     out: list[Path] = []
     for p in sorted(output_root.rglob("*")):
+        if p.is_symlink():
+            raise PublishError(f"output tree contains a symlink: {p}")
         if not p.is_file():
             continue
         rel = p.relative_to(output_root)
-        if _is_working_copy(rel):
-            continue
-        if p.suffix.lower() in DELIVERABLE_SUFFIXES:
-            out.append(p)
+        if is_publishable_relative(rel):
+            try:
+                out.append(
+                    require_regular_file_under(output_root, p, description="publication output")
+                )
+            except ArtifactSealError as exc:
+                raise PublishError(str(exc)) from exc
     return out
 
 
 def latest_run_manifest(runs_root: Path) -> Path | None:
-    """The newest ``run_manifest.json`` under ``runs_root`` (runs are timestamp-named)."""
+    """Return the chronologically latest manifest by its recorded completion time."""
+
     runs_root = Path(runs_root)
     if not runs_root.exists():
         return None
-    manifests = sorted(runs_root.glob("*/run_manifest.json"))
-    return manifests[-1] if manifests else None
+    manifests = list(runs_root.glob("*/run_manifest.json"))
+    if not manifests:
+        return None
+    timed = [(_run_manifest_completion(manifest), manifest) for manifest in manifests]
+    latest_time = max(value for value, _manifest in timed)
+    latest = [manifest for value, manifest in timed if value == latest_time]
+    if len(latest) != 1:
+        raise PublishError("latest run manifest is ambiguous by recorded completion time")
+    return latest[0]
 
 
 def latest_gate_per_phase(runs_root: Path) -> dict[str, dict[str, object]]:
@@ -147,28 +195,58 @@ def latest_gate_per_phase(runs_root: Path) -> dict[str, dict[str, object]]:
 
     The published package spans phases run at different times, so a single latest manifest
     (which may be a dry run or cover only some phases) can't describe every PhaseNN folder.
-    Iterate manifests in ascending (timestamp) order so the last real gate seen per phase wins.
+    Compare recorded completion timestamps; caller-supplied run IDs are not chronological.
     """
     runs_root = Path(runs_root)
     out: dict[str, dict[str, object]] = {}
     if not runs_root.exists():
         return out
-    for man in sorted(runs_root.glob("*/run_manifest.json")):
-        try:
-            data = json.loads(man.read_text(encoding="utf-8"))
-        except (ValueError, OSError):  # pragma: no cover - defensive
-            continue
+    phase_times: dict[str, datetime] = {}
+    for man in runs_root.glob("*/run_manifest.json"):
+        completed_at = _run_manifest_completion(man)
+        data = _load_json_object(man)
         if data.get("dry_run"):
             continue
-        for p in data.get("phases", []):
+        phases = data.get("phases")
+        if not isinstance(phases, list):
+            raise PublishError(f"run manifest lacks a phases list: {man}")
+        for p in phases:
+            if not isinstance(p, dict) or not isinstance(p.get("phase_id"), str):
+                raise PublishError(f"run manifest contains a malformed phase record: {man}")
             gate = p.get("gate", {})
-            if gate.get("status"):
-                out[p["phase_id"]] = {
-                    "status": gate["status"],
-                    "provisional": gate.get("provisional", False),
-                    "run_id": data.get("run_id", ""),
-                }
+            phase_id = p["phase_id"]
+            if isinstance(gate, dict) and gate.get("status"):
+                if phase_times.get(phase_id) == completed_at:
+                    raise PublishError(
+                        f"latest gate is ambiguous for Phase {phase_id} at {completed_at.isoformat()}"
+                    )
+                if phase_id not in phase_times or completed_at > phase_times[phase_id]:
+                    phase_times[phase_id] = completed_at
+                    out[phase_id] = {
+                        "status": gate["status"],
+                        "provisional": gate.get("provisional", False),
+                        "run_id": data.get("run_id", ""),
+                    }
     return out
+
+
+def _run_manifest_completion(path: Path) -> datetime:
+    if path.is_symlink() or has_symlink_component(path):
+        raise PublishError(f"source run manifest must not use a symlink: {path}")
+    data = _load_json_object(path)
+    run_id = data.get("run_id")
+    if run_id != path.parent.name:
+        raise PublishError(f"source run ID does not match its directory: {path}")
+    value = data.get("finished_at")
+    if not isinstance(value, str) or not value:
+        raise PublishError(f"run manifest lacks finished_at: {path}")
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise PublishError(f"run manifest has invalid finished_at: {path}") from exc
+    if parsed.tzinfo is not None and parsed.utcoffset() is not None:
+        return parsed.astimezone(UTC).replace(tzinfo=None)
+    return parsed
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -194,23 +272,36 @@ def _load_json_object(path: Path) -> dict[str, object]:
 
 def _resolve_recorded_output(value: str, output_root: Path) -> Path:
     recorded = Path(value)
+    candidates: tuple[Path, ...]
     if recorded.is_absolute():
-        return recorded.resolve()
-    candidates = (
-        (output_root / recorded).resolve(),
-        (output_root.parent / recorded).resolve(),
-        (Path.cwd() / recorded).resolve(),
-    )
+        candidates = (recorded.absolute(),)
+    else:
+        candidates = (
+            (output_root / recorded).absolute(),
+            (output_root.parent / recorded).absolute(),
+            (Path.cwd() / recorded).absolute(),
+        )
+    selected = candidates[0]
     for candidate in candidates:
         if candidate.exists():
-            return candidate
+            selected = candidate
+            break
     for candidate in candidates:
         try:
-            candidate.relative_to(output_root.resolve())
+            candidate.resolve().relative_to(output_root.resolve())
         except ValueError:
             continue
-        return candidate
-    return candidates[0]
+        if not selected.exists():
+            selected = candidate
+        break
+    if has_symlink_component(selected):
+        raise PublishError(f"recorded phase output must not use a symlink: {value}")
+    resolved = selected.resolve()
+    try:
+        resolved.relative_to(output_root.resolve())
+    except ValueError as exc:
+        raise PublishError(f"recorded phase output escapes output_root: {value}") from exc
+    return resolved
 
 
 def _deliverable_relative(path: Path, output_root: Path) -> Path | None:
@@ -218,27 +309,70 @@ def _deliverable_relative(path: Path, output_root: Path) -> Path | None:
         relative = path.resolve().relative_to(output_root.resolve())
     except ValueError:
         return None
-    if _is_working_copy(relative) or path.suffix.lower() not in DELIVERABLE_SUFFIXES:
+    if not is_publishable_relative(relative):
         return None
     return relative
+
+
+def _manifest_timestamp(data: dict[str, object], field_name: str, path: Path) -> str:
+    value = data.get(field_name)
+    if not isinstance(value, str) or not value:
+        raise PublishError(f"run manifest lacks {field_name}: {path}")
+    try:
+        datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise PublishError(f"run manifest has invalid {field_name}: {path}") from exc
+    return value
 
 
 def _load_run_phase_records(runs_root: Path, output_root: Path) -> dict[str, list[_RunPhaseRecord]]:
     records: dict[str, list[_RunPhaseRecord]] = {}
     if not runs_root.exists():
         raise PublishError(f"runs root does not exist: {runs_root}")
-    manifests = sorted(runs_root.glob("*/run_manifest.json"))
+    manifests = list(runs_root.glob("*/run_manifest.json"))
     if not manifests:
         raise PublishError(f"no source run manifests found under: {runs_root}")
+    seen_runs: set[str] = set()
     for manifest_path in manifests:
+        if manifest_path.is_symlink() or has_symlink_component(manifest_path):
+            raise PublishError(f"source run manifest must not use a symlink: {manifest_path}")
+        try:
+            manifest_path.resolve().relative_to(runs_root.resolve())
+        except ValueError as exc:
+            raise PublishError(f"source run manifest escapes runs_root: {manifest_path}") from exc
         data = _load_json_object(manifest_path)
-        if data.get("dry_run") is True:
-            continue
         run_id = data.get("run_id")
         phases = data.get("phases")
-        if not isinstance(run_id, str) or not run_id.strip() or not isinstance(phases, list):
+        if (
+            not isinstance(run_id, str)
+            or not run_id.strip()
+            or not isinstance(phases, list)
+            or type(data.get("dry_run")) is not bool
+        ):
             raise PublishError(f"run manifest lacks a valid run_id or phases list: {manifest_path}")
         _require_safe_component(run_id, "source run ID")
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", run_id) is None:
+            raise PublishError(f"source run ID has unsupported characters: {run_id}")
+        if run_id != manifest_path.parent.name:
+            raise PublishError(
+                f"source run ID does not match its directory: {run_id} != "
+                f"{manifest_path.parent.name}"
+            )
+        if run_id in seen_runs:
+            raise PublishError(f"duplicate source run identity: {run_id}")
+        seen_runs.add(run_id)
+        started_at = _manifest_timestamp(data, "started_at", manifest_path)
+        finished_at = _manifest_timestamp(data, "finished_at", manifest_path)
+        try:
+            if datetime.fromisoformat(finished_at) < datetime.fromisoformat(started_at):
+                raise PublishError(f"run manifest finishes before it starts: {manifest_path}")
+        except TypeError as exc:
+            raise PublishError(
+                f"run manifest timestamps use incompatible timezone forms: {manifest_path}"
+            ) from exc
+        if data.get("dry_run") is True:
+            continue
+        seen_phases: set[str] = set()
         for phase in phases:
             if not isinstance(phase, dict):
                 raise PublishError(
@@ -256,22 +390,79 @@ def _load_run_phase_records(runs_root: Path, output_root: Path) -> dict[str, lis
                 or not all(isinstance(item, str) for item in output_values)
                 or not isinstance(gate, dict)
                 or not isinstance(gate.get("status"), str)
+                or not gate.get("status")
+                or type(gate.get("provisional")) is not bool
+                or type(phase.get("qaqc_pending")) is not bool
             ):
                 raise PublishError(
                     f"run manifest phase lacks outputs or gate provenance: {manifest_path}"
                 )
+            if phase_id in seen_phases:
+                raise PublishError(f"run manifest repeats Phase {phase_id}: {manifest_path}")
+            seen_phases.add(phase_id)
             pending_count = phase.get("pending_human_review_or_qaqc_count")
             if pending_count is not None and (type(pending_count) is not int or pending_count < 0):
                 raise PublishError(f"run manifest has an invalid pending count: {manifest_path}")
+            has_artifact_inventory = "output_artifacts" in phase
+            artifact_values = phase.get("output_artifacts")
+            output_artifacts: tuple[RunOutputArtifact, ...] | None
+            if not has_artifact_inventory:
+                output_artifacts = None
+                resolved_outputs = tuple(
+                    _resolve_recorded_output(item, output_root) for item in output_values
+                )
+            elif not isinstance(artifact_values, list):
+                raise PublishError(f"run manifest output_artifacts is invalid: {manifest_path}")
+            else:
+                try:
+                    output_artifacts = tuple(
+                        RunOutputArtifact.model_validate(item) for item in artifact_values
+                    )
+                except ValidationError as exc:
+                    raise PublishError(
+                        f"run manifest output_artifacts is invalid: {manifest_path}"
+                    ) from exc
+                artifact_paths = tuple(item.path for item in output_artifacts)
+                if len(set(artifact_paths)) != len(artifact_paths):
+                    raise PublishError(f"run manifest repeats an artifact path: {manifest_path}")
+                recorded_paths = _recorded_publishable_paths(
+                    output_values, set(artifact_paths), phase_id
+                )
+                if set(artifact_paths) != recorded_paths:
+                    raise PublishError(
+                        f"run manifest artifact inventory is incomplete or inconsistent: "
+                        f"{manifest_path}"
+                    )
+                resolved_outputs_list: list[Path] = []
+                for artifact_path in artifact_paths:
+                    candidate = (output_root / Path(artifact_path)).absolute()
+                    if has_symlink_component(candidate):
+                        raise PublishError(
+                            f"recorded phase artifact must not use a symlink: {artifact_path}"
+                        )
+                    resolved = candidate.resolve()
+                    try:
+                        resolved.relative_to(output_root.resolve())
+                    except ValueError as exc:
+                        raise PublishError(
+                            f"recorded phase artifact escapes output_root: {artifact_path}"
+                        ) from exc
+                    resolved_outputs_list.append(resolved)
+                resolved_outputs = tuple(resolved_outputs_list)
+                if execution_status != "ok" and output_artifacts:
+                    raise PublishError(
+                        f"incomplete phase claims sealed output artifacts: {manifest_path}"
+                    )
             record = _RunPhaseRecord(
                 manifest_path=manifest_path,
                 manifest_sha256=_sha256(manifest_path),
                 run_id=run_id,
+                started_at=started_at,
+                finished_at=finished_at,
                 phase_id=phase_id,
                 execution_status=execution_status,
-                outputs=tuple(
-                    _resolve_recorded_output(item, output_root) for item in output_values
-                ),
+                outputs=resolved_outputs,
+                output_artifacts=output_artifacts,
                 gate_state=str(gate["status"]),
                 gate_provisional=gate.get("provisional") is True,
                 human_review_or_qaqc_pending=phase.get("qaqc_pending") is True,
@@ -288,64 +479,159 @@ def _phase_id_from_relative(relative: Path) -> str:
     return tag[5:]
 
 
-def _is_runner_qaqc_output(path: Path, output_root: Path, phase_id: str) -> bool:
-    relative = path.resolve().relative_to(output_root.resolve())
-    return _phase_id_from_relative(relative) == phase_id and relative.name.endswith(
-        f"_Phase{phase_id}_QAQC_Log.xlsx"
+def _is_runner_qaqc_relative(path: str, phase_id: str) -> bool:
+    relative = PurePosixPath(path)
+    return relative.name.endswith(f"_Phase{phase_id}_QAQC_Log.xlsx")
+
+
+def _record_matches_observed(
+    candidate: _RunPhaseRecord,
+    observed: Mapping[str, _ObservedArtifact],
+    output_root: Path,
+) -> bool:
+    if candidate.output_artifacts is not None:
+        expected = {
+            artifact.path: (artifact.sha256, artifact.size_bytes)
+            for artifact in candidate.output_artifacts
+        }
+        current = {
+            path: (artifact.sha256, artifact.size_bytes) for path, artifact in observed.items()
+        }
+        return expected == current
+    expected_paths = {
+        relative.as_posix()
+        for path in candidate.outputs
+        if (relative := _deliverable_relative(path, output_root)) is not None
+    }
+    observed_paths = set(observed)
+    return expected_paths <= observed_paths and all(
+        path in expected_paths or _is_runner_qaqc_relative(path, candidate.phase_id)
+        for path in observed_paths
     )
+
+
+def _recorded_publishable_paths(
+    output_values: list[object], expected_paths: set[str], phase_id: str
+) -> set[str]:
+    matched: list[str] = []
+    for value in output_values:
+        if not isinstance(value, str):
+            raise PublishError(f"source outputs are invalid for Phase {phase_id}")
+        normalized = value.replace("\\", "/")
+        path = PurePosixPath(normalized)
+        if path.suffix.lower() not in DELIVERABLE_SUFFIXES or any(
+            part in WORKING_COPY_DIRS for part in path.parts
+        ):
+            continue
+        matches = [
+            expected
+            for expected in expected_paths
+            if normalized == expected or normalized.endswith(f"/{expected}")
+        ]
+        if len(matches) != 1:
+            raise PublishError(
+                f"source output path is unrecorded or ambiguous for Phase {phase_id}: {value}"
+            )
+        matched.append(matches[0])
+    if len(matched) != len(set(matched)):
+        raise PublishError(f"source output paths are duplicated for Phase {phase_id}")
+    return set(matched)
 
 
 def _select_publication_records(
     output_root: Path,
     sources: tuple[Path, ...],
     records: dict[str, list[_RunPhaseRecord]],
+    source_runs: Mapping[str, str] | None = None,
 ) -> dict[str, _RunPhaseRecord]:
-    actual: dict[str, set[Path]] = {}
+    actual: dict[str, dict[str, _ObservedArtifact]] = {}
     for source in sources:
         relative = source.resolve().relative_to(output_root.resolve())
-        actual.setdefault(_phase_id_from_relative(relative), set()).add(source.resolve())
+        portable = relative.as_posix()
+        actual.setdefault(_phase_id_from_relative(relative), {})[portable] = _ObservedArtifact(
+            path=source.resolve(),
+            relative=portable,
+            sha256=_sha256(source),
+            size_bytes=source.stat().st_size,
+        )
 
     phase_ids = set(actual)
     for phase_id, candidates in records.items():
-        latest = candidates[-1]
-        if any(_deliverable_relative(path, output_root) is not None for path in latest.outputs):
+        if any(
+            candidate.output_artifacts
+            or any(
+                _deliverable_relative(path, output_root) is not None for path in candidate.outputs
+            )
+            for candidate in candidates
+        ):
             phase_ids.add(phase_id)
+    selectors = dict(source_runs or {})
+    unknown_selectors = sorted(set(selectors) - phase_ids)
+    if unknown_selectors:
+        raise PublishError(f"source-run selector has no deliverable Phase: {unknown_selectors}")
 
     selected: dict[str, _RunPhaseRecord] = {}
     for phase_id in sorted(phase_ids):
-        phase_candidates = records.get(phase_id)
+        phase_candidates = [
+            candidate
+            for candidate in records.get(phase_id, [])
+            if candidate.execution_status == "ok"
+        ]
         if not phase_candidates:
-            raise PublishError(f"no source run manifest records published Phase {phase_id}")
-        record = phase_candidates[-1]
-        if record.execution_status != "ok":
-            raise PublishError(
-                f"Phase {phase_id} source run {record.run_id} is not complete: "
-                f"{record.execution_status}"
-            )
-        expected = {
-            path.resolve()
-            for path in record.outputs
-            if _deliverable_relative(path, output_root) is not None
-        }
-        observed = actual.get(phase_id, set())
-        missing = sorted(str(path) for path in expected - observed)
-        unattributed = sorted(
-            str(path)
-            for path in observed - expected
-            if not _is_runner_qaqc_output(path, output_root, phase_id)
-        )
-        if missing:
-            raise PublishError(
-                f"Phase {phase_id} source run {record.run_id} has missing output(s): {missing}"
-            )
-        if unattributed:
-            raise PublishError(
-                f"Phase {phase_id} contains output(s) not attributed to its latest source run: "
-                f"{unattributed}"
-            )
+            raise PublishError(f"no complete source run manifest published Phase {phase_id}")
+        observed = actual.get(phase_id, {})
         if not observed:
-            raise PublishError(f"Phase {phase_id} source run has no publishable outputs")
-        selected[phase_id] = record
+            raise PublishError(f"Phase {phase_id} source run has missing output(s)")
+        requested_run = selectors.get(phase_id)
+        if requested_run is not None:
+            phase_candidates = [
+                candidate for candidate in phase_candidates if candidate.run_id == requested_run
+            ]
+            if not phase_candidates:
+                raise PublishError(
+                    f"selected source run {requested_run} has no complete Phase {phase_id}"
+                )
+
+        if requested_run is not None:
+            matches_requested = [
+                candidate
+                for candidate in phase_candidates
+                if _record_matches_observed(candidate, observed, output_root)
+            ]
+            if len(matches_requested) != 1:
+                raise PublishError(
+                    f"selected source run {requested_run} does not exactly match Phase "
+                    f"{phase_id} outputs"
+                )
+            selected[phase_id] = matches_requested[0]
+            continue
+
+        strong_candidates = [
+            candidate for candidate in phase_candidates if candidate.output_artifacts is not None
+        ]
+        matching = [
+            candidate
+            for candidate in strong_candidates
+            if _record_matches_observed(candidate, observed, output_root)
+        ]
+        if not strong_candidates:
+            matching = [
+                candidate
+                for candidate in phase_candidates
+                if _record_matches_observed(candidate, observed, output_root)
+            ]
+        if not matching:
+            mode = "SHA256-bound" if strong_candidates else "legacy path-only"
+            raise PublishError(
+                f"no {mode} source run exactly matches current Phase {phase_id} outputs"
+            )
+        if len(matching) != 1:
+            run_ids = sorted(candidate.run_id for candidate in matching)
+            raise PublishError(
+                f"Phase {phase_id} matches multiple source runs {run_ids}; select one with "
+                f"--source-run {phase_id}=RUN_ID"
+            )
+        selected[phase_id] = matching[0]
     if not selected:
         raise PublishError("publication contains no phase deliverables")
     return selected
@@ -389,6 +675,7 @@ def publish(
     project_config_path: Path | None = None,
     superseded_publication_id: str | None = None,
     published_at: datetime | None = None,
+    source_runs: Mapping[str, str] | None = None,
 ) -> PublishResult:
     """Copy provenance-bound deliverables into a local publication staging package.
 
@@ -407,12 +694,20 @@ def publish(
     ):
         raise PublishError("publication timestamp must be timezone-aware")
     publication_time = (published_at or datetime.now(UTC)).astimezone(UTC)
-    output_root = Path(output_root).resolve()
-    publish_root = Path(publish_root).resolve()
+    output_root = _require_root(Path(output_root), "output root")
     if runs_root is None:
         raise PublishError("runs_root is required to bind published phases to source runs")
-    runs_root = Path(runs_root).resolve()
-    config_path = Path(project_config_path or "config/project.yaml")
+    runs_root = _require_root(Path(runs_root), "runs root")
+    publish_root_candidate = _require_link_free_path(Path(publish_root), "publication root")
+    _reject_overlapping_roots(
+        ("output root", output_root),
+        ("runs root", runs_root),
+        ("publication root", publish_root_candidate),
+    )
+    publish_root = _require_root(publish_root_candidate, "publication root", create=True)
+    config_path = _require_link_free_path(
+        Path(project_config_path or "config/project.yaml"), "project configuration"
+    )
     if not config_path.is_file():
         raise PublishError(f"authoritative project configuration is unavailable: {config_path}")
     project = PublicationProjectReference(
@@ -421,6 +716,8 @@ def publish(
     )
 
     dest = publish_root / f"Buduunkhad_Deliverables_{label}"
+    if dest.is_symlink() or has_symlink_component(dest):
+        raise PublishError(f"publication destination must not use a symlink: {dest}")
     if dest.exists() and any(dest.iterdir()) and not overwrite:
         raise PublishError(
             f"Publish destination already exists and is not empty: {dest}. "
@@ -442,21 +739,15 @@ def publish(
         targets[src.resolve()] = target_relative
 
     records = _load_run_phase_records(runs_root, output_root)
-    selected = _select_publication_records(output_root, tuple(targets), records)
+    selected = _select_publication_records(
+        output_root, tuple(targets), records, source_runs=source_runs
+    )
 
     if dest.exists() and overwrite:
+        if any(entry.is_symlink() for entry in dest.rglob("*")):
+            raise PublishError("existing publication destination contains a symlink")
         shutil.rmtree(dest)
     dest.mkdir(parents=True, exist_ok=True)
-
-    copied: list[Path] = []
-    for src, target_relative in sorted(targets.items(), key=lambda item: item[1].as_posix()):
-        target = dest / target_relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if src.suffix.lower() == ".qgz":
-            _publish_qgz_flat(src, target)
-        else:
-            shutil.copy2(src, target)
-        copied.append(target)
 
     skipped = sum(
         1
@@ -464,11 +755,7 @@ def publish(
         if p.is_file() and _is_working_copy(p.relative_to(output_root))
     )
 
-    manifest = latest_run_manifest(runs_root) if runs_root is not None else None
-    if manifest is not None and manifest.exists():
-        shutil.copy2(manifest, dest / "run_manifest.json")
-        copied.append(dest / "run_manifest.json")
-
+    copied: list[Path] = []
     phase_records: list[PublishedPhase] = []
     copied_source_manifests: dict[Path, Path] = {}
     for phase_id, record in sorted(selected.items()):
@@ -481,35 +768,87 @@ def publish(
             shutil.copy2(record.manifest_path, source_manifest_target)
             copied_source_manifests[record.manifest_path] = source_manifest_target
             copied.append(source_manifest_target)
-        phase_outputs = tuple(
-            PublishedOutput(
-                path=targets[source].as_posix(),
-                sha256=_sha256(dest / targets[source]),
-            )
-            for source in sorted(
-                (
-                    source
-                    for source in targets
-                    if _phase_id_from_relative(source.relative_to(output_root)) == phase_id
-                ),
-                key=lambda source: targets[source].as_posix(),
-            )
+        sealed_by_path = {artifact.path: artifact for artifact in (record.output_artifacts or ())}
+        phase_outputs_list: list[PublishedOutput] = []
+        phase_sources = sorted(
+            (
+                source
+                for source in targets
+                if _phase_id_from_relative(source.relative_to(output_root)) == phase_id
+            ),
+            key=lambda source: targets[source].as_posix(),
         )
+        for source in phase_sources:
+            source_relative = source.relative_to(output_root).as_posix()
+            before_sha256 = _sha256(source)
+            before_size = source.stat().st_size
+            sealed = sealed_by_path.get(source_relative)
+            if sealed is not None and (
+                sealed.sha256 != before_sha256 or sealed.size_bytes != before_size
+            ):
+                raise PublishError(
+                    f"source output changed after run {record.run_id}: {source_relative}"
+                )
+            target_relative = targets[source]
+            target = dest / target_relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            transformation_id = None
+            if source.suffix.lower() == ".qgz":
+                _publish_qgz_flat(source, target)
+                transformation_id = QGZ_FLAT_DATASOURCE_REWRITE
+            else:
+                shutil.copy2(source, target)
+            after_sha256 = _sha256(source)
+            after_size = source.stat().st_size
+            if (before_sha256, before_size) != (after_sha256, after_size):
+                raise PublishError(f"source output changed while publishing: {source_relative}")
+            published_sha256 = _sha256(target)
+            published_size = target.stat().st_size
+            if transformation_id is None and (
+                published_sha256 != before_sha256 or published_size != before_size
+            ):
+                raise PublishError(f"published copy differs from source: {source_relative}")
+            copied.append(target)
+            phase_outputs_list.append(
+                PublishedOutput(
+                    path=target_relative.as_posix(),
+                    sha256=published_sha256,
+                    size_bytes=published_size,
+                    source_path=source_relative,
+                    source_sha256=sealed.sha256 if sealed is not None else None,
+                    source_size_bytes=sealed.size_bytes if sealed is not None else None,
+                    transformation_id=transformation_id,
+                )
+            )
+        phase_outputs = tuple(phase_outputs_list)
         phase_records.append(
             PublishedPhase(
                 phase_id=phase_id,
                 source_run_id=record.run_id,
+                source_started_at=record.started_at,
+                source_finished_at=record.finished_at,
                 source_run_manifest_path=source_manifest_relative.as_posix(),
                 source_run_manifest_sha256=record.manifest_sha256,
+                execution_status="ok",
                 gate_state=record.gate_state,
                 gate_provisional=record.gate_provisional,
                 human_review_or_qaqc_pending=record.human_review_or_qaqc_pending,
                 pending_human_review_or_qaqc_count=record.pending_human_review_or_qaqc_count,
+                source_binding_mode=record.binding_mode,
                 outputs=phase_outputs,
             )
         )
 
     phases = tuple(phase_records)
+    compatibility_record = selected[min(selected)]
+    compatibility_path = dest / "run_manifest.json"
+    shutil.copy2(compatibility_record.manifest_path, compatibility_path)
+    copied.append(compatibility_path)
+    compatibility_run_manifest = CompatibilityRunManifest(
+        run_id=compatibility_record.run_id,
+        path="run_manifest.json",
+        sha256=compatibility_record.manifest_sha256,
+    )
     package_status = publication_status_for(phases)
     git_commit_sha = _git_commit_sha(Path.cwd())
     publication_id = publication_id_for(
@@ -518,6 +857,7 @@ def publish(
         git_commit_sha=git_commit_sha,
         phases=phases,
         package_status=package_status,
+        compatibility_run_manifest=compatibility_run_manifest,
         superseded_publication_id=superseded_publication_id,
     )
     publication_manifest = PublicationManifest(
@@ -530,6 +870,7 @@ def publish(
         included_phase_ids=tuple(phase.phase_id for phase in phases),
         phases=phases,
         package_status=package_status,
+        compatibility_run_manifest=compatibility_run_manifest,
         aggregation_notice=AGGREGATION_NOTICE,
         superseded_publication_id=superseded_publication_id,
     )
@@ -538,13 +879,16 @@ def publish(
         publication_manifest.model_dump_json(indent=2) + "\n", encoding="utf-8"
     )
     copied.append(publication_manifest_path)
+    index_path = dest / "INDEX.md"
+    index_path.write_bytes(render_publication_index(publication_manifest))
+    copied.append(index_path)
     verify_publication_package(dest)
-    _write_index(dest, copied, label, publication_manifest)
     return PublishResult(dest=dest, files=copied, skipped_working_copies=skipped)
 
 
 def load_publication_manifest(package_root: Path) -> PublicationManifest:
-    path = Path(package_root) / "publication_manifest.json"
+    root = _require_root(Path(package_root), "publication package")
+    path = _require_package_file(root, "publication_manifest.json", "publication manifest")
     try:
         data = json.loads(
             path.read_text(encoding="utf-8"), object_pairs_hook=_reject_duplicate_keys
@@ -555,22 +899,30 @@ def load_publication_manifest(package_root: Path) -> PublicationManifest:
 
 
 def verify_publication_package(package_root: Path) -> PublicationManifest:
-    """Re-hash every recorded output and source manifest in a staged package."""
+    """Verify source provenance, published bytes, deterministic metadata, and package contents."""
 
-    package_root = Path(package_root).resolve()
+    package_root = _require_root(Path(package_root), "publication package")
     manifest = load_publication_manifest(package_root)
+    allowed_files = {"publication_manifest.json", "INDEX.md"}
     for phase in manifest.phases:
-        source_manifest = package_root / Path(phase.source_run_manifest_path)
-        if (
-            not source_manifest.is_file()
-            or _sha256(source_manifest) != phase.source_run_manifest_sha256
-        ):
+        allowed_files.add(phase.source_run_manifest_path)
+        source_manifest = _require_package_file(
+            package_root, phase.source_run_manifest_path, "copied source run manifest"
+        )
+        if _sha256(source_manifest) != phase.source_run_manifest_sha256:
             raise PublishError(
                 f"source run manifest is missing or changed: {phase.source_run_manifest_path}"
             )
         source_data = _load_json_object(source_manifest)
         if source_data.get("run_id") != phase.source_run_id:
             raise PublishError(f"source run identity mismatch for Phase {phase.phase_id}")
+        if source_data.get("dry_run") is not False:
+            raise PublishError(f"source run is not a completed real run for Phase {phase.phase_id}")
+        if (
+            source_data.get("started_at") != phase.source_started_at
+            or source_data.get("finished_at") != phase.source_finished_at
+        ):
+            raise PublishError(f"source run timestamps mismatch for Phase {phase.phase_id}")
         source_phases = source_data.get("phases")
         if not isinstance(source_phases, list):
             raise PublishError(f"source run has no phase records for Phase {phase.phase_id}")
@@ -584,17 +936,110 @@ def verify_publication_package(package_root: Path) -> PublicationManifest:
         source_phase = matching[0]
         source_gate = source_phase.get("gate")
         if (
-            source_phase.get("status") != "ok"
+            source_phase.get("status") != phase.execution_status
             or not isinstance(source_gate, dict)
+            or type(source_gate.get("provisional")) is not bool
+            or type(source_phase.get("qaqc_pending")) is not bool
             or source_gate.get("status") != phase.gate_state
             or (source_gate.get("provisional") is True) != phase.gate_provisional
             or (source_phase.get("qaqc_pending") is True) != phase.human_review_or_qaqc_pending
+            or source_phase.get("pending_human_review_or_qaqc_count")
+            != phase.pending_human_review_or_qaqc_count
         ):
             raise PublishError(f"source run gate provenance mismatch for Phase {phase.phase_id}")
+        has_artifact_inventory = "output_artifacts" in source_phase
+        artifact_values = source_phase.get("output_artifacts")
+        source_output_map = {output.source_path: output for output in phase.outputs}
+        output_values = source_phase.get("outputs")
+        if not isinstance(output_values, list):
+            raise PublishError(f"source outputs are invalid for Phase {phase.phase_id}")
+        recorded_paths = _recorded_publishable_paths(
+            output_values, set(source_output_map), phase.phase_id
+        )
+        if not has_artifact_inventory:
+            source_binding_mode = "LEGACY_PATH_ONLY"
+            if not recorded_paths <= set(source_output_map) or any(
+                path not in recorded_paths and not _is_runner_qaqc_relative(path, phase.phase_id)
+                for path in source_output_map
+            ):
+                raise PublishError(f"legacy source paths mismatch for Phase {phase.phase_id}")
+        else:
+            source_binding_mode = "SHA256_BOUND"
+            if not isinstance(artifact_values, list):
+                raise PublishError(
+                    f"source artifact inventory is invalid for Phase {phase.phase_id}"
+                )
+            try:
+                source_artifacts = tuple(
+                    RunOutputArtifact.model_validate(value) for value in artifact_values
+                )
+            except ValidationError as exc:
+                raise PublishError(
+                    f"source artifact inventory is invalid for Phase {phase.phase_id}"
+                ) from exc
+            artifact_map = {artifact.path: artifact for artifact in source_artifacts}
+            if (
+                len(artifact_map) != len(source_artifacts)
+                or set(artifact_map) != set(source_output_map)
+                or recorded_paths != set(artifact_map)
+            ):
+                raise PublishError(f"source artifact paths mismatch for Phase {phase.phase_id}")
+            for path, artifact in artifact_map.items():
+                published = source_output_map[path]
+                if (
+                    published.source_sha256 != artifact.sha256
+                    or published.source_size_bytes != artifact.size_bytes
+                ):
+                    raise PublishError(
+                        f"source artifact identity mismatch for Phase {phase.phase_id}: {path}"
+                    )
+        if source_binding_mode != phase.source_binding_mode:
+            raise PublishError(f"source binding mode mismatch for Phase {phase.phase_id}")
         for output in phase.outputs:
-            path = package_root / Path(output.path)
-            if not path.is_file() or _sha256(path) != output.sha256:
+            allowed_files.add(output.path)
+            output_file = _require_package_file(package_root, output.path, "published output")
+            if (
+                _sha256(output_file) != output.sha256
+                or output_file.stat().st_size != output.size_bytes
+            ):
                 raise PublishError(f"published output is missing or changed: {output.path}")
+
+    compatibility = manifest.compatibility_run_manifest
+    allowed_files.add(compatibility.path)
+    compatibility_path = _require_package_file(
+        package_root, compatibility.path, "compatibility run manifest"
+    )
+    if _sha256(compatibility_path) != compatibility.sha256:
+        raise PublishError("compatibility root run manifest is missing or changed")
+    compatibility_data = _load_json_object(compatibility_path)
+    if compatibility_data.get("run_id") != compatibility.run_id:
+        raise PublishError("compatibility root run identity mismatch")
+    matching_source_paths = [
+        phase.source_run_manifest_path
+        for phase in manifest.phases
+        if phase.source_run_id == compatibility.run_id
+        and phase.source_run_manifest_sha256 == compatibility.sha256
+    ]
+    if not matching_source_paths or not any(
+        _require_package_file(package_root, path, "copied source run manifest").read_bytes()
+        == compatibility_path.read_bytes()
+        for path in matching_source_paths
+    ):
+        raise PublishError("compatibility root manifest is not one selected source run")
+
+    index = _require_package_file(package_root, "INDEX.md", "publication index")
+    if index.read_bytes() != render_publication_index(manifest):
+        raise PublishError("publication INDEX.md is missing or changed")
+
+    for entry in package_root.rglob("*"):
+        if entry.is_symlink():
+            raise PublishError(f"publication package contains a symlink: {entry}")
+        if entry.is_file():
+            relative = entry.relative_to(package_root).as_posix()
+            if relative not in allowed_files:
+                raise PublishError(f"publication package contains an unexpected file: {relative}")
+        elif not entry.is_dir():
+            raise PublishError(f"publication package contains an unsupported entry: {entry}")
     return manifest
 
 
@@ -624,18 +1069,19 @@ def _publish_qgz_flat(src: Path, target: Path) -> None:
         if ds.text:
             ds.text = flatten(ds.text)
     ET.indent(root)
-    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(qgs_name, ET.tostring(root, encoding="unicode", xml_declaration=True))
+    payload = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    info = zipfile.ZipInfo(qgs_name, date_time=(1980, 1, 1, 0, 0, 0))
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.external_attr = 0o600 << 16
+    with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
+        zf.writestr(info, payload)
 
 
-def _write_index(
-    dest: Path,
-    copied: list[Path],
-    label: str,
-    manifest: PublicationManifest,
-) -> Path:
+def render_publication_index(manifest: PublicationManifest) -> bytes:
+    """Render the human-readable index solely from the validated machine contract."""
+
     lines = [
-        f"# Deliverable publication package ({label})",
+        f"# Deliverable publication package {manifest.publication_id}",
         "",
         "Published deliverables (GIS layers, COG rasters, registers, logs, reports). Raw working",
         "copies are excluded — those are duplicates of the read-only Drive archive.",
@@ -643,15 +1089,36 @@ def _write_index(
         f"**Package status:** {manifest.package_status}",
         "",
         "Machine-readable package provenance and output hashes are recorded in",
-        "`publication_manifest.json`. The root `run_manifest.json`, when present, is retained only",
-        "for compatibility and must not be interpreted as provenance for the complete package.",
+        "`publication_manifest.json`.",
+        "",
+        f"The root `run_manifest.json` is a compatibility copy of selected source run "
+        f"`{manifest.compatibility_run_manifest.run_id}`. It is not package-wide provenance,",
+        "especially when this package aggregates multiple source runs.",
         "",
         manifest.aggregation_notice,
         "",
     ]
+    legacy_phases = [
+        phase.phase_id
+        for phase in manifest.phases
+        if phase.source_binding_mode == "LEGACY_PATH_ONLY"
+    ]
+    if legacy_phases:
+        lines.extend(
+            [
+                "**Integrity limitation:** This package includes legacy path-only source binding",
+                f"for Phase(s) {', '.join(legacy_phases)}. Those source-run manifests did not seal",
+                "artifact bytes, so the package cannot be APPROVED and no source-run byte identity",
+                "is claimed for those phases.",
+                "",
+            ]
+        )
     parts = []
     for phase in manifest.phases:
-        tag = f"{phase.phase_id}={phase.gate_state} from run {phase.source_run_id}"
+        tag = (
+            f"{phase.phase_id}={phase.gate_state} from run {phase.source_run_id} "
+            f"[{phase.source_binding_mode}]"
+        )
         if phase.gate_provisional:
             tag += " (provisional)"
         if phase.human_review_or_qaqc_pending:
@@ -661,14 +1128,22 @@ def _write_index(
     lines.append("")
     lines.append("## Files")
     lines.append("")
-    for p in copied:
-        rel = p.relative_to(dest).as_posix()
-        size_kb = p.stat().st_size / 1024
-        lines.append(f"- `{rel}` ({size_kb:.1f} KB)")
+    lines.append("- `publication_manifest.json` (machine-readable package contract)")
+    lines.append("- `run_manifest.json` (recorded compatibility source manifest)")
+    for source_path in sorted({phase.source_run_manifest_path for phase in manifest.phases}):
+        lines.append(f"- `{source_path}` (selected source-run manifest)")
+    for phase in manifest.phases:
+        for output in phase.outputs:
+            transform = (
+                f", transformation `{output.transformation_id}`"
+                if output.transformation_id is not None
+                else ""
+            )
+            lines.append(
+                f"- `{output.path}` (SHA-256 `{output.sha256}`, {output.size_bytes} bytes{transform})"
+            )
     lines.append("")
-    index = dest / "INDEX.md"
-    index.write_text("\n".join(lines), encoding="utf-8")
-    return index
+    return "\n".join(lines).encode("utf-8")
 
 
 # --------------------------------------------------------------------------- #
@@ -686,11 +1161,7 @@ class RawBackupResult:
 
 
 def _sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
+    return sha256_file(path)
 
 
 def backup_raw_archive(

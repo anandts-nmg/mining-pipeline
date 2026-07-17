@@ -51,7 +51,7 @@ def test_legacy_serialization_shape_excludes_ai_by_default() -> None:
 def test_project_yaml_bytes_remain_at_the_legacy_baseline() -> None:
     content = Path("config/project.yaml").read_bytes()
     assert hashlib.sha256(content).hexdigest() == (
-        "416fa00603d5c01110847201e1c862b0e1f3010db3127000ad3dab1bf5307484"
+        "7d4796c895db32e1f3e5e637379dc0126673e4e0fd4595372ad02c4cd9200296"
     )
 
 

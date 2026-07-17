@@ -1,0 +1,174 @@
+format_version: 1.0.0
+# Per-phase automation boundaries migrated from the deleted AUTOMATION_ASSESSMENT.md
+# (2026-07-07). Only durable boundaries are recorded: what deterministic code owns,
+# where human review is mandatory, what AI may and may not do, and known blocking
+# dependencies. The historical automation percentages and maturity estimates were
+# engineering estimates, not contracts, and were intentionally not migrated.
+boundaries:
+  - phase_id: "00"
+    automation_category: desktop-deterministic
+    deterministic_authority:
+      - SHA-256 checksums, raw identity, sidecar bundle detection, working-copy creation, inventory.
+    human_review_boundary:
+      - Any change to raw identity or archive placement.
+    ai_permitted:
+      - Metadata enrichment suggestions as drafts.
+    ai_prohibited:
+      - Changing raw identity or placement automatically.
+    status: implemented
+    migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
+  - phase_id: "01"
+    automation_category: desktop-deterministic
+    deterministic_authority:
+      - Spatial/raster audit, CRS checks, boundary import, buffer rings, master GeoPackage schema, QGIS project generation.
+    human_review_boundary:
+      - Scan-map georeferencing acceptance (GCP residuals, registration QA/QC).
+    ai_permitted:
+      - Map boundary, legend and tick extraction, GCP proposals, historical-feature proposals.
+    ai_prohibited:
+      - Authoritative georeferencing or residual calculations.
+    blocking_dependencies:
+      - Expert GCP and grid-reading rules per scan series.
+    status: implemented
+    migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
+  - phase_id: "02"
+    automation_category: desktop-deterministic
+    deterministic_authority:
+      - Reprojection, per-product clipping, COG output, spectral band math, terrain derivatives, the adopted ASTER SOP chain, hydrology products, the machine lineament draft.
+    human_review_boundary:
+      - Interpretation of validated imagery; adoption of any new threshold or calculation.
+    ai_permitted:
+      - Draft interpretations of validated imagery as support evidence.
+    ai_prohibited:
+      - Changing existing calculations or thresholds without an approved source and methodology record.
+    blocking_dependencies:
+      - KOMPSAT RPC orthorectification and Sentinel index inputs depend on external tooling (method notes).
+      - Lineament and outcrop digitizing rules are expert inputs.
+    status: implemented
+    migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
+  - phase_id: "03"
+    automation_category: desktop-orchestrated
+    deterministic_authority:
+      - Scaffold, registers, evidence-GeoPackage assembly, CMCS buffers, occurrence ingest, human-layer ingest, and the opt-in AI-draft review packaging and promotion.
+    human_review_boundary:
+      - Digitizing, georeferencing acceptance, the 03A deposit-model matrix, and every handoff review decision.
+    ai_permitted:
+      - Draft digitization, occurrence reconciliation, and deposit-model drafting through the review handoff.
+    ai_prohibited:
+      - Scientific approval; automatic merge into legacy Phase 03 evidence.
+    blocking_dependencies:
+      - Human-digitized layers and the completed 03A score matrix.
+    status: implemented
+    migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
+  - phase_id: "04"
+    automation_category: desktop-deterministic
+    deterministic_authority:
+      - Evidence grid, scoring arithmetic, class banding, prospect dissolution, ranking and go/no-go tables.
+    human_review_boundary:
+      - Scoring-matrix changes; supply of the roads layer and the completed 03A model-fit source.
+    ai_prohibited:
+      - Consuming AI-lifecycle or handoff evidence without the approved authoritative adapter.
+      - Recalibrating the adopted scoring matrix as an incidental change.
+    blocking_dependencies:
+      - Authoritative handoff integration adapter (deferred).
+    status: implemented
+    migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
+  - phase_id: "05"
+    automation_category: field-acquisition
+    deterministic_authority:
+      - Flight-block geometry planning and post-flight processing, when built.
+    human_review_boundary:
+      - Flight approval, HSE, and mission constraints.
+    ai_permitted:
+      - Survey-priority proposals and imagery-interpretation drafts.
+    ai_prohibited:
+      - Flight or safety decisions, mission constraints, accuracy calculations.
+    blocking_dependencies:
+      - Physical drone flights.
+      - DJI Terra raw-LiDAR decode dependency.
+    status: stub
+    migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
+  - phase_id: "06"
+    automation_category: field-acquisition
+    deterministic_authority:
+      - pXRF and observation data ingest plus QA/QC math, when built.
+    human_review_boundary:
+      - Geological observation and ground-truthing.
+    ai_prohibited:
+      - Treating pXRF or reconnaissance readings as decision evidence.
+    blocking_dependencies:
+      - Physical field mapping and pXRF screening.
+    status: stub
+    migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
+  - phase_id: "07"
+    automation_category: field-acquisition
+    deterministic_authority:
+      - Sample-register handling and assay QA/QC math, when built.
+    human_review_boundary:
+      - Sample siting and geological logging.
+    ai_prohibited:
+      - Converting selective samples into representative grades.
+    blocking_dependencies:
+      - Physical sampling and laboratory assays.
+    status: stub
+    migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
+  - phase_id: "08"
+    automation_category: field-acquisition
+    deterministic_authority:
+      - Orientation-survey data processing and QA/QC math, when built.
+    human_review_boundary:
+      - Method-calibration interpretation and per-element anomaly thresholds.
+    ai_prohibited:
+      - Setting anomaly thresholds without an approved expert record.
+    blocking_dependencies:
+      - Physical orientation sampling experiment.
+    status: stub
+    migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
+  - phase_id: "09"
+    automation_category: field-acquisition
+    deterministic_authority:
+      - Soil-grid geometry generation and the laboratory QA/QC engine (CRM, blank, duplicate, detection limits), when built.
+    human_review_boundary:
+      - Grid design acceptance and assay-quality decisions.
+    ai_prohibited:
+      - Treating lab QA/QC failures as passable.
+    blocking_dependencies:
+      - Physical collection and laboratory assays.
+    status: stub
+    migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
+  - phase_id: "10"
+    automation_category: desktop-integration
+    deterministic_authority:
+      - Integration arithmetic and the final-ranking computation using the reserved lifecycle matrix (METH-DISC-006), when built.
+    human_review_boundary:
+      - Qualitative sub-scoring, the deposit-model call, and go/no-go decisions.
+    ai_prohibited:
+      - Making the final target-ranking or go/no-go decision.
+    blocking_dependencies:
+      - Decision-grade field and laboratory evidence from phases 05-09.
+    status: stub
+    migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
+  - phase_id: "11"
+    automation_category: desktop-planning
+    deterministic_authority:
+      - Trench, geophysics, and drill-line geometry generation from an AOI and strike, when built.
+    human_review_boundary:
+      - Collar and line placement judgment; execution approvals.
+    ai_prohibited:
+      - Trench, geophysics, or drill safety and placement decisions.
+    blocking_dependencies:
+      - Physical execution campaigns.
+    status: stub
+    migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
+  - phase_id: "99"
+    automation_category: desktop-packaging
+    deterministic_authority:
+      - Packaging, indexes, checksums, and delivery manifests, when built.
+    human_review_boundary:
+      - Include/exclude decisions and narrative reporting.
+    ai_permitted:
+      - Report drafting.
+    ai_prohibited:
+      - Final deliverable approval.
+    status: stub
+    migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)

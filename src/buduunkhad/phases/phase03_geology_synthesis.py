@@ -8,8 +8,9 @@ point XLSX and any human-digitized layers), builds the CMCS 5/10/20/25 km contex
 the Phase 01 licence boundary, assembles the authoritative 17-layer evidence GPKG, and
 runs the QA/QC + 6-condition gate.
 
-Follows the Phase-3 methodology guide (``docs/phase_03``). Every Phase 03 output is **historical / contextual /
-preliminary support only — not decision-grade, not ore proof** (guide §03.1 / master 03A):
+Follows the adopted requirements in ``config/methodology/phase03.yaml`` and the approved external
+methodology. Every Phase 03 output is **historical / contextual / preliminary support only — not
+decision-grade, not ore proof**:
 each feature records ``validation_status = "Historical only"`` and a ``limitation`` note;
 CMCS/MRPAM buffer hits are stamped "Context only — not proof of mineralization inside
 license".
@@ -59,7 +60,7 @@ EVIDENCE_FIELDS: dict[str, str] = {
 
 # The authoritative 17-layer evidence GPKG: (layer_name, geometry_type, feature_id prefix).
 # A prefix of "" means the layer has no Appendix-A feature-ID prefix (inherited/context
-# layers). See the Phase-3 methodology guide (docs/phase_03): the 17-layer evidence GPKG schema.
+# layers). The 17-layer legacy schema remains the implemented deterministic contract.
 EVIDENCE_LAYERS: list[tuple[str, str, str]] = [
     ("license_boundary", "MultiPolygon", ""),
     (_CMCS_BUFFER_LAYER, "MultiPolygon", ""),

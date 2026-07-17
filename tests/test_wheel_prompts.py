@@ -50,6 +50,7 @@ def test_installed_wheel_loads_packaged_prompt_registry(tmp_path: Path) -> None:
         "buduunkhad/prompt_data/vertical/feature_critique/1.0.0/user.txt",
         "buduunkhad/schema_data/contracts.json",
         "buduunkhad/methodology_data/authority.yaml",
+        "buduunkhad/methodology_data/automation_boundaries.yaml",
         "buduunkhad/methodology_data/discrepancies.yaml",
         "buduunkhad/methodology_data/phase00.yaml",
         "buduunkhad/methodology_data/phase01.yaml",
@@ -102,7 +103,8 @@ assert critic.components[0].text
 assert vertical.components[0].text
 assert authority.sources
 assert phase05.phase_id == "05"
-assert len(discrepancies.discrepancies) == 4
+assert len(discrepancies.discrepancies) == 32
+assert discrepancies.unresolved()
 print(prompt.identity.sha256)
 """
     result = subprocess.run(

@@ -4,27 +4,23 @@ import subprocess
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-CLAUDE_HEAD_OBJECT = "7ccf81d1c9c0ecc4e33d4990aafcc0ee45bed64d"
-EXCLUDED_LATER_PLAN = "docs/PROSPECTIVITY_MAPPING_LLM_API_PLAN.md"
 
 
-def test_legacy_claude_file_remains_byte_identical_to_pr1_baseline() -> None:
+def test_agents_is_the_only_tracked_markdown_file() -> None:
     result = subprocess.run(
-        ["git", "hash-object", "CLAUDE.md"],
+        ["git", "ls-files"],
         cwd=REPOSITORY_ROOT,
         check=True,
         capture_output=True,
         text=True,
     )
-    assert result.stdout.strip() == CLAUDE_HEAD_OBJECT
-
-
-def test_later_prospectivity_plan_is_not_tracked_in_pr1() -> None:
-    result = subprocess.run(
-        ["git", "ls-files", "--error-unmatch", EXCLUDED_LATER_PLAN],
-        cwd=REPOSITORY_ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
+    markdown_suffixes = (".md", ".markdown", ".mdown", ".mdwn")
+    tracked_markdown = [
+        path
+        for path in result.stdout.splitlines()
+        if path.lower().endswith(markdown_suffixes) and (REPOSITORY_ROOT / path).is_file()
+    ]
+    assert tracked_markdown == ["AGENTS.md"], (
+        "AGENTS.md must remain the only tracked Markdown file; migrate durable knowledge "
+        f"into the versioned machine-readable contracts instead. Found: {tracked_markdown}"
     )
-    assert result.returncode != 0

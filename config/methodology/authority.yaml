@@ -1,27 +1,155 @@
-format_version: 1.0.0
+format_version: 1.1.0
+# Methodology source authority registry. External documents are addressed only through
+# stable BUDUUNKHAD_WORKFLOW_DOCS_ROOT identifiers — never machine-specific paths.
+# existence_verified records whether the external document's presence was independently
+# verified; a registered identifier alone is not verification. repository_copy points at
+# a tracked rendered copy where one exists.
 sources:
   - source_id: agents.repository-authority
     repository_path: AGENTS.md
     role: repository-governance
+    authority_status: adopted
+    existence_verified: true
+  - source_id: repository.methodology-contracts
+    repository_path: config/methodology
+    role: versioned-methodology-contracts
+    authority_status: adopted
+    existence_verified: true
   - source_id: methodology.master-v9
-    repository_path: docs/XV-023222_Buduunkhad_Exploration_Workflow_Methodology_78Inputs_v9_25km_Clickable_TOC_PageNumbers.md
+    external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::approved-master-methodology
     role: methodology-source
+    authority_status: adopted
+    expected_document: XV-023222_Buduunkhad_Exploration_Workflow_Methodology_78Inputs_v9_25km_Clickable_TOC_PageNumbers.docx
+    repository_copy: docs/XV-023222_Buduunkhad_Exploration_Workflow_Methodology_78Inputs_v9_25km_Clickable_TOC_PageNumbers.docx.pdf
+    existence_verified: false
+    remaining_actions:
+      - Verify presence in the external methodology root on next access.
   - source_id: phase01.guide
-    repository_path: docs/phase_01/XV-023222_Buduunkhad_Phase1_Methodology.md
+    external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::approved-phase01-methodology
     role: phase-source
+    authority_status: adopted
+    expected_document: XV-023222_Buduunkhad_Phase1_Methodology.docx
+    repository_copy: docs/phase_01/XV-023222_Buduunkhad_Phase1_Methodology.docx.pdf
+    existence_verified: false
+    remaining_actions:
+      - Verify presence in the external methodology root on next access.
   - source_id: phase02.guide
-    repository_path: docs/phase_02/Phase_2_Remote_Sensing_Preprocessing_Guide_MN.md
+    external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::approved-phase02-methodology
     role: phase-source
+    authority_status: adopted
+    expected_document: Phase_2_Remote_Sensing_Preprocessing_Guide_MN.docx
+    repository_copy: docs/phase_02/Phase_2_Remote_Sensing_Preprocessing_Guide_MN.docx.pdf
+    existence_verified: false
+    remaining_actions:
+      - Verify presence in the external methodology root on next access.
+  - source_id: phase02.aster-sop
+    external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::approved-aster-sop
+    role: operator-sop
+    authority_status: adopted
+    expected_document: ASTER_QGIS_402_SOP_non_geologist_MN.docx
+    existence_verified: false
+    superseding_contract: src/buduunkhad/core/aster.py implements the adopted scheme (METH-DISC-020, METH-DISC-021).
+    remaining_actions:
+      - Verify presence in the external methodology root on next access.
   - source_id: phase03.guide
-    repository_path: docs/phase_03/Phase_3_Geological_Metallogenic_and_CMCS_Synthesis_Guide_MN.md
+    external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::approved-phase03-methodology
     role: phase-source
+    authority_status: adopted
+    expected_document: Phase_3_Geological_Metallogenic_and_CMCS_Synthesis_Guide_MN.docx
+    repository_copy: "docs/phase_03/03. Phase 3 — Geological, Metallogenic and CMCS Synthesis .docx.pdf"
+    existence_verified: false
+    remaining_actions:
+      - Verify presence in the external methodology root on next access.
   - source_id: phase04.guide
-    repository_path: docs/phase_04/Phase_4_Preliminary_Prospect_Delineation_and_Ranking_Guide_MN.md
+    external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::approved-phase04-methodology
     role: phase-source
+    authority_status: adopted
+    expected_document: Phase_4_Preliminary_Prospect_Delineation_and_Ranking_Guide_MN.docx
+    existence_verified: false
+    remaining_actions:
+      - Verify presence in the external methodology root on next access.
   - source_id: phase05.guide
-    repository_path: docs/phase_05/Phase_5_Drone_LiDAR_Photogrammetry_Detailed_Guide_MN.md
+    external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::approved-phase05-methodology
     role: phase-source
+    authority_status: adopted
+    expected_document: Phase_5_Drone_LiDAR_Photogrammetry_Detailed_Guide_MN.docx
+    existence_verified: false
+    remaining_actions:
+      - Verify presence in the external methodology root on next access.
+  - source_id: phase05.flight-template-matrice400
+    external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::phase05-flight-planning-template-matrice400
+    role: operational-template
+    authority_status: reference-only
+    expected_document: Matrice400_ZenmuseL3_Universal_Flight_Planning_Template.docx
+    existence_verified: false
+    remaining_actions:
+      - Verify presence in the external methodology root before the Phase 05 build.
+  - source_id: phase05.flight-planning-dji-terra
+    external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::phase05-lidar-flight-planning-guide
+    role: operational-template
+    authority_status: reference-only
+    expected_document: XV-023222_Phase5_LiDAR_P1_DJI_Terra_QGIS403_Folder_Flight_Planning_Updated.docx
+    existence_verified: false
+    remaining_actions:
+      - Verify presence in the external methodology root before the Phase 05 build.
+  - source_id: phase06.guide
+    external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::approved-phase06-methodology
+    role: phase-source
+    authority_status: pending-review
+    expected_document: Phase_6_Recon_Mapping_and_pXRF_Field_Screening_Detailed_Guide_MN.docx
+    existence_verified: false
+    remaining_actions:
+      - Adopt into a phase06 methodology contract when the phase is built.
+  - source_id: phase07.guide
+    external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::approved-phase07-methodology
+    role: phase-source
+    authority_status: pending-review
+    expected_document: Phase_7_Rock_Chip_Channel_Verification_Sampling_Guide_MN.docx
+    existence_verified: false
+    remaining_actions:
+      - Adopt into a phase07 methodology contract when the phase is built.
+  - source_id: phase08.guide
+    external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::approved-phase08-methodology
+    role: phase-source
+    authority_status: pending-review
+    expected_document: Phase_8_Orientation_Soil_StreamSediment_HeavyMineral_Check_Detailed_Guide_MN.docx
+    existence_verified: false
+    remaining_actions:
+      - Adopt into a phase08 methodology contract when the phase is built.
+  - source_id: phase09.guide
+    external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::approved-phase09-methodology
+    role: phase-source
+    authority_status: pending-review
+    expected_document: Phase_9_Systematic_Soil_Grid_Laboratory_QAQC_Detailed_Guide_MN.docx
+    existence_verified: false
+    remaining_actions:
+      - Adopt into a phase09 methodology contract when the phase is built.
+  - source_id: phase10.guide
+    external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::approved-phase10-methodology
+    role: phase-source
+    authority_status: pending-review
+    expected_document: Phase_10_Integrated_Interpretation_Final_Target_Ranking_Guide_MN.docx
+    existence_verified: false
+    remaining_actions:
+      - Adopt into a phase10 methodology contract when the phase is built.
+  - source_id: phase11.guide
+    external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::approved-phase11-methodology
+    role: phase-source
+    authority_status: pending-review
+    expected_document: Phase_11_Follow_Up_Trench_Geophysics_Scout_Drill_Planning_Guide_MN.docx
+    existence_verified: false
+    remaining_actions:
+      - Adopt into a phase11 methodology contract when the phase is built.
+  - source_id: phase99.guide
+    external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::approved-phase99-methodology
+    role: phase-source
+    authority_status: pending-review
+    expected_document: 99_Final_Deliverables_Detailed_Guide_MN.docx
+    existence_verified: false
+    remaining_actions:
+      - Adopt into a phase99 methodology contract when the phase is built.
 precedence:
   - agents.repository-authority
+  - repository.methodology-contracts
   - methodology.master-v9
   - phase-specific-approved-source

@@ -16,7 +16,9 @@ from pathlib import Path
 from buduunkhad.config import InputRecord, ProjectConfig, load_config, load_register
 from buduunkhad.core import paths, raw_guard, registers, winpath
 from buduunkhad.core.gates import GateDecision, GateStatus
+from buduunkhad.core.qaqc import Decision
 from buduunkhad.core.raw_guard import RawIntegrityError
+from buduunkhad.core.run_artifacts import RunOutputArtifact, seal_output_artifacts
 from buduunkhad.phases.base import Phase, RunContext
 from buduunkhad.phases.phase00_archive import PHASE as Phase00
 from buduunkhad.phases.phase01_data_audit import PHASE as Phase01
@@ -69,11 +71,13 @@ class PhaseOutcome:
     mode: str
     status: str
     outputs: list[str] = field(default_factory=list)
+    output_artifacts: list[RunOutputArtifact] = field(default_factory=list)
     #: ``qaqc_passed`` means "no QA/QC item failed" — it is True even when items are
     #: still PENDING human completion. ``qaqc_pending`` is the companion signal: a
     #: consumer that needs true completion must read both (passed AND not pending).
     qaqc_passed: bool = False
     qaqc_pending: bool = False
+    pending_human_review_or_qaqc_count: int = 0
     gate_status: str = ""
     gate_reason: str = ""
     gate_overridden: bool = False
@@ -87,8 +91,12 @@ class PhaseOutcome:
             "mode": self.mode,
             "status": self.status,
             "outputs": self.outputs,
+            "output_artifacts": [
+                artifact.model_dump(mode="json") for artifact in self.output_artifacts
+            ],
             "qaqc_passed": self.qaqc_passed,
             "qaqc_pending": self.qaqc_pending,
+            "pending_human_review_or_qaqc_count": self.pending_human_review_or_qaqc_count,
             "gate": {
                 "status": self.gate_status,
                 "reason": self.gate_reason,
@@ -443,14 +451,24 @@ def run_pipeline(
                 outcome.status = result.status
                 outcome.outputs = [str(p) for p in result.outputs]
                 report = phase.qaqc(ctx)
-                _write_phase_qaqc(ctx, phase, report)
+                qaqc_path = _write_phase_qaqc(ctx, phase, report)
+                outcome.outputs.append(str(qaqc_path))
                 outcome.qaqc_passed = report.passed
                 outcome.qaqc_pending = report.has_pending
+                outcome.pending_human_review_or_qaqc_count = sum(
+                    item.decision is Decision.PENDING for item in report.items
+                )
                 decision = phase.gate(report, ctx)
                 outcome.gate_status = decision.status.value
                 outcome.gate_reason = decision.reason
                 outcome.gate_overridden = decision.overridden
                 outcome.gate_provisional = decision.provisional
+                if outcome.status == "ok" and not dry_run:
+                    outcome.output_artifacts = list(
+                        seal_output_artifacts(
+                            config.output_root, (Path(path) for path in outcome.outputs)
+                        )
+                    )
                 for msg in result.messages:
                     logger.info("Phase %s: %s", phase.id, msg)
                 logger.info(

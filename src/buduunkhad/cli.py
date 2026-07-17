@@ -145,6 +145,16 @@ def publish_deliverables(
     label: str = typer.Option(
         None, "--label", help="Version label for the published folder (default: timestamp)."
     ),
+    supersedes: str | None = typer.Option(
+        None,
+        "--supersedes",
+        help="Publication ID explicitly superseded by this package.",
+    ),
+    source_run: list[str] | None = typer.Option(
+        None,
+        "--source-run",
+        help="Select an exact source run as PHASE=RUN_ID; repeat for multiple phases.",
+    ),
 ) -> None:
     """Copy every built phase's deliverables (not raw working copies) to BUDUUNKHAD_PUBLISH_ROOT.
 
@@ -165,8 +175,30 @@ def publish_deliverables(
     from buduunkhad.core.publish import publish as do_publish
 
     label = label or datetime.now().strftime("%Y%m%dT%H%M%S")
+    source_runs: dict[str, str] = {}
+    for selector in source_run or []:
+        phase_id, separator, run_id = selector.partition("=")
+        if (
+            separator != "="
+            or phase_id not in {phase.id for phase in PHASE_CLASSES}
+            or not run_id
+            or phase_id in source_runs
+        ):
+            typer.secho(
+                "Each --source-run must be a unique registered PHASE=RUN_ID selector.", fg="red"
+            )
+            raise typer.Exit(2)
+        source_runs[phase_id] = run_id
     try:
-        result = do_publish(cfg.output_root, Path(publish_root), label, runs_root=cfg.runs_root)
+        result = do_publish(
+            cfg.output_root,
+            Path(publish_root),
+            label,
+            runs_root=cfg.runs_root,
+            project_config_path=config,
+            superseded_publication_id=supersedes,
+            source_runs=source_runs,
+        )
     except PublishError as exc:
         typer.secho(str(exc), fg="red")
         raise typer.Exit(2) from exc

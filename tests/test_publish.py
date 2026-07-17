@@ -1039,13 +1039,15 @@ def test_package_version_authorities_are_synchronized():
 
 
 def test_publish_cli_keeps_existing_options_and_adds_repeatable_source_run_selector():
+    from click import unstyle
     from typer.testing import CliRunner
 
     from buduunkhad.cli import app
 
     result = CliRunner().invoke(app, ["publish", "--help"])
+    help_text = unstyle(result.stdout)
 
     assert result.exit_code == 0
-    assert "--label" in result.stdout
-    assert "--supersedes" in result.stdout
-    assert "--source-run" in result.stdout
+    assert "--label" in help_text
+    assert "--supersedes" in help_text
+    assert "--source-run" in help_text

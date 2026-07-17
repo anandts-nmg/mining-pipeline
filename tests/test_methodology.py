@@ -309,7 +309,9 @@ def test_duplicate_inventory_authority_remains_unresolved() -> None:
         "google-drive-file-id:1teePLWFbSOk9ftV4DKdL2Jb5S_fV2Wa9",
         "google-drive-file-id:1ZBxGzYplF_CcoicdQ6AUrTgNOFNRThqS",
     )
-    assert "filenames and timestamps do not establish authority" in duplicate.statement
+    assert "An identical filename alone" in duplicate.statement
+    assert "timestamps without lineage evidence" in duplicate.statement
+    assert "identical filenames and timestamps" not in duplicate.statement.casefold()
     assert "wrong inventory" in duplicate.operational_impact
     assert duplicate.proposed_resolution is not None
     assert "parent-folder context" in duplicate.proposed_resolution

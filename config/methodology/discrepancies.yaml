@@ -476,7 +476,7 @@ discrepancies:
     compared_sources:
       - google-drive-file-id:1teePLWFbSOk9ftV4DKdL2Jb5S_fV2Wa9
       - google-drive-file-id:1ZBxGzYplF_CcoicdQ6AUrTgNOFNRThqS
-    statement: Google Drive contains two files titled XV-023222_Buduunkhad_79Input_Master_Inventory.xlsx. Identical filenames and timestamps do not establish authority.
+    statement: Google Drive contains two files titled XV-023222_Buduunkhad_79Input_Master_Inventory.xlsx. An identical filename alone, and timestamps without lineage evidence, do not establish authority.
     operational_impact: Downstream provenance could bind to the wrong inventory if either duplicate were selected without reconciliation.
     status: unresolved
     proposed_resolution: Compare parent-folder context, bytes and content, internal metadata, and lineage for both files, then obtain methodology-owner or project-owner approval before selecting a canonical inventory.

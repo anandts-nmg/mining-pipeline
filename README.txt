@@ -50,9 +50,10 @@ Where things live
 
 Implemented phase boundary
 --------------------------
-Phases 00-04 have deterministic end-to-end implementations. Phases 05-11 and
-99 are registered stubs (scaffolding and templates only). The optional Phase
-03 AI handoff promotes explicitly human-reviewed proposals into standalone
-accepted evidence; accepted evidence is support material and is not
-scientific (geologist) approval. Phase 04 ignores all handoff evidence
-pending an approved authoritative integration adapter.
+Phases 00-04 have substantial deterministic implementations. Phase 03 remains
+scientifically incomplete, and Phase 04 remains a legacy comparator pending an
+approved authoritative integration workflow. Phases 05-11 and 99 are registered
+stubs (scaffolding and templates only). The optional Phase 03 AI handoff promotes
+explicitly human-reviewed proposals into standalone accepted evidence; accepted
+evidence is support material and is not scientific (geologist) approval. Phase 04
+ignores all handoff evidence pending an approved authoritative integration adapter.

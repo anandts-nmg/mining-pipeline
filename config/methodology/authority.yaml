@@ -21,27 +21,33 @@ sources:
     authority_status: adopted
     expected_document: XV-023222_Buduunkhad_Exploration_Workflow_Methodology_78Inputs_v9_25km_Clickable_TOC_PageNumbers.docx
     repository_copy: docs/XV-023222_Buduunkhad_Exploration_Workflow_Methodology_78Inputs_v9_25km_Clickable_TOC_PageNumbers.docx.pdf
-    existence_verified: false
-    remaining_actions:
-      - Verify presence in the external methodology root on next access.
+    external_file_id: 1ECwfhr6ucFRE8LABo0C9WDzUDOE6oHzb
+    existence_verified: true
+    existence_verified_at: "2026-07-17T07:55:05Z"
+    existence_verified_by: Anand Tsogtjargal
+    existence_evidence_reference: connected-google-drive-read-only-metadata-verification::2026-07-17T07:55:05Z
   - source_id: phase01.guide
     external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::approved-phase01-methodology
     role: phase-source
     authority_status: adopted
     expected_document: XV-023222_Buduunkhad_Phase1_Methodology.docx
     repository_copy: docs/phase_01/XV-023222_Buduunkhad_Phase1_Methodology.docx.pdf
-    existence_verified: false
-    remaining_actions:
-      - Verify presence in the external methodology root on next access.
+    external_file_id: 1Ff9rAshnm1kihhh3uOxz6N5Kh6rUFX8Z
+    existence_verified: true
+    existence_verified_at: "2026-07-17T07:55:05Z"
+    existence_verified_by: Anand Tsogtjargal
+    existence_evidence_reference: connected-google-drive-read-only-metadata-verification::2026-07-17T07:55:05Z
   - source_id: phase02.guide
     external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::approved-phase02-methodology
     role: phase-source
     authority_status: adopted
     expected_document: Phase_2_Remote_Sensing_Preprocessing_Guide_MN.docx
     repository_copy: docs/phase_02/Phase_2_Remote_Sensing_Preprocessing_Guide_MN.docx.pdf
-    existence_verified: false
-    remaining_actions:
-      - Verify presence in the external methodology root on next access.
+    external_file_id: 1bFjeFQz2BWzrOP38oPMutlh-nSBw3QLD
+    existence_verified: true
+    existence_verified_at: "2026-07-17T07:55:05Z"
+    existence_verified_by: Anand Tsogtjargal
+    existence_evidence_reference: connected-google-drive-read-only-metadata-verification::2026-07-17T07:55:05Z
   - source_id: phase02.aster-sop
     external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::approved-aster-sop
     role: operator-sop
@@ -57,25 +63,31 @@ sources:
     authority_status: adopted
     expected_document: Phase_3_Geological_Metallogenic_and_CMCS_Synthesis_Guide_MN.docx
     repository_copy: "docs/phase_03/03. Phase 3 — Geological, Metallogenic and CMCS Synthesis .docx.pdf"
-    existence_verified: false
-    remaining_actions:
-      - Verify presence in the external methodology root on next access.
+    external_file_id: 1Ttxau5QEOkCc1LbrCuS8jA9wV3JPaLyl
+    existence_verified: true
+    existence_verified_at: "2026-07-17T07:55:05Z"
+    existence_verified_by: Anand Tsogtjargal
+    existence_evidence_reference: connected-google-drive-read-only-metadata-verification::2026-07-17T07:55:05Z
   - source_id: phase04.guide
     external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::approved-phase04-methodology
     role: phase-source
     authority_status: adopted
     expected_document: Phase_4_Preliminary_Prospect_Delineation_and_Ranking_Guide_MN.docx
-    existence_verified: false
-    remaining_actions:
-      - Verify presence in the external methodology root on next access.
+    external_file_id: 1er5vXLXDX9_s4paZC81xDxbB8mU6UR3e
+    existence_verified: true
+    existence_verified_at: "2026-07-17T07:55:05Z"
+    existence_verified_by: Anand Tsogtjargal
+    existence_evidence_reference: connected-google-drive-read-only-metadata-verification::2026-07-17T07:55:05Z
   - source_id: phase05.guide
     external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::approved-phase05-methodology
     role: phase-source
     authority_status: adopted
     expected_document: Phase_5_Drone_LiDAR_Photogrammetry_Detailed_Guide_MN.docx
-    existence_verified: false
-    remaining_actions:
-      - Verify presence in the external methodology root on next access.
+    external_file_id: 13RbcciT0bvK5HqT05JFqiTUf92QViVMm
+    existence_verified: true
+    existence_verified_at: "2026-07-17T07:55:05Z"
+    existence_verified_by: Anand Tsogtjargal
+    existence_evidence_reference: connected-google-drive-read-only-metadata-verification::2026-07-17T07:55:05Z
   - source_id: phase05.flight-template-matrice400
     external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::phase05-flight-planning-template-matrice400
     role: operational-template

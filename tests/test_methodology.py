@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -18,7 +19,34 @@ from buduunkhad.geospatial_ai.methodology import (
     load_phase_methodology_from_checkout,
 )
 
-REQUIRED_DISCREPANCY_IDS = {f"METH-DISC-{number:03d}" for number in range(1, 33)}
+REQUIRED_DISCREPANCY_IDS = {f"METH-DISC-{number:03d}" for number in range(1, 34)}
+VERIFIED_EXTERNAL_SOURCES = {
+    "methodology.master-v9": (
+        "1ECwfhr6ucFRE8LABo0C9WDzUDOE6oHzb",
+        "XV-023222_Buduunkhad_Exploration_Workflow_Methodology_78Inputs_v9_25km_"
+        "Clickable_TOC_PageNumbers.docx",
+    ),
+    "phase01.guide": (
+        "1Ff9rAshnm1kihhh3uOxz6N5Kh6rUFX8Z",
+        "XV-023222_Buduunkhad_Phase1_Methodology.docx",
+    ),
+    "phase02.guide": (
+        "1bFjeFQz2BWzrOP38oPMutlh-nSBw3QLD",
+        "Phase_2_Remote_Sensing_Preprocessing_Guide_MN.docx",
+    ),
+    "phase03.guide": (
+        "1Ttxau5QEOkCc1LbrCuS8jA9wV3JPaLyl",
+        "Phase_3_Geological_Metallogenic_and_CMCS_Synthesis_Guide_MN.docx",
+    ),
+    "phase04.guide": (
+        "1er5vXLXDX9_s4paZC81xDxbB8mU6UR3e",
+        "Phase_4_Preliminary_Prospect_Delineation_and_Ranking_Guide_MN.docx",
+    ),
+    "phase05.guide": (
+        "13RbcciT0bvK5HqT05JFqiTUf92QViVMm",
+        "Phase_5_Drone_LiDAR_Photogrammetry_Detailed_Guide_MN.docx",
+    ),
+}
 
 
 def test_methodology_authority_and_all_phase_records_are_typed() -> None:
@@ -28,6 +56,8 @@ def test_methodology_authority_and_all_phase_records_are_typed() -> None:
     assert "agents.repository-authority" in source_ids
     assert authority.precedence[0] == "agents.repository-authority"
     repository_root = Path(__file__).resolve().parents[1]
+    tracked_output = subprocess.check_output(["git", "ls-files", "-z"], cwd=repository_root)
+    tracked_paths = set(tracked_output.decode("utf-8").split("\0"))
     for source in authority.sources:
         if source.repository_path is not None:
             assert (repository_root / source.repository_path).exists()
@@ -37,6 +67,7 @@ def test_methodology_authority_and_all_phase_records_are_typed() -> None:
             assert source.external_reference.startswith("BUDUUNKHAD_WORKFLOW_DOCS_ROOT::")
         if source.repository_copy is not None:
             assert (repository_root / source.repository_copy).exists()
+            assert source.repository_copy in tracked_paths
     requirement_ids: set[str] = set()
     for number in range(6):
         phase = load_phase_methodology(f"{number:02d}")
@@ -115,6 +146,34 @@ def test_external_existence_verification_requires_complete_evidence() -> None:
         )
 
 
+def test_six_connected_drive_sources_have_complete_existence_evidence() -> None:
+    authority = load_authority_registry()
+    by_id = {source.source_id: source for source in authority.sources}
+    verified_external_ids = {
+        source.source_id
+        for source in authority.sources
+        if source.external_reference is not None and source.existence_verified
+    }
+    assert verified_external_ids == set(VERIFIED_EXTERNAL_SOURCES)
+
+    for source_id, (drive_id, expected_document) in VERIFIED_EXTERNAL_SOURCES.items():
+        source = by_id[source_id]
+        assert source.expected_document == expected_document
+        assert source.external_file_id == drive_id
+        assert source.existence_verified is True
+        assert source.existence_verified_at is not None
+        assert source.existence_verified_at.isoformat() == "2026-07-17T07:55:05+00:00"
+        utc_offset = source.existence_verified_at.utcoffset()
+        assert utc_offset is not None
+        assert utc_offset.total_seconds() == 0
+        assert source.existence_verified_by == "Anand Tsogtjargal"
+        assert source.existence_evidence_reference == (
+            "connected-google-drive-read-only-metadata-verification::2026-07-17T07:55:05Z"
+        )
+        assert source.authority_status == "adopted"
+        assert not source.remaining_actions
+
+
 def test_unverified_external_id_does_not_claim_existence() -> None:
     source = MethodologySource.model_validate(
         {
@@ -142,6 +201,7 @@ def test_discrepancy_register_is_the_complete_decision_history() -> None:
     identities = [item.discrepancy_id for item in registry.discrepancies]
     assert len(set(identities)) == len(identities)
     assert set(identities) == REQUIRED_DISCREPANCY_IDS
+    assert identities == [f"METH-DISC-{number:03d}" for number in range(1, 34)]
     assert all(
         item.status in {"unresolved", "resolved", "superseded", "withdrawn"}
         for item in registry.discrepancies
@@ -236,6 +296,50 @@ def test_handoff_and_operational_decisions_remain_discoverable() -> None:
     assert subjects["kompsat-eula-licence-gap"].status == "unresolved"
     assert subjects["bmp-content-in-jpg-raw-scans"].status == "unresolved"
     assert subjects["phase-gate-provisional-advance"].status == "unresolved"
+
+
+def test_duplicate_inventory_authority_remains_unresolved() -> None:
+    registry = load_discrepancy_registry()
+    duplicate = next(
+        item for item in registry.discrepancies if item.discrepancy_id == "METH-DISC-033"
+    )
+
+    assert duplicate.status == "unresolved"
+    assert duplicate.compared_sources == (
+        "google-drive-file-id:1teePLWFbSOk9ftV4DKdL2Jb5S_fV2Wa9",
+        "google-drive-file-id:1ZBxGzYplF_CcoicdQ6AUrTgNOFNRThqS",
+    )
+    assert "filenames and timestamps do not establish authority" in duplicate.statement
+    assert "wrong inventory" in duplicate.operational_impact
+    assert duplicate.proposed_resolution is not None
+    assert "parent-folder context" in duplicate.proposed_resolution
+    assert "bytes and content" in duplicate.proposed_resolution
+    assert "internal metadata" in duplicate.proposed_resolution
+    assert "lineage" in duplicate.proposed_resolution
+    assert duplicate.required_approver == "methodology-owner or project-owner"
+    assert duplicate.resolution is None
+    assert duplicate.approver is None
+
+
+def test_readme_describes_current_phase_maturity_without_tracking_more_markdown() -> None:
+    repository_root = Path(__file__).resolve().parents[1]
+    readme = (repository_root / "README.txt").read_text(encoding="utf-8")
+    assert "Phases 00-04 have substantial deterministic implementations." in readme
+    assert "Phase 03 remains\nscientifically incomplete" in readme
+    assert "Phase 04 remains a legacy comparator" in readme
+    assert "deterministic end-to-end implementations" not in readme
+
+    tracked = (
+        subprocess.check_output(["git", "ls-files", "-z"], cwd=repository_root)
+        .decode("utf-8")
+        .split("\0")
+    )
+    tracked_markdown = sorted(
+        path
+        for path in tracked
+        if Path(path).suffix.casefold() in {".md", ".markdown", ".mdown", ".mdwn"}
+    )
+    assert tracked_markdown == ["AGENTS.md"]
 
 
 def test_registry_loading_is_deterministic() -> None:

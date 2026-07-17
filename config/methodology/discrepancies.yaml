@@ -471,3 +471,16 @@ discrepancies:
     status: withdrawn
     withdrawal_reason: Informational drift inside the superseded v5/v6 master; the v8/v9 edition replaced that document and its successor label question is tracked as METH-DISC-002.
     migration_source: METHODOLOGY_DISCREPANCIES.md (intra-document version drift)
+  - discrepancy_id: METH-DISC-033
+    subject: duplicate-master-inventory-authority
+    compared_sources:
+      - google-drive-file-id:1teePLWFbSOk9ftV4DKdL2Jb5S_fV2Wa9
+      - google-drive-file-id:1ZBxGzYplF_CcoicdQ6AUrTgNOFNRThqS
+    statement: Google Drive contains two files titled XV-023222_Buduunkhad_79Input_Master_Inventory.xlsx. Identical filenames and timestamps do not establish authority.
+    operational_impact: Downstream provenance could bind to the wrong inventory if either duplicate were selected without reconciliation.
+    status: unresolved
+    proposed_resolution: Compare parent-folder context, bytes and content, internal metadata, and lineage for both files, then obtain methodology-owner or project-owner approval before selecting a canonical inventory.
+    required_approver: methodology-owner or project-owner
+    remaining_actions:
+      - Compare the parent-folder context, bytes and content, internal metadata, and lineage of both Drive files.
+      - Obtain methodology-owner or project-owner approval before designating either inventory as canonical.

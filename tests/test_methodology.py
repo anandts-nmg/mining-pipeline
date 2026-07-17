@@ -10,6 +10,7 @@ from buduunkhad.geospatial_ai.methodology import (
     DiscrepancyRegistry,
     MethodologyDiscrepancy,
     MethodologyError,
+    MethodologySource,
     load_authority_registry,
     load_automation_boundaries,
     load_discrepancy_registry,
@@ -69,6 +70,71 @@ def test_external_authority_identifiers_cover_the_deleted_operational_guides() -
         # documents must say so and carry a follow-up action.
         if not source.existence_verified:
             assert source.remaining_actions
+
+
+def test_external_authority_can_record_evidence_without_changing_authority() -> None:
+    source = MethodologySource.model_validate(
+        {
+            "source_id": "phase04.synthetic",
+            "role": "phase-source",
+            "external_reference": "BUDUUNKHAD_WORKFLOW_DOCS_ROOT::phase04-synthetic",
+            "authority_status": "adopted",
+            "existence_verified": True,
+            "external_file_id": "drive-file-id-123",
+            "existence_verified_at": "2026-07-17T12:00:00+08:00",
+            "existence_verified_by": "methodology-custodian",
+            "existence_evidence_reference": "verification-log::phase04-20260717",
+        }
+    )
+
+    assert source.authority_status == "adopted"
+    assert source.external_file_id == "drive-file-id-123"
+    assert source.existence_verified_at is not None
+    assert source.existence_verified_at.utcoffset() is not None
+
+
+def test_external_existence_verification_requires_complete_evidence() -> None:
+    base = {
+        "source_id": "phase04.synthetic",
+        "role": "phase-source",
+        "external_reference": "BUDUUNKHAD_WORKFLOW_DOCS_ROOT::phase04-synthetic",
+        "authority_status": "adopted",
+        "existence_verified": True,
+    }
+    with pytest.raises(ValidationError, match="file ID, timestamp, verifier"):
+        MethodologySource.model_validate(base)
+    with pytest.raises(ValidationError, match="timezone-aware"):
+        MethodologySource.model_validate(
+            {
+                **base,
+                "external_file_id": "drive-file-id-123",
+                "existence_verified_at": "2026-07-17T12:00:00",
+                "existence_verified_by": "methodology-custodian",
+                "existence_evidence_reference": "verification-log::phase04-20260717",
+            }
+        )
+
+
+def test_unverified_external_id_does_not_claim_existence() -> None:
+    source = MethodologySource.model_validate(
+        {
+            "source_id": "phase04.synthetic",
+            "role": "phase-source",
+            "external_reference": "BUDUUNKHAD_WORKFLOW_DOCS_ROOT::phase04-synthetic",
+            "authority_status": "adopted",
+            "existence_verified": False,
+            "external_file_id": "drive-file-id-123",
+        }
+    )
+    assert source.external_file_id == "drive-file-id-123"
+    assert source.existence_verified is False
+    with pytest.raises(ValidationError, match="unverified methodology"):
+        MethodologySource.model_validate(
+            {
+                **source.model_dump(),
+                "existence_verified_at": "2026-07-17T12:00:00+08:00",
+            }
+        )
 
 
 def test_discrepancy_register_is_the_complete_decision_history() -> None:

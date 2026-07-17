@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from importlib import resources
 from pathlib import Path
 from typing import Literal
@@ -32,6 +33,10 @@ class MethodologySource(BaseModel):
     expected_document: str | None = None
     repository_copy: str | None = None
     existence_verified: bool = False
+    external_file_id: str | None = Field(default=None, min_length=1)
+    existence_verified_at: datetime | None = None
+    existence_verified_by: str | None = Field(default=None, min_length=1)
+    existence_evidence_reference: str | None = Field(default=None, min_length=1)
     superseding_contract: str | None = None
     remaining_actions: tuple[str, ...] = ()
 
@@ -44,6 +49,29 @@ class MethodologySource(BaseModel):
             "BUDUUNKHAD_WORKFLOW_DOCS_ROOT::"
         ):
             raise ValueError("external methodology must use BUDUUNKHAD_WORKFLOW_DOCS_ROOT")
+        verification_facts = (
+            self.existence_verified_at,
+            self.existence_verified_by,
+            self.existence_evidence_reference,
+        )
+        if self.external_reference is None and any(
+            value is not None for value in (self.external_file_id, *verification_facts)
+        ):
+            raise ValueError("external verification facts require an external methodology source")
+        if self.external_reference is not None and self.existence_verified:
+            if not all(value is not None for value in (self.external_file_id, *verification_facts)):
+                raise ValueError(
+                    "verified external methodology requires file ID, timestamp, verifier, "
+                    "and evidence reference"
+                )
+            assert self.existence_verified_at is not None
+            if (
+                self.existence_verified_at.tzinfo is None
+                or self.existence_verified_at.utcoffset() is None
+            ):
+                raise ValueError("external verification timestamp must be timezone-aware")
+        elif any(value is not None for value in verification_facts):
+            raise ValueError("unverified methodology cannot carry verification evidence")
         return self
 
 

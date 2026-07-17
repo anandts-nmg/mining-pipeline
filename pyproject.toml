@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "buduunkhad"
-version = "0.8.0"
+version = "0.8.1"
 description = "Config-driven geospatial pipeline for the Buduunkhad / XV-023222 exploration workflow methodology (phases 00-99)."
 readme = { text = "Buduunkhad geospatial exploration pipeline. Repository governance and the current implemented-state summary are maintained in AGENTS.md.", content-type = "text/plain" }
 requires-python = ">=3.11"

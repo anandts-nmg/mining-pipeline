@@ -145,6 +145,11 @@ def publish_deliverables(
     label: str = typer.Option(
         None, "--label", help="Version label for the published folder (default: timestamp)."
     ),
+    supersedes: str | None = typer.Option(
+        None,
+        "--supersedes",
+        help="Publication ID explicitly superseded by this package.",
+    ),
 ) -> None:
     """Copy every built phase's deliverables (not raw working copies) to BUDUUNKHAD_PUBLISH_ROOT.
 
@@ -166,7 +171,14 @@ def publish_deliverables(
 
     label = label or datetime.now().strftime("%Y%m%dT%H%M%S")
     try:
-        result = do_publish(cfg.output_root, Path(publish_root), label, runs_root=cfg.runs_root)
+        result = do_publish(
+            cfg.output_root,
+            Path(publish_root),
+            label,
+            runs_root=cfg.runs_root,
+            project_config_path=config,
+            superseded_publication_id=supersedes,
+        )
     except PublishError as exc:
         typer.secho(str(exc), fg="red")
         raise typer.Exit(2) from exc

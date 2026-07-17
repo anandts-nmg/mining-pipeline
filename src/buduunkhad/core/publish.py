@@ -14,10 +14,27 @@ import csv
 import hashlib
 import json
 import os
+import re
 import shutil
+import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
+
+from pydantic import ValidationError
+
+from buduunkhad import __version__
+from buduunkhad.core.publication_manifest import (
+    AGGREGATION_NOTICE,
+    PUBLICATION_MANIFEST_FORMAT_VERSION,
+    PublicationManifest,
+    PublicationProjectReference,
+    PublishedOutput,
+    PublishedPhase,
+    publication_id_for,
+    publication_status_for,
+)
 
 #: Deliverable file types. Derived rasters (``.tif`` COGs from Phase 02 onward) are
 #: deliverables; raw working copies are excluded by **folder** (see ``WORKING_COPY_DIRS``),
@@ -59,6 +76,30 @@ class PublishResult:
     dest: Path
     files: list[Path] = field(default_factory=list)
     skipped_working_copies: int = 0
+
+
+@dataclass(frozen=True)
+class _RunPhaseRecord:
+    manifest_path: Path
+    manifest_sha256: str
+    run_id: str
+    phase_id: str
+    execution_status: str
+    outputs: tuple[Path, ...]
+    gate_state: str
+    gate_provisional: bool
+    human_review_or_qaqc_pending: bool
+    pending_human_review_or_qaqc_count: int | None
+
+
+def _require_safe_component(value: str, field_name: str) -> str:
+    if (
+        not value
+        or value in {".", ".."}
+        or any(separator in value for separator in ("/", "\\", ":"))
+    ):
+        raise PublishError(f"{field_name} must be one path-safe component")
+    return value
 
 
 def _is_working_copy(rel: Path) -> bool:
@@ -130,6 +171,214 @@ def latest_gate_per_phase(runs_root: Path) -> dict[str, dict[str, object]]:
     return out
 
 
+def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise PublishError(f"run manifest contains duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
+def _load_json_object(path: Path) -> dict[str, object]:
+    try:
+        value = json.loads(
+            path.read_text(encoding="utf-8"), object_pairs_hook=_reject_duplicate_keys
+        )
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise PublishError(f"run manifest is unreadable or invalid: {path}") from exc
+    if not isinstance(value, dict):
+        raise PublishError(f"run manifest root must be an object: {path}")
+    return value
+
+
+def _resolve_recorded_output(value: str, output_root: Path) -> Path:
+    recorded = Path(value)
+    if recorded.is_absolute():
+        return recorded.resolve()
+    candidates = (
+        (output_root / recorded).resolve(),
+        (output_root.parent / recorded).resolve(),
+        (Path.cwd() / recorded).resolve(),
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    for candidate in candidates:
+        try:
+            candidate.relative_to(output_root.resolve())
+        except ValueError:
+            continue
+        return candidate
+    return candidates[0]
+
+
+def _deliverable_relative(path: Path, output_root: Path) -> Path | None:
+    try:
+        relative = path.resolve().relative_to(output_root.resolve())
+    except ValueError:
+        return None
+    if _is_working_copy(relative) or path.suffix.lower() not in DELIVERABLE_SUFFIXES:
+        return None
+    return relative
+
+
+def _load_run_phase_records(runs_root: Path, output_root: Path) -> dict[str, list[_RunPhaseRecord]]:
+    records: dict[str, list[_RunPhaseRecord]] = {}
+    if not runs_root.exists():
+        raise PublishError(f"runs root does not exist: {runs_root}")
+    manifests = sorted(runs_root.glob("*/run_manifest.json"))
+    if not manifests:
+        raise PublishError(f"no source run manifests found under: {runs_root}")
+    for manifest_path in manifests:
+        data = _load_json_object(manifest_path)
+        if data.get("dry_run") is True:
+            continue
+        run_id = data.get("run_id")
+        phases = data.get("phases")
+        if not isinstance(run_id, str) or not run_id.strip() or not isinstance(phases, list):
+            raise PublishError(f"run manifest lacks a valid run_id or phases list: {manifest_path}")
+        _require_safe_component(run_id, "source run ID")
+        for phase in phases:
+            if not isinstance(phase, dict):
+                raise PublishError(
+                    f"run manifest contains a malformed phase record: {manifest_path}"
+                )
+            phase_id = phase.get("phase_id")
+            execution_status = phase.get("status")
+            output_values = phase.get("outputs")
+            gate = phase.get("gate")
+            if (
+                not isinstance(phase_id, str)
+                or re.fullmatch(r"(0[0-9]|1[01]|99)", phase_id) is None
+                or not isinstance(execution_status, str)
+                or not isinstance(output_values, list)
+                or not all(isinstance(item, str) for item in output_values)
+                or not isinstance(gate, dict)
+                or not isinstance(gate.get("status"), str)
+            ):
+                raise PublishError(
+                    f"run manifest phase lacks outputs or gate provenance: {manifest_path}"
+                )
+            pending_count = phase.get("pending_human_review_or_qaqc_count")
+            if pending_count is not None and (type(pending_count) is not int or pending_count < 0):
+                raise PublishError(f"run manifest has an invalid pending count: {manifest_path}")
+            record = _RunPhaseRecord(
+                manifest_path=manifest_path,
+                manifest_sha256=_sha256(manifest_path),
+                run_id=run_id,
+                phase_id=phase_id,
+                execution_status=execution_status,
+                outputs=tuple(
+                    _resolve_recorded_output(item, output_root) for item in output_values
+                ),
+                gate_state=str(gate["status"]),
+                gate_provisional=gate.get("provisional") is True,
+                human_review_or_qaqc_pending=phase.get("qaqc_pending") is True,
+                pending_human_review_or_qaqc_count=pending_count,
+            )
+            records.setdefault(phase_id, []).append(record)
+    return records
+
+
+def _phase_id_from_relative(relative: Path) -> str:
+    tag = _phase_tag(relative)
+    if not tag.startswith("Phase") or len(tag) != 7 or not tag[5:].isdigit():
+        raise PublishError(f"deliverable is not inside a registered phase directory: {relative}")
+    return tag[5:]
+
+
+def _is_runner_qaqc_output(path: Path, output_root: Path, phase_id: str) -> bool:
+    relative = path.resolve().relative_to(output_root.resolve())
+    return _phase_id_from_relative(relative) == phase_id and relative.name.endswith(
+        f"_Phase{phase_id}_QAQC_Log.xlsx"
+    )
+
+
+def _select_publication_records(
+    output_root: Path,
+    sources: tuple[Path, ...],
+    records: dict[str, list[_RunPhaseRecord]],
+) -> dict[str, _RunPhaseRecord]:
+    actual: dict[str, set[Path]] = {}
+    for source in sources:
+        relative = source.resolve().relative_to(output_root.resolve())
+        actual.setdefault(_phase_id_from_relative(relative), set()).add(source.resolve())
+
+    phase_ids = set(actual)
+    for phase_id, candidates in records.items():
+        latest = candidates[-1]
+        if any(_deliverable_relative(path, output_root) is not None for path in latest.outputs):
+            phase_ids.add(phase_id)
+
+    selected: dict[str, _RunPhaseRecord] = {}
+    for phase_id in sorted(phase_ids):
+        phase_candidates = records.get(phase_id)
+        if not phase_candidates:
+            raise PublishError(f"no source run manifest records published Phase {phase_id}")
+        record = phase_candidates[-1]
+        if record.execution_status != "ok":
+            raise PublishError(
+                f"Phase {phase_id} source run {record.run_id} is not complete: "
+                f"{record.execution_status}"
+            )
+        expected = {
+            path.resolve()
+            for path in record.outputs
+            if _deliverable_relative(path, output_root) is not None
+        }
+        observed = actual.get(phase_id, set())
+        missing = sorted(str(path) for path in expected - observed)
+        unattributed = sorted(
+            str(path)
+            for path in observed - expected
+            if not _is_runner_qaqc_output(path, output_root, phase_id)
+        )
+        if missing:
+            raise PublishError(
+                f"Phase {phase_id} source run {record.run_id} has missing output(s): {missing}"
+            )
+        if unattributed:
+            raise PublishError(
+                f"Phase {phase_id} contains output(s) not attributed to its latest source run: "
+                f"{unattributed}"
+            )
+        if not observed:
+            raise PublishError(f"Phase {phase_id} source run has no publishable outputs")
+        selected[phase_id] = record
+    if not selected:
+        raise PublishError("publication contains no phase deliverables")
+    return selected
+
+
+def _portable_project_reference(config_path: Path) -> str:
+    resolved = config_path.resolve()
+    try:
+        return resolved.relative_to(Path.cwd().resolve()).as_posix()
+    except ValueError:
+        return f"external-config::{resolved.name}"
+
+
+def _git_commit_sha(repository_root: Path) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repository_root,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    value = result.stdout.strip().lower()
+    if len(value) not in {40, 64} or any(
+        character not in "0123456789abcdef" for character in value
+    ):
+        return None
+    return value
+
+
 def publish(
     output_root: Path,
     publish_root: Path,
@@ -137,35 +386,71 @@ def publish(
     *,
     runs_root: Path | None = None,
     overwrite: bool = False,
+    project_config_path: Path | None = None,
+    superseded_publication_id: str | None = None,
+    published_at: datetime | None = None,
 ) -> PublishResult:
-    """Copy deliverables into ``publish_root/BuduunKhad_..._<label>/`` with an INDEX.md.
+    """Copy provenance-bound deliverables into a local publication staging package.
 
     Raises :class:`PublishError` if the label dir already exists and is non-empty (unless
     ``overwrite=True``) or if two source files would flatten to the same published path — both
     would otherwise silently overwrite, so we fail loudly per the repo's philosophy.
     """
-    output_root = Path(output_root)
-    dest = Path(publish_root) / f"Buduunkhad_Deliverables_{label}"
+    _require_safe_component(label, "publish label")
+    if (
+        superseded_publication_id is not None
+        and re.fullmatch(r"pub-[0-9a-f]{32}", superseded_publication_id) is None
+    ):
+        raise PublishError("superseded publication ID is invalid")
+    if published_at is not None and (
+        published_at.tzinfo is None or published_at.utcoffset() is None
+    ):
+        raise PublishError("publication timestamp must be timezone-aware")
+    publication_time = (published_at or datetime.now(UTC)).astimezone(UTC)
+    output_root = Path(output_root).resolve()
+    publish_root = Path(publish_root).resolve()
+    if runs_root is None:
+        raise PublishError("runs_root is required to bind published phases to source runs")
+    runs_root = Path(runs_root).resolve()
+    config_path = Path(project_config_path or "config/project.yaml")
+    if not config_path.is_file():
+        raise PublishError(f"authoritative project configuration is unavailable: {config_path}")
+    project = PublicationProjectReference(
+        configuration_reference=_portable_project_reference(config_path),
+        configuration_sha256=_sha256(config_path),
+    )
+
+    dest = publish_root / f"Buduunkhad_Deliverables_{label}"
     if dest.exists() and any(dest.iterdir()) and not overwrite:
         raise PublishError(
             f"Publish destination already exists and is not empty: {dest}. "
             "Choose a new --label or remove that folder first."
         )
-    dest.mkdir(parents=True, exist_ok=True)
 
     # Map each source to its flattened PhaseNN/<filename> target, failing on any collision (two
     # distinct sources -> same published path) rather than silently overwriting.
     targets: dict[Path, Path] = {}
     for src in collect_deliverables(output_root):
-        target = dest / _phase_tag(src.relative_to(output_root)) / src.name
-        if target in targets:
-            raise PublishError(
-                f"Publish name collision: {targets[target]} and {src} both map to {target}"
+        target_relative = Path(_phase_tag(src.relative_to(output_root))) / src.name
+        if target_relative in targets.values():
+            previous = next(
+                source for source, target in targets.items() if target == target_relative
             )
-        targets[target] = src
+            raise PublishError(
+                f"Publish name collision: {previous} and {src} both map to {target_relative}"
+            )
+        targets[src.resolve()] = target_relative
+
+    records = _load_run_phase_records(runs_root, output_root)
+    selected = _select_publication_records(output_root, tuple(targets), records)
+
+    if dest.exists() and overwrite:
+        shutil.rmtree(dest)
+    dest.mkdir(parents=True, exist_ok=True)
 
     copied: list[Path] = []
-    for target, src in targets.items():
+    for src, target_relative in sorted(targets.items(), key=lambda item: item[1].as_posix()):
+        target = dest / target_relative
         target.parent.mkdir(parents=True, exist_ok=True)
         if src.suffix.lower() == ".qgz":
             _publish_qgz_flat(src, target)
@@ -184,9 +469,133 @@ def publish(
         shutil.copy2(manifest, dest / "run_manifest.json")
         copied.append(dest / "run_manifest.json")
 
-    gates = latest_gate_per_phase(runs_root) if runs_root is not None else {}
-    _write_index(dest, output_root, copied, label, gates)
+    phase_records: list[PublishedPhase] = []
+    copied_source_manifests: dict[Path, Path] = {}
+    for phase_id, record in sorted(selected.items()):
+        source_manifest_relative = (
+            Path("source_run_manifests") / record.run_id / "run_manifest.json"
+        )
+        source_manifest_target = dest / source_manifest_relative
+        if record.manifest_path not in copied_source_manifests:
+            source_manifest_target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(record.manifest_path, source_manifest_target)
+            copied_source_manifests[record.manifest_path] = source_manifest_target
+            copied.append(source_manifest_target)
+        phase_outputs = tuple(
+            PublishedOutput(
+                path=targets[source].as_posix(),
+                sha256=_sha256(dest / targets[source]),
+            )
+            for source in sorted(
+                (
+                    source
+                    for source in targets
+                    if _phase_id_from_relative(source.relative_to(output_root)) == phase_id
+                ),
+                key=lambda source: targets[source].as_posix(),
+            )
+        )
+        phase_records.append(
+            PublishedPhase(
+                phase_id=phase_id,
+                source_run_id=record.run_id,
+                source_run_manifest_path=source_manifest_relative.as_posix(),
+                source_run_manifest_sha256=record.manifest_sha256,
+                gate_state=record.gate_state,
+                gate_provisional=record.gate_provisional,
+                human_review_or_qaqc_pending=record.human_review_or_qaqc_pending,
+                pending_human_review_or_qaqc_count=record.pending_human_review_or_qaqc_count,
+                outputs=phase_outputs,
+            )
+        )
+
+    phases = tuple(phase_records)
+    package_status = publication_status_for(phases)
+    git_commit_sha = _git_commit_sha(Path.cwd())
+    publication_id = publication_id_for(
+        project=project,
+        package_version=__version__,
+        git_commit_sha=git_commit_sha,
+        phases=phases,
+        package_status=package_status,
+        superseded_publication_id=superseded_publication_id,
+    )
+    publication_manifest = PublicationManifest(
+        manifest_format_version=PUBLICATION_MANIFEST_FORMAT_VERSION,
+        project=project,
+        package_version=__version__,
+        git_commit_sha=git_commit_sha,
+        published_at=publication_time,
+        publication_id=publication_id,
+        included_phase_ids=tuple(phase.phase_id for phase in phases),
+        phases=phases,
+        package_status=package_status,
+        aggregation_notice=AGGREGATION_NOTICE,
+        superseded_publication_id=superseded_publication_id,
+    )
+    publication_manifest_path = dest / "publication_manifest.json"
+    publication_manifest_path.write_text(
+        publication_manifest.model_dump_json(indent=2) + "\n", encoding="utf-8"
+    )
+    copied.append(publication_manifest_path)
+    verify_publication_package(dest)
+    _write_index(dest, copied, label, publication_manifest)
     return PublishResult(dest=dest, files=copied, skipped_working_copies=skipped)
+
+
+def load_publication_manifest(package_root: Path) -> PublicationManifest:
+    path = Path(package_root) / "publication_manifest.json"
+    try:
+        data = json.loads(
+            path.read_text(encoding="utf-8"), object_pairs_hook=_reject_duplicate_keys
+        )
+        return PublicationManifest.model_validate(data)
+    except (OSError, UnicodeError, ValueError, ValidationError) as exc:
+        raise PublishError(f"publication manifest is unreadable or invalid: {path}") from exc
+
+
+def verify_publication_package(package_root: Path) -> PublicationManifest:
+    """Re-hash every recorded output and source manifest in a staged package."""
+
+    package_root = Path(package_root).resolve()
+    manifest = load_publication_manifest(package_root)
+    for phase in manifest.phases:
+        source_manifest = package_root / Path(phase.source_run_manifest_path)
+        if (
+            not source_manifest.is_file()
+            or _sha256(source_manifest) != phase.source_run_manifest_sha256
+        ):
+            raise PublishError(
+                f"source run manifest is missing or changed: {phase.source_run_manifest_path}"
+            )
+        source_data = _load_json_object(source_manifest)
+        if source_data.get("run_id") != phase.source_run_id:
+            raise PublishError(f"source run identity mismatch for Phase {phase.phase_id}")
+        source_phases = source_data.get("phases")
+        if not isinstance(source_phases, list):
+            raise PublishError(f"source run has no phase records for Phase {phase.phase_id}")
+        matching = [
+            item
+            for item in source_phases
+            if isinstance(item, dict) and item.get("phase_id") == phase.phase_id
+        ]
+        if len(matching) != 1:
+            raise PublishError(f"source run phase identity is ambiguous for Phase {phase.phase_id}")
+        source_phase = matching[0]
+        source_gate = source_phase.get("gate")
+        if (
+            source_phase.get("status") != "ok"
+            or not isinstance(source_gate, dict)
+            or source_gate.get("status") != phase.gate_state
+            or (source_gate.get("provisional") is True) != phase.gate_provisional
+            or (source_phase.get("qaqc_pending") is True) != phase.human_review_or_qaqc_pending
+        ):
+            raise PublishError(f"source run gate provenance mismatch for Phase {phase.phase_id}")
+        for output in phase.outputs:
+            path = package_root / Path(output.path)
+            if not path.is_file() or _sha256(path) != output.sha256:
+                raise PublishError(f"published output is missing or changed: {output.path}")
+    return manifest
 
 
 def _publish_qgz_flat(src: Path, target: Path) -> None:
@@ -221,28 +630,35 @@ def _publish_qgz_flat(src: Path, target: Path) -> None:
 
 def _write_index(
     dest: Path,
-    output_root: Path,
     copied: list[Path],
     label: str,
-    gates: dict[str, dict[str, object]],
+    manifest: PublicationManifest,
 ) -> Path:
     lines = [
-        f"# Buduunkhad XV-023222 — Deliverables ({label})",
+        f"# Deliverable publication package ({label})",
         "",
         "Published deliverables (GIS layers, COG rasters, registers, logs, reports). Raw working",
         "copies are excluded — those are duplicates of the read-only Drive archive.",
         "",
+        f"**Package status:** {manifest.package_status}",
+        "",
+        "Machine-readable package provenance and output hashes are recorded in",
+        "`publication_manifest.json`. The root `run_manifest.json`, when present, is retained only",
+        "for compatibility and must not be interpreted as provenance for the complete package.",
+        "",
+        manifest.aggregation_notice,
+        "",
     ]
-    if gates:
-        parts = []
-        for pid in sorted(gates):
-            g = gates[pid]
-            tag = f"{pid}={g['status']}"
-            if g.get("provisional"):
-                tag += " (provisional)"
-            parts.append(tag)
-        lines.append(f"**Gates (most recent real run per phase):** {', '.join(parts)}")
-        lines.append("")
+    parts = []
+    for phase in manifest.phases:
+        tag = f"{phase.phase_id}={phase.gate_state} from run {phase.source_run_id}"
+        if phase.gate_provisional:
+            tag += " (provisional)"
+        if phase.human_review_or_qaqc_pending:
+            tag += " (human review / QA/QC pending)"
+        parts.append(tag)
+    lines.append(f"**Source phase gates:** {', '.join(parts)}")
+    lines.append("")
     lines.append("## Files")
     lines.append("")
     for p in copied:

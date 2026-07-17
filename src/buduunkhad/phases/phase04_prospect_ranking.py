@@ -41,6 +41,7 @@ PROSPECT_VALIDATION = "Preliminary — not ore proof"
 PROSPECT_LIMITATION = (
     "Desktop evidence-scored prospect; requires field/lab validation (drone/recon/sampling)"
 )
+PHASE04_DESKTOP_MATRIX_LABEL = "Phase-4 guide §6 desktop 8-criterion matrix"
 
 # Phase-4 guide §6 desktop scoring matrix — 8 weighted criteria summing to 100 (conflict 04-1:
 # adopted over the master v9 §5 lifecycle matrix, per the repo rule that the later per-phase
@@ -877,7 +878,7 @@ class Phase04ProspectRanking(Phase):
         note.write_text(
             f"# Phase 04 — Preliminary Prospect Delineation & Ranking (method note)\n\n"
             f"Created {date.today().isoformat()}. All outputs are **{PROSPECT_VALIDATION}**.\n\n"
-            f"## Scoring (Phase-4 guide §6 desktop matrix, weights sum 100 — conflict 04-1)\n"
+            f"## Scoring ({PHASE04_DESKTOP_MATRIX_LABEL}, weights sum 100 — conflict 04-1)\n"
             f"{weights}\n\n"
             f"(The master v9 §5 lifecycle matrix — which adds field/pXRF and drone criteria — is "
             f"used at Phase 10 final ranking, not here; see "
@@ -937,7 +938,7 @@ class Phase04ProspectRanking(Phase):
             "100-point ranking matrix calculated over the evidence grid",
             RECORDED_ACCEPTANCE,
             decision=Decision.PASS if self._grid_cells else Decision.FAIL,
-            note=f"{self._grid_cells} grid cells scored on the v9 §5 8-criterion matrix.",
+            note=f"{self._grid_cells} grid cells scored on the {PHASE04_DESKTOP_MATRIX_LABEL}.",
         )
         report.add(
             "Prospect polygons delineated and A/B/C/D class assigned",

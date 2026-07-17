@@ -19,7 +19,12 @@ from buduunkhad.phases.phase00_archive import Phase00Archive
 from buduunkhad.phases.phase01_data_audit import Phase01DataAudit
 from buduunkhad.phases.phase03_geology_synthesis import EVIDENCE_FIELDS, Phase03GeologySynthesis
 from buduunkhad.phases.phase04_prospect_ranking import (
+    ACCESS_NEAR_M,
+    GRID_CELL_M,
+    OCCURRENCE_NEAR_M,
+    PHASE04_DESKTOP_MATRIX_LABEL,
     PROSPECT_CRITERIA,
+    SCORE_THRESHOLD,
     Phase04ProspectRanking,
     classify,
 )
@@ -137,7 +142,23 @@ def test_classify_bands():
 
 
 def test_prospect_criteria_sum_100():
+    assert PROSPECT_CRITERIA == [
+        ("geology", 20, True),
+        ("occurrence", 15, True),
+        ("geochem", 20, True),
+        ("rs", 15, False),
+        ("structure", 10, True),
+        ("model_fit", 10, False),
+        ("access", 5, False),
+        ("confidence", 5, True),
+    ]
     assert sum(w for _k, w, _a in PROSPECT_CRITERIA) == 100
+    assert (GRID_CELL_M, SCORE_THRESHOLD, OCCURRENCE_NEAR_M, ACCESS_NEAR_M) == (
+        250.0,
+        35,
+        750.0,
+        1500.0,
+    )
 
 
 def test_make_grid_and_dissolve(project):
@@ -224,6 +245,19 @@ def test_phase04_real_run_grid_and_gate(raw_archive):
     decision = phase.gate(report, ctx)
     assert decision.status is GateStatus.GO
     assert decision.provisional
+
+    method_note = next((pdir / "05_A_B_C_D_Field_Priority").glob("*Method_Note.md"))
+    method_text = method_note.read_text(encoding="utf-8")
+    qaqc_log = next((pdir / "05_A_B_C_D_Field_Priority").glob("*Phase4_QAQC_Log*.xlsx"))
+    qaqc_sheet = openpyxl.load_workbook(qaqc_log).active
+    assert qaqc_sheet is not None
+    qaqc_text = " ".join(
+        str(value) for row in qaqc_sheet.iter_rows(values_only=True) for value in row if value
+    )
+    assert PHASE04_DESKTOP_MATRIX_LABEL in method_text
+    assert PHASE04_DESKTOP_MATRIX_LABEL in qaqc_text
+    assert "v9 §5 8-criterion matrix" not in method_text
+    assert "v9 §5 8-criterion matrix" not in qaqc_text
 
 
 def test_phase04_delineates_prospects(raw_archive):

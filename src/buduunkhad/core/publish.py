@@ -34,6 +34,7 @@ from buduunkhad.core.publication_manifest import (
     PublishedOutput,
     PublishedPhase,
     SourceBindingMode,
+    phase_package_tag,
     publication_id_for,
     publication_status_for,
 )
@@ -147,10 +148,7 @@ def _phase_tag(rel: Path) -> str:
     Phase folders are named ``<NN>_<...>``; group everything by the two-digit prefix into
     ``PhaseNN`` (so ``03_Phase_3_Geological_...`` publishes under ``Phase03/``, not its long name).
     """
-    top = rel.parts[0] if rel.parts else ""
-    if len(top) >= 3 and top[:2].isdigit() and top[2] == "_":
-        return f"Phase{top[:2]}"
-    return top or "misc"
+    return phase_package_tag(rel)
 
 
 def collect_deliverables(output_root: Path) -> list[Path]:
@@ -898,14 +896,47 @@ def load_publication_manifest(package_root: Path) -> PublicationManifest:
         raise PublishError(f"publication manifest is unreadable or invalid: {path}") from exc
 
 
+def _package_file_claims(manifest: PublicationManifest) -> tuple[str, ...]:
+    """Validate physical package-file claim multiplicity before creating an allowlist."""
+
+    claims: dict[str, str] = {}
+
+    def claim(path: str, owner: str) -> None:
+        previous = claims.get(path)
+        if previous is not None:
+            raise PublishError(
+                f"publication package path has conflicting claims: {path} ({previous}; {owner})"
+            )
+        claims[path] = owner
+
+    claim("publication_manifest.json", "publication manifest")
+    claim("INDEX.md", "publication index")
+    claim(manifest.compatibility_run_manifest.path, "compatibility run manifest")
+
+    source_manifest_identities: dict[str, tuple[str, str]] = {}
+    for phase in manifest.phases:
+        source_identity = (phase.source_run_id, phase.source_run_manifest_sha256)
+        previous_identity = source_manifest_identities.get(phase.source_run_manifest_path)
+        if previous_identity is None:
+            source_manifest_identities[phase.source_run_manifest_path] = source_identity
+            claim(phase.source_run_manifest_path, f"source run {phase.source_run_id}")
+        elif previous_identity != source_identity:
+            raise PublishError(
+                "copied source run manifest path has conflicting identities: "
+                f"{phase.source_run_manifest_path}"
+            )
+        for output in phase.outputs:
+            claim(output.path, f"Phase {phase.phase_id} output")
+    return tuple(claims)
+
+
 def verify_publication_package(package_root: Path) -> PublicationManifest:
     """Verify source provenance, published bytes, deterministic metadata, and package contents."""
 
     package_root = _require_root(Path(package_root), "publication package")
     manifest = load_publication_manifest(package_root)
-    allowed_files = {"publication_manifest.json", "INDEX.md"}
+    allowed_files = set(_package_file_claims(manifest))
     for phase in manifest.phases:
-        allowed_files.add(phase.source_run_manifest_path)
         source_manifest = _require_package_file(
             package_root, phase.source_run_manifest_path, "copied source run manifest"
         )
@@ -996,7 +1027,6 @@ def verify_publication_package(package_root: Path) -> PublicationManifest:
         if source_binding_mode != phase.source_binding_mode:
             raise PublishError(f"source binding mode mismatch for Phase {phase.phase_id}")
         for output in phase.outputs:
-            allowed_files.add(output.path)
             output_file = _require_package_file(package_root, output.path, "published output")
             if (
                 _sha256(output_file) != output.sha256
@@ -1005,7 +1035,6 @@ def verify_publication_package(package_root: Path) -> PublicationManifest:
                 raise PublishError(f"published output is missing or changed: {output.path}")
 
     compatibility = manifest.compatibility_run_manifest
-    allowed_files.add(compatibility.path)
     compatibility_path = _require_package_file(
         package_root, compatibility.path, "compatibility run manifest"
     )

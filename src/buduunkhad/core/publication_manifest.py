@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import PurePath, PurePosixPath
 from typing import Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -27,6 +28,15 @@ AGGREGATION_NOTICE: Final[
 PublicationStatus = Literal["PROVISIONAL", "HUMAN_REVIEW_PENDING", "APPROVED"]
 SourceBindingMode = Literal["SHA256_BOUND", "LEGACY_PATH_ONLY"]
 TransformationIdentifier = Literal["qgz-flat-datasource-rewrite-v1"]
+
+
+def phase_package_tag(relative: PurePath) -> str:
+    """Map a canonical output-root path to its portable ``PhaseNN`` package group."""
+
+    top = relative.parts[0] if relative.parts else ""
+    if len(top) >= 3 and top[:2].isdigit() and top[2] == "_":
+        return f"Phase{top[:2]}"
+    return top or "misc"
 
 
 def _parse_timestamp(value: str, field_name: str) -> str:
@@ -122,6 +132,13 @@ class PublishedPhase(BaseModel):
         source_paths = tuple(item.source_path for item in self.outputs)
         if len(set(paths)) != len(paths) or len(set(source_paths)) != len(source_paths):
             raise ValueError("published phase contains duplicate output paths")
+        expected_package_tag = f"Phase{self.phase_id}"
+        if any(PurePosixPath(path).parts[0] != expected_package_tag for path in paths):
+            raise ValueError(f"published output path does not belong to {expected_package_tag}")
+        if any(
+            phase_package_tag(PurePosixPath(path)) != expected_package_tag for path in source_paths
+        ):
+            raise ValueError(f"source output path does not belong to {expected_package_tag}")
         if paths != tuple(sorted(paths)):
             raise ValueError("published phase outputs must be sorted by path")
         if self.source_binding_mode == "SHA256_BOUND":
@@ -206,6 +223,39 @@ class PublicationManifest(BaseModel):
     ]
     superseded_publication_id: str | None = Field(default=None, pattern=r"^pub-[0-9a-f]{32}$")
 
+    @model_validator(mode="before")
+    @classmethod
+    def _raw_output_paths_are_globally_unique(cls, value: object) -> object:
+        """Reject duplicate claims before nested ownership or publication-ID validation."""
+
+        if not isinstance(value, dict):
+            return value
+        raw_phases = value.get("phases")
+        if not isinstance(raw_phases, (list, tuple)):
+            return value
+        paths: list[str] = []
+        for raw_phase in raw_phases:
+            if isinstance(raw_phase, PublishedPhase):
+                raw_outputs: object = raw_phase.outputs
+            elif isinstance(raw_phase, dict):
+                raw_outputs = raw_phase.get("outputs")
+            else:
+                continue
+            if not isinstance(raw_outputs, (list, tuple)):
+                continue
+            for raw_output in raw_outputs:
+                if isinstance(raw_output, PublishedOutput):
+                    path: object = raw_output.path
+                elif isinstance(raw_output, dict):
+                    path = raw_output.get("path")
+                else:
+                    continue
+                if isinstance(path, str):
+                    paths.append(path)
+        if len(set(paths)) != len(paths):
+            raise ValueError("publication output paths must be globally unique")
+        return value
+
     @model_validator(mode="after")
     def _identity_is_consistent(self) -> PublicationManifest:
         if self.published_at.tzinfo is None or self.published_at.utcoffset() is None:
@@ -215,6 +265,9 @@ class PublicationManifest(BaseModel):
         phase_ids = tuple(phase.phase_id for phase in self.phases)
         if len(set(phase_ids)) != len(phase_ids):
             raise ValueError("publication manifest contains duplicate phase IDs")
+        output_paths = tuple(output.path for phase in self.phases for output in phase.outputs)
+        if len(set(output_paths)) != len(output_paths):
+            raise ValueError("publication output paths must be globally unique")
         if phase_ids != tuple(sorted(phase_ids)):
             raise ValueError("publication phases must be sorted by phase ID")
         if self.included_phase_ids != phase_ids:

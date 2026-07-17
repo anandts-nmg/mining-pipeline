@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import shutil
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -12,13 +13,19 @@ from pathlib import Path
 import pytest
 
 from buduunkhad.core.publication_manifest import (
+    AGGREGATION_NOTICE,
+    PUBLICATION_MANIFEST_FORMAT_VERSION,
     CompatibilityRunManifest,
+    PublicationManifest,
     PublicationProjectReference,
+    PublishedOutput,
     PublishedPhase,
     publication_id_for,
+    publication_status_for,
 )
 from buduunkhad.core.publish import (
     PublishError,
+    _package_file_claims,
     backup_raw_archive,
     collect_deliverables,
     latest_gate_per_phase,
@@ -63,6 +70,163 @@ def _create_symlink_or_skip(link: Path, target: Path) -> None:
         link.symlink_to(target, target_is_directory=target.is_dir())
     except OSError as exc:
         pytest.skip(f"operating system cannot create the required symlink: {exc}")
+
+
+def _contract_phase(
+    phase_id: str,
+    *,
+    published_path: str | None = None,
+    source_path: str | None = None,
+    legacy: bool = False,
+) -> PublishedPhase:
+    run_id = f"run-{phase_id}"
+    return PublishedPhase(
+        phase_id=phase_id,
+        source_run_id=run_id,
+        source_started_at="2026-01-01T00:00:00+00:00",
+        source_finished_at="2026-01-01T00:01:00+00:00",
+        source_run_manifest_path=f"source_run_manifests/{run_id}/run_manifest.json",
+        source_run_manifest_sha256=phase_id[0] * 64,
+        execution_status="ok",
+        gate_state="go",
+        gate_provisional=False,
+        human_review_or_qaqc_pending=False,
+        pending_human_review_or_qaqc_count=0,
+        source_binding_mode="LEGACY_PATH_ONLY" if legacy else "SHA256_BOUND",
+        outputs=(
+            PublishedOutput(
+                path=published_path or f"Phase{phase_id}/shared.csv",
+                sha256="a" * 64,
+                size_bytes=7,
+                source_path=source_path or f"{phase_id}_Anything/shared.csv",
+                source_sha256=None if legacy else "a" * 64,
+                source_size_bytes=None if legacy else 7,
+            ),
+        ),
+    )
+
+
+def test_published_phase_rejects_duplicate_paths_inside_one_phase() -> None:
+    phase = _contract_phase("01")
+    with pytest.raises(ValueError, match="duplicate output paths"):
+        PublishedPhase.model_validate(
+            phase.model_dump() | {"outputs": [phase.outputs[0], phase.outputs[0]]}
+        )
+
+
+@pytest.mark.parametrize(
+    "published_path",
+    ["Phase02/evidence.gpkg", "shared/evidence.gpkg", "Phase010/evidence.gpkg"],
+)
+def test_published_phase_rejects_wrong_or_misleading_package_directory(
+    published_path: str,
+) -> None:
+    with pytest.raises(ValueError, match="published output path does not belong to Phase01"):
+        _contract_phase("01", published_path=published_path)
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_published_phase_rejects_source_path_owned_by_another_phase(legacy: bool) -> None:
+    with pytest.raises(ValueError, match="source output path does not belong to Phase02"):
+        _contract_phase(
+            "02",
+            source_path="01_Phase_1_Data_Audit/shared.csv",
+            legacy=legacy,
+        )
+
+
+@pytest.mark.parametrize("phase_id", [*(f"{value:02d}" for value in range(12)), "99"])
+def test_published_phase_accepts_all_registered_phase_path_conventions(phase_id: str) -> None:
+    phase = _contract_phase(phase_id)
+    assert phase.outputs[0].path == f"Phase{phase_id}/shared.csv"
+    assert phase.outputs[0].source_path == f"{phase_id}_Anything/shared.csv"
+
+
+def test_manifest_rejects_identical_bytes_claimed_at_one_path_by_two_phases() -> None:
+    phase01 = _contract_phase("01")
+    phase02 = _contract_phase("02")
+    duplicate_output = phase02.outputs[0].model_copy(update={"path": phase01.outputs[0].path})
+    tampered_phase02 = phase02.model_copy(update={"outputs": (duplicate_output,)})
+    phases = (phase01, tampered_phase02)
+    compatibility = CompatibilityRunManifest(
+        run_id=phase01.source_run_id,
+        path="run_manifest.json",
+        sha256=phase01.source_run_manifest_sha256,
+    )
+    status = publication_status_for(phases)
+    project = PublicationProjectReference(
+        configuration_reference="config/project.yaml",
+        configuration_sha256="f" * 64,
+    )
+    recomputed_id = publication_id_for(
+        project=project,
+        package_version="0.8.1",
+        git_commit_sha=None,
+        phases=phases,
+        package_status=status,
+        compatibility_run_manifest=compatibility,
+        superseded_publication_id=None,
+    )
+    data = {
+        "manifest_format_version": PUBLICATION_MANIFEST_FORMAT_VERSION,
+        "project": project,
+        "package_version": "0.8.1",
+        "git_commit_sha": None,
+        "published_at": "2026-01-01T00:00:00+00:00",
+        "publication_id": recomputed_id,
+        "included_phase_ids": ("01", "02"),
+        "phases": tuple(phase.model_dump() for phase in phases),
+        "package_status": status,
+        "compatibility_run_manifest": compatibility,
+        "aggregation_notice": AGGREGATION_NOTICE,
+        "superseded_publication_id": None,
+    }
+
+    assert phase01.outputs[0].sha256 == tampered_phase02.outputs[0].sha256
+    assert phase01.outputs[0].size_bytes == tampered_phase02.outputs[0].size_bytes
+    with pytest.raises(ValueError, match="publication output paths must be globally unique"):
+        PublicationManifest.model_validate(data)
+
+
+def test_verifier_claim_inventory_rejects_collision_before_allowlisting() -> None:
+    phase = _contract_phase("01")
+    compatibility = CompatibilityRunManifest(
+        run_id=phase.source_run_id,
+        path="run_manifest.json",
+        sha256=phase.source_run_manifest_sha256,
+    )
+    project = PublicationProjectReference(
+        configuration_reference="config/project.yaml",
+        configuration_sha256="f" * 64,
+    )
+    status = publication_status_for((phase,))
+    manifest = PublicationManifest(
+        manifest_format_version=PUBLICATION_MANIFEST_FORMAT_VERSION,
+        project=project,
+        package_version="0.8.1",
+        git_commit_sha=None,
+        published_at=datetime(2026, 1, 1, tzinfo=UTC),
+        publication_id=publication_id_for(
+            project=project,
+            package_version="0.8.1",
+            git_commit_sha=None,
+            phases=(phase,),
+            package_status=status,
+            compatibility_run_manifest=compatibility,
+            superseded_publication_id=None,
+        ),
+        included_phase_ids=("01",),
+        phases=(phase,),
+        package_status=status,
+        compatibility_run_manifest=compatibility,
+        aggregation_notice=AGGREGATION_NOTICE,
+    )
+    colliding_output = phase.outputs[0].model_copy(update={"path": phase.source_run_manifest_path})
+    colliding_phase = phase.model_copy(update={"outputs": (colliding_output,)})
+    malformed = manifest.model_copy(update={"phases": (colliding_phase,)})
+
+    with pytest.raises(PublishError, match="publication package path has conflicting claims"):
+        _package_file_claims(malformed)
 
 
 def _write_register(path: Path, rows: list[tuple[str, str, bytes]]) -> None:
@@ -607,6 +771,30 @@ def test_source_output_changed_after_run_is_rejected(tmp_path):
 
     with pytest.raises(PublishError, match="no SHA256-bound source run exactly matches"):
         publish(out, tmp_path / "staging", "changed-source", runs_root=runs)
+
+
+def test_source_output_changed_during_copy_is_rejected(tmp_path, monkeypatch):
+    out = tmp_path / "out"
+    output = out / "04_Phase" / "ranking.csv"
+    output.parent.mkdir(parents=True)
+    output.write_bytes(b"sealed")
+    runs = tmp_path / "runs"
+    _bind_publication_outputs(runs, out)
+    original_copy2 = shutil.copy2
+
+    def copy_then_mutate(source, target, *args, **kwargs):  # type: ignore[no-untyped-def]
+        copied = original_copy2(source, target, *args, **kwargs)
+        if Path(source).resolve() == output.resolve():
+            output.write_bytes(b"changed-during-copy")
+        return copied
+
+    monkeypatch.setattr("buduunkhad.core.publish.shutil.copy2", copy_then_mutate)
+
+    with pytest.raises(PublishError, match="source output changed while publishing"):
+        publish(out, tmp_path / "staging", "copy-race", runs_root=runs)
+    assert not (
+        tmp_path / "staging" / "Buduunkhad_Deliverables_copy-race" / "publication_manifest.json"
+    ).exists()
 
 
 def test_incorrect_source_artifact_size_is_rejected(tmp_path):

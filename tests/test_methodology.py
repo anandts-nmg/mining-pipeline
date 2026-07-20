@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -18,8 +20,10 @@ from buduunkhad.geospatial_ai.methodology import (
     load_phase_methodology,
     load_phase_methodology_from_checkout,
 )
+from buduunkhad.repository_policy import APPROVED_METHODOLOGY_DOCUMENTS
 
-REQUIRED_DISCREPANCY_IDS = {f"METH-DISC-{number:03d}" for number in range(1, 34)}
+REQUIRED_DISCREPANCY_IDS = {f"METH-DISC-{number:03d}" for number in range(1, 48)}
+METHODOLOGY_SNAPSHOT_SHA256 = "05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd"
 VERIFIED_EXTERNAL_SOURCES = {
     "methodology.master-v9": (
         "1ECwfhr6ucFRE8LABo0C9WDzUDOE6oHzb",
@@ -46,17 +50,80 @@ VERIFIED_EXTERNAL_SOURCES = {
         "13RbcciT0bvK5HqT05JFqiTUf92QViVMm",
         "Phase_5_Drone_LiDAR_Photogrammetry_Detailed_Guide_MN.docx",
     ),
+    "methodology.master-v5-v6": (
+        "13Rle5Bgj0vuKXeXnyy-mT5iLvzwvtloI",
+        "XV-023222_Buduunkhad_Exploration_Workflow_Methodology_78Inputs_v6_"
+        "Phasewise_File_Processing_Output_Matrix.docx",
+    ),
+    "phase02.sentinel-qgis402-guide": (
+        "1HDS0TItrqcyBmx-q7WbVS-rTibvqh347",
+        "XV023222_Buduunkhad_Sentinel2_QGIS402_Detailed_Guide_v01.docx",
+    ),
+    "phase02.basemap-qgis402-guide": (
+        "1sVmEgKaNWbsh9xEFQAuTy-THZYbHzMCA",
+        "QGIS_4_0_2_Google_HighResolution_Basemap_Detailed_Guide.docx",
+    ),
+    "phase02.dem-qgis402-guide": (
+        "1hc6mZrqSX1Jt-rUsRcp0XtIHGAckH3Xn",
+        "XV023222_Buduunkhad_QGIS402_DEM_ALOS_PALSAR_ASTERGDEM_Detailed_Guide.docx",
+    ),
+    "phase06.guide": (
+        "1cphSAinA-JsIduphfi5-FmFGNq1K7OWF",
+        "Phase_6_Recon_Mapping_and_pXRF_Field_Screening_Detailed_Guide_MN.docx",
+    ),
+    "phase07.guide": (
+        "13uu5wdWrop2XT05ikIJb-m7a2YgoXAEd",
+        "Phase_7_Rock_Chip_Channel_Verification_Sampling_Guide_MN.docx",
+    ),
+    "phase08.guide": (
+        "1vSZWXwpO1d36s42mT9WVx79sT35t44DV",
+        "Phase_8_Orientation_Soil_StreamSediment_HeavyMineral_Check_Detailed_Guide_MN.docx",
+    ),
+    "phase09.guide": (
+        "1zjPWbXfR11rMfqF_9L13D99g6u1PvNfm",
+        "Phase_9_Systematic_Soil_Grid_Laboratory_QAQC_Detailed_Guide_MN.docx",
+    ),
+    "phase10.guide": (
+        "1YRLm_4SXOvMz8BO1NRvVv7Jn7nIKGSAo",
+        "Phase_10_Integrated_Interpretation_Final_Target_Ranking_Guide_MN.docx",
+    ),
+    "phase11.guide": (
+        "1uUpG-5ySCVrgtjEh62ySulaszREWf6dN",
+        "Phase_11_Follow_Up_Trench_Geophysics_Scout_Drill_Planning_Guide_MN.docx",
+    ),
+    "phase99.guide": (
+        "1GlYTv_v4StNTv9fyag41g-WT0g4v27-O",
+        "99_Final_Deliverables_Detailed_Guide_MN.docx",
+    ),
+}
+
+NEW_SNAPSHOT_VERIFICATION_IDS = {
+    "methodology.master-v5-v6",
+    "phase02.sentinel-qgis402-guide",
+    "phase02.basemap-qgis402-guide",
+    "phase02.dem-qgis402-guide",
+    "phase06.guide",
+    "phase07.guide",
+    "phase08.guide",
+    "phase09.guide",
+    "phase10.guide",
+    "phase11.guide",
+    "phase99.guide",
 }
 
 
 def test_methodology_authority_and_all_phase_records_are_typed() -> None:
     authority = load_authority_registry()
-    assert authority.format_version == "1.1.0"
-    source_ids = {source.source_id for source in authority.sources}
-    assert "agents.repository-authority" in source_ids
-    assert authority.precedence[0] == "agents.repository-authority"
+    assert authority.format_version == "1.2.0"
+    assert authority.precedence == (
+        "repository.methodology-contracts",
+        "methodology.master-v9",
+    )
     repository_root = Path(__file__).resolve().parents[1]
-    tracked_output = subprocess.check_output(["git", "ls-files", "-z"], cwd=repository_root)
+    tracked_output = subprocess.check_output(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+        cwd=repository_root,
+    )
     tracked_paths = set(tracked_output.decode("utf-8").split("\0"))
     for source in authority.sources:
         if source.repository_path is not None:
@@ -66,8 +133,12 @@ def test_methodology_authority_and_all_phase_records_are_typed() -> None:
             assert source.external_reference is not None
             assert source.external_reference.startswith("BUDUUNKHAD_WORKFLOW_DOCS_ROOT::")
         if source.repository_copy is not None:
-            assert (repository_root / source.repository_copy).exists()
+            copy = repository_root / source.repository_copy
+            assert copy.is_file() and not copy.is_symlink()
             assert source.repository_copy in tracked_paths
+            assert source.repository_copy_sha256 == hashlib.sha256(copy.read_bytes()).hexdigest()
+            assert source.repository_copy_size_bytes == copy.stat().st_size
+            assert source.repository_snapshot_sha256 == METHODOLOGY_SNAPSHOT_SHA256
     requirement_ids: set[str] = set()
     for number in range(6):
         phase = load_phase_methodology(f"{number:02d}")
@@ -146,7 +217,7 @@ def test_external_existence_verification_requires_complete_evidence() -> None:
         )
 
 
-def test_six_connected_drive_sources_have_complete_existence_evidence() -> None:
+def test_reviewed_drive_sources_have_complete_existence_evidence() -> None:
     authority = load_authority_registry()
     by_id = {source.source_id: source for source in authority.sources}
     verified_external_ids = {
@@ -162,16 +233,64 @@ def test_six_connected_drive_sources_have_complete_existence_evidence() -> None:
         assert source.external_file_id == drive_id
         assert source.existence_verified is True
         assert source.existence_verified_at is not None
-        assert source.existence_verified_at.isoformat() == "2026-07-17T07:55:05+00:00"
+        expected_time = (
+            "2026-07-20T03:14:02+00:00"
+            if source_id in NEW_SNAPSHOT_VERIFICATION_IDS
+            else "2026-07-17T07:55:05+00:00"
+        )
+        assert source.existence_verified_at.isoformat() == expected_time
         utc_offset = source.existence_verified_at.utcoffset()
         assert utc_offset is not None
         assert utc_offset.total_seconds() == 0
-        assert source.existence_verified_by == "Anand Tsogtjargal"
-        assert source.existence_evidence_reference == (
-            "connected-google-drive-read-only-metadata-verification::2026-07-17T07:55:05Z"
+        if source_id in NEW_SNAPSHOT_VERIFICATION_IDS:
+            assert source.existence_verified_by == "Codex read-only review"
+            assert source.existence_evidence_reference == (
+                "verified-local-snapshot-copy::"
+                "05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd"
+            )
+        else:
+            assert source.existence_verified_by == "Anand Tsogtjargal"
+            assert source.existence_evidence_reference == (
+                "connected-google-drive-read-only-metadata-verification::2026-07-17T07:55:05Z"
+            )
+            assert source.authority_status == "adopted"
+            assert not source.remaining_actions
+
+
+def test_repository_methodology_copies_match_the_exact_policy_catalog() -> None:
+    authority = load_authority_registry()
+    repository_copies = {
+        source.repository_copy
+        for source in authority.sources
+        if source.repository_copy is not None
+        and source.repository_copy.startswith("docs/methodology/")
+    }
+    approved_paths = {path.as_posix() for path in APPROVED_METHODOLOGY_DOCUMENTS}
+    assert repository_copies == approved_paths
+    repository_root = Path(__file__).resolve().parents[1]
+    for source in authority.sources:
+        if source.repository_copy is None:
+            continue
+        path = source.repository_copy
+        assert (
+            source.repository_copy_sha256
+            == APPROVED_METHODOLOGY_DOCUMENTS[
+                next(item for item in APPROVED_METHODOLOGY_DOCUMENTS if item.as_posix() == path)
+            ]
         )
-        assert source.authority_status == "adopted"
-        assert not source.remaining_actions
+        assert source.repository_copy_size_bytes == (repository_root / path).stat().st_size
+        assert source.repository_snapshot_sha256 == METHODOLOGY_SNAPSHOT_SHA256
+
+    by_id = {source.source_id: source for source in authority.sources}
+    assert by_id["methodology.master-v5-v6"].authority_status == "obsolete"
+    for source_id in (
+        "phase02.sentinel-qgis402-guide",
+        "phase02.basemap-qgis402-guide",
+        "phase02.dem-qgis402-guide",
+    ):
+        assert by_id[source_id].authority_status == "reference-only"
+    for phase in ("06", "07", "08", "09", "10", "11", "99"):
+        assert by_id[f"phase{phase}.guide"].authority_status == "pending-review"
 
 
 def test_unverified_external_id_does_not_claim_existence() -> None:
@@ -196,12 +315,45 @@ def test_unverified_external_id_does_not_claim_existence() -> None:
         )
 
 
+def test_repository_copy_requires_complete_portable_identity() -> None:
+    base = {
+        "source_id": "phase04.synthetic",
+        "role": "phase-source",
+        "external_reference": "BUDUUNKHAD_WORKFLOW_DOCS_ROOT::phase04-synthetic",
+        "authority_status": "reference-only",
+        "expected_document": "guide.docx",
+        "repository_copy": "docs/methodology/phase_04/guide.docx",
+        "existence_verified": False,
+    }
+    with pytest.raises(ValidationError, match="requires SHA-256"):
+        MethodologySource.model_validate(base)
+    with pytest.raises(ValidationError, match="below docs/methodology"):
+        MethodologySource.model_validate(
+            {
+                **base,
+                "repository_copy": "docs/methodology/../outside/guide.docx",
+                "repository_copy_sha256": "a" * 64,
+                "repository_copy_size_bytes": 1,
+                "repository_snapshot_sha256": "b" * 64,
+            }
+        )
+    source = MethodologySource.model_validate(
+        {
+            **base,
+            "repository_copy_sha256": "a" * 64,
+            "repository_copy_size_bytes": 1,
+            "repository_snapshot_sha256": "b" * 64,
+        }
+    )
+    assert source.repository_copy_size_bytes == 1
+
+
 def test_discrepancy_register_is_the_complete_decision_history() -> None:
     registry = load_discrepancy_registry()
     identities = [item.discrepancy_id for item in registry.discrepancies]
     assert len(set(identities)) == len(identities)
     assert set(identities) == REQUIRED_DISCREPANCY_IDS
-    assert identities == [f"METH-DISC-{number:03d}" for number in range(1, 34)]
+    assert identities == [f"METH-DISC-{number:03d}" for number in range(1, 48)]
     assert all(
         item.status in {"unresolved", "resolved", "superseded", "withdrawn"}
         for item in registry.discrepancies
@@ -235,7 +387,7 @@ def test_supersession_links_are_valid_and_acyclic() -> None:
         replacement = by_id[item.superseded_by]  # type: ignore[index]
         assert replacement.status in {"resolved", "unresolved"}
     cyclic = {
-        "format_version": "1.1.0",
+        "format_version": "1.2.0",
         "discrepancies": [
             _record("METH-DISC-901", status="superseded", superseded_by="METH-DISC-902"),
             _record("METH-DISC-902", status="superseded", superseded_by="METH-DISC-901"),
@@ -244,7 +396,7 @@ def test_supersession_links_are_valid_and_acyclic() -> None:
     with pytest.raises(ValidationError, match="cyclic"):
         DiscrepancyRegistry.model_validate(cyclic)
     dangling = {
-        "format_version": "1.1.0",
+        "format_version": "1.2.0",
         "discrepancies": [
             _record("METH-DISC-901", status="superseded", superseded_by="METH-DISC-999"),
         ],
@@ -323,7 +475,58 @@ def test_duplicate_inventory_authority_remains_unresolved() -> None:
     assert duplicate.approver is None
 
 
-def test_readme_describes_current_phase_maturity_without_tracking_more_markdown() -> None:
+def test_phase00_to_phase05_review_findings_are_append_only_and_unresolved() -> None:
+    registry = load_discrepancy_registry()
+    by_id = {item.discrepancy_id: item for item in registry.discrepancies}
+    expected_subjects = {
+        "METH-DISC-034": "aster-sop-and-reference-evidence-binding",
+        "METH-DISC-035": "sentinel-operator-guide-versus-registered-inputs",
+        "METH-DISC-036": "basemap-guide-phase-label",
+        "METH-DISC-037": "basemap-buffer-policy",
+        "METH-DISC-038": "dem-parameter-authority",
+        "METH-DISC-039": "phase01-generated-boundary-wording",
+        "METH-DISC-040": "phase03-evidence-readiness-overstatement",
+        "METH-DISC-041": "phase04-scoring-semantics-versus-guide",
+        "METH-DISC-042": "phase05-guide-origin-and-operational-parameters",
+        "METH-DISC-043": "inventory-status-versus-observed-files",
+        "METH-DISC-044": "georeference-crs-residual-evidence-gaps",
+        "METH-DISC-045": "aster-kompsat-technical-readiness",
+        "METH-DISC-046": "licence-boundary-qaqc-completeness",
+        "METH-DISC-047": "duplicate-qaqc-register-lineage",
+    }
+    for identity, subject in expected_subjects.items():
+        item = by_id[identity]
+        assert item.subject == subject
+        assert item.status == "unresolved"
+        assert item.required_approver
+        assert item.remaining_actions
+        assert item.resolution is None and item.approver is None
+    assert by_id["METH-DISC-041"].related_discrepancy_ids == (
+        "METH-DISC-003",
+        "METH-DISC-006",
+    )
+    assert "this chat" in by_id["METH-DISC-042"].statement
+    assert "authoritative" in by_id["METH-DISC-040"].statement
+
+
+def test_phase_source_references_fail_closed_when_unknown(tmp_path: Path) -> None:
+    repository_root = Path(__file__).resolve().parents[1]
+    methodology = tmp_path / "config" / "methodology"
+    shutil.copytree(repository_root / "config" / "methodology", methodology)
+    phase = methodology / "phase00.yaml"
+    phase.write_text(
+        phase.read_text(encoding="utf-8").replace(
+            "METH-DISC-008",
+            "METH-DISC-999",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(MethodologyError, match="unknown methodology sources"):
+        load_phase_methodology_from_checkout(tmp_path, "00")
+
+
+def test_readme_describes_current_phase_maturity_and_authority_location() -> None:
     repository_root = Path(__file__).resolve().parents[1]
     readme = (repository_root / "README.txt").read_text(encoding="utf-8")
     assert "Phases 00-04 have substantial deterministic implementations." in readme
@@ -342,6 +545,7 @@ def test_readme_describes_current_phase_maturity_without_tracking_more_markdown(
         if Path(path).suffix.casefold() in {".md", ".markdown", ".mdown", ".mdwn"}
     )
     assert tracked_markdown == ["AGENTS.md"]
+    assert "docs/methodology/" in readme
 
 
 def test_registry_loading_is_deterministic() -> None:
@@ -359,7 +563,13 @@ def test_automation_boundaries_cover_every_phase_without_maturity_estimates() ->
     phase_ids = {item.phase_id for item in registry.boundaries}
     assert phase_ids == {f"{value:02d}" for value in range(12)} | {"99"}
     implemented = {item.phase_id for item in registry.boundaries if item.status == "implemented"}
-    assert implemented == {"00", "01", "02", "03", "04"}
+    assert implemented == {"00", "01", "02"}
+    assert next(item for item in registry.boundaries if item.phase_id == "03").status == (
+        "partially-implemented"
+    )
+    assert next(item for item in registry.boundaries if item.phase_id == "04").status == (
+        "legacy-comparator"
+    )
     for item in registry.boundaries:
         assert item.deterministic_authority
         assert item.human_review_boundary

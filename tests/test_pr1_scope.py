@@ -21,6 +21,6 @@ def test_agents_is_the_only_tracked_markdown_file() -> None:
         if path.lower().endswith(markdown_suffixes) and (REPOSITORY_ROOT / path).is_file()
     ]
     assert tracked_markdown == ["AGENTS.md"], (
-        "AGENTS.md must remain the only tracked Markdown file; migrate durable knowledge "
-        f"into the versioned machine-readable contracts instead. Found: {tracked_markdown}"
+        "AGENTS.md must remain the only tracked Markdown file; durable methodology and audit "
+        f"facts belong in versioned machine-readable contracts. Found: {tracked_markdown}"
     )

@@ -3,9 +3,29 @@ phase_id: "01"
 requirements:
   - requirement_id: P01-SPATIAL-AUDIT-001
     statement: Spatial and raster audit results remain deterministic authority.
-    source_refs: [agents.repository-authority, phase01.guide]
+    source_refs: [repository.methodology-contracts, methodology.master-v9, phase01.guide]
+    status: adopted
+  - requirement_id: P01-OUTPUT-CONTRACT-001
+    statement: Phase 01 uses the adopted guide-superset folder tree, thirteen-layer master-GIS schema, stable identifiers and registered handoff artifacts.
+    source_refs: [repository.methodology-contracts, METH-DISC-010, METH-DISC-011, METH-DISC-012, METH-DISC-013]
+    status: adopted
+  - requirement_id: P01-BUFFER-CONTEXT-001
+    statement: The deterministic project buffers include 500 m, 1 km, 5 km, 10 km, 20 km and the adopted 25 km context.
+    source_refs: [repository.methodology-contracts, methodology.master-v9, METH-DISC-016, METH-DISC-018]
     status: adopted
   - requirement_id: P01-GEOREF-REVIEW-001
-    statement: AI may suggest map control evidence, but deterministic residual checks and human review remain required.
-    source_refs: [agents.repository-authority, phase01.guide]
+    statement: Phase 01 creates the georeferencing QA/QC scaffold; Phase 03 owns final georeferencing of its geology scans, and deterministic residual checks plus qualified human review remain required.
+    source_refs: [repository.methodology-contracts, phase01.guide, phase03.guide, METH-DISC-028, METH-DISC-039, METH-DISC-044]
+    status: adopted-with-unresolved-discrepancy
+  - requirement_id: P01-EVIDENCE-COMPLETENESS-001
+    statement: A present raster, EPSG label, empty schema or overlay assertion cannot replace source CRS, control points, transform, residual/RMSE, visual-alignment and reviewer evidence.
+    source_refs: [repository.methodology-contracts, METH-DISC-044]
+    status: adopted-with-unresolved-discrepancy
+  - requirement_id: P01-LICENCE-QAQC-001
+    statement: Licence-boundary use remains provisional until registered integrity, parsing, coordinate, CRS, topology, measurement and buffer checks are complete.
+    source_refs: [repository.methodology-contracts, METH-DISC-046]
+    status: adopted-with-unresolved-discrepancy
+  - requirement_id: P01-AI-GCP-001
+    statement: AI may suggest map control evidence but cannot authoritatively georeference or accept registration.
+    source_refs: [repository.methodology-contracts, phase01.guide]
     status: adopted

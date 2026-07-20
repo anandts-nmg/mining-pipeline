@@ -3,13 +3,33 @@ phase_id: "02"
 requirements:
   - requirement_id: P02-RASTER-MATH-001
     statement: Reprojection, clipping, spectral arithmetic, masks and terrain measurements remain deterministic.
-    source_refs: [agents.repository-authority, phase02.guide]
+    source_refs: [repository.methodology-contracts, methodology.master-v9, phase02.guide, METH-DISC-019, METH-DISC-025]
     status: adopted
+  - requirement_id: P02-ASTER-AUTHORITY-GAP-001
+    statement: The implemented ASTER chain remains frozen legacy behavior while the adopted SOP and reference-output evidence are independently located and byte-bound; no threshold change or independent-validation claim is permitted meanwhile.
+    source_refs: [repository.methodology-contracts, phase02.aster-sop, METH-DISC-020, METH-DISC-021, METH-DISC-034]
+    status: adopted-with-unresolved-discrepancy
+  - requirement_id: P02-SENTINEL-INPUT-001
+    statement: The current registered inputs are received composites or ratio products, not the raw Sentinel band stack assumed by the reference operator guide; current automation is limited to validated operations supported by those inputs.
+    source_refs: [repository.methodology-contracts, phase02.sentinel-qgis402-guide, METH-DISC-035]
+    status: adopted-with-unresolved-discrepancy
+  - requirement_id: P02-BASEMAP-REFERENCE-001
+    statement: The basemap operator guide is reference-only; its Phase-10 label and buffer alternatives do not establish workflow phase or production buffer policy.
+    source_refs: [repository.methodology-contracts, phase02.basemap-qgis402-guide, METH-DISC-036, METH-DISC-037]
+    status: adopted-with-unresolved-discrepancy
+  - requirement_id: P02-DEM-PARAMETERS-001
+    statement: DEM buffer, contour and stream-threshold alternatives remain implementation-specific legacy defaults until an exact methodology selection is approved.
+    source_refs: [repository.methodology-contracts, phase02.dem-qgis402-guide, METH-DISC-038]
+    status: adopted-with-unresolved-discrepancy
+  - requirement_id: P02-READINESS-QAQC-001
+    statement: ASTER HDF4 and KOMPSAT products cannot be described as technically ready while their registered open, subdataset, geolocation, orthorectification, checklist or licence evidence remains incomplete.
+    source_refs: [repository.methodology-contracts, METH-DISC-029, METH-DISC-045]
+    status: adopted-with-unresolved-discrepancy
   - requirement_id: P02-AI-INTERPRET-001
     statement: AI interpretations of validated imagery remain draft support evidence.
-    source_refs: [agents.repository-authority, phase02.guide]
+    source_refs: [repository.methodology-contracts, phase02.guide]
     status: adopted
   - requirement_id: P02-WEIGHTED-SCORE-DEFERRED-001
     statement: The historical weighted score remains non-automated until every input derivation has an approved authority record.
-    source_refs: [agents.repository-authority, METH-DISC-005]
+    source_refs: [repository.methodology-contracts, METH-DISC-005]
     status: adopted-with-unresolved-discrepancy

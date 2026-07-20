@@ -1,15 +1,31 @@
 format_version: 1.0.0
 phase_id: "03"
 requirements:
+  - requirement_id: P03-SCAFFOLD-001
+    statement: The adopted twelve-folder scaffold, Phase 03 labels, feature-ID namespaces and fourteen-column legacy evidence schema remain the deterministic structural contract.
+    source_refs: [repository.methodology-contracts, phase03.guide, METH-DISC-022, METH-DISC-023, METH-DISC-024]
+    status: adopted
+  - requirement_id: P03-CONTEXT-001
+    statement: CMCS context uses the adopted 5 km, 10 km, 20 km and 25 km rings; context hits remain support evidence rather than mineralization proof.
+    source_refs: [repository.methodology-contracts, methodology.master-v9, phase03.guide, METH-DISC-018]
+    status: adopted
+  - requirement_id: P03-GEOREF-OWNERSHIP-001
+    statement: Phase 03 owns final georeferencing of its geology, metallogenic and mineral-resource scans using the Phase 01 QA/QC scaffold and qualified human acceptance.
+    source_refs: [repository.methodology-contracts, methodology.master-v9, phase03.guide, METH-DISC-028, METH-DISC-044]
+    status: adopted-with-unresolved-discrepancy
+  - requirement_id: P03-PRELIMINARY-EVIDENCE-001
+    statement: The seventeen-layer GeoPackage is a preliminary support-evidence schema/package; layer presence or schema validity is not evidence completeness, scientific approval or readiness for authoritative ranking.
+    source_refs: [repository.methodology-contracts, phase03.guide, METH-DISC-031, METH-DISC-040]
+    status: adopted-with-unresolved-discrepancy
   - requirement_id: P03-AI-DRAFT-001
     statement: AI-first digitization produces draft geometry in source-image pixel coordinates.
-    source_refs: [agents.repository-authority, phase03.guide]
+    source_refs: [repository.methodology-contracts, phase03.guide]
     status: adopted
   - requirement_id: P03-DETERMINISTIC-VALIDATION-001
     statement: CRS, registration, geometry, topology, attribution and provenance validation remain deterministic.
-    source_refs: [agents.repository-authority, phase03.guide]
+    source_refs: [repository.methodology-contracts, phase03.guide]
     status: adopted
   - requirement_id: P03-AI-HUMAN-HANDOFF-001
     statement: Validated AI draft geometry remains isolated until a named human records an explicit review decision and a separate deterministic operation promotes accepted evidence.
-    source_refs: [agents.repository-authority, phase03.guide]
+    source_refs: [repository.methodology-contracts, phase03.guide]
     status: adopted

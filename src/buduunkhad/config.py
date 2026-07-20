@@ -348,7 +348,8 @@ class ProjectConfig(BaseModel):
     @property
     def raw_root(self) -> Path:
         # Per-machine override (e.g. a Drive-for-Desktop path) wins, so the
-        # committed default stays portable. Raw path policy is authoritative in AGENTS.md.
+        # The committed default stays portable. Configuration defines identity; AGENTS.md defines
+        # the raw-path safety and immutability boundary.
         override = os.environ.get(RAW_ROOT_ENV)
         return Path(override).expanduser() if override else self._resolve(self.paths.raw_root)
 

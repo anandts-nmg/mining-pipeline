@@ -10,6 +10,9 @@ deposit-model outputs, and emit the four deliverables. The guide's matrix is des
 field/drone criteria — those belong to the v9 §5 lifecycle matrix used at Phase 10), so a
 well-evidenced desktop prospect CAN reach class A.
 
+The implemented grid and binary/full-weight scoring remain a legacy comparator, not the guide's
+human-drawn prospect and ranged-judgment workflow (METH-DISC-003 and METH-DISC-041).
+
 **Attribute-aware scoring.** Beyond the Phase 03 evidence GPKG (a geometry-only shared schema),
 Phase 04 also reads *attribute-bearing* prospectivity layers dropped anywhere under the Phase 03/04
 dirs (whitelisted by keyword, so pipeline outputs never match): **focused alteration**
@@ -880,6 +883,9 @@ class Phase04ProspectRanking(Phase):
             f"Created {date.today().isoformat()}. All outputs are **{PROSPECT_VALIDATION}**.\n\n"
             f"## Scoring ({PHASE04_DESKTOP_MATRIX_LABEL}, weights sum 100 — conflict 04-1)\n"
             f"{weights}\n\n"
+            f"This is the fixed-grid binary/full-weight **legacy comparator**, not the guide's "
+            f"human-drawn prospect and ranged-judgment workflow; the unresolved geometry and "
+            f"scoring differences are recorded as METH-DISC-003 and METH-DISC-041.\n\n"
             f"(The master v9 §5 lifecycle matrix — which adds field/pXRF and drone criteria — is "
             f"used at Phase 10 final ranking, not here; see "
             f"config/methodology/discrepancies.yaml, METH-DISC-006.)\n\n"

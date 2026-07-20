@@ -3,9 +3,21 @@ phase_id: "00"
 requirements:
   - requirement_id: P00-RAW-IDENTITY-001
     statement: Raw identity, checksums, bundle relationships and immutability remain deterministic and authoritative.
-    source_refs: [agents.repository-authority]
+    source_refs: [repository.methodology-contracts, methodology.master-v9, METH-DISC-008]
+    status: adopted
+  - requirement_id: P00-REGISTERED-INVENTORY-001
+    statement: The repository's registered 79-input inventory is the adopted processing inventory; methodology prose that says 78 is historical context.
+    source_refs: [repository.methodology-contracts, METH-DISC-001]
+    status: adopted
+  - requirement_id: P00-ARCHIVE-BOUNDARY-001
+    statement: Phase 00 owns the separate immutable raw archive, integrity report and working-copy creation even where the Phase 01 guide folds archive work into Phase 01.
+    source_refs: [repository.methodology-contracts, methodology.master-v9, phase01.guide, METH-DISC-007, METH-DISC-009]
+    status: adopted
+  - requirement_id: P00-SIDECAR-BUNDLE-001
+    statement: Parent inputs and registered sidecars remain one provenance bundle and must not be separated or rewritten in place.
+    source_refs: [repository.methodology-contracts, methodology.master-v9]
     status: adopted
   - requirement_id: P00-AI-SUGGESTION-001
     statement: AI metadata suggestions must not change raw identity or placement automatically.
-    source_refs: [agents.repository-authority]
+    source_refs: [repository.methodology-contracts]
     status: adopted

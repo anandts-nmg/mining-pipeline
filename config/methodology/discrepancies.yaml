@@ -1,4 +1,4 @@
-format_version: 1.1.0
+format_version: 1.2.0
 # Append-only methodology decision register. Complete history — unresolved, resolved,
 # superseded, and withdrawn records. Resolved history is never erased; a later issue
 # gets a new linked record instead of reopening one. Historical records migrated from
@@ -484,3 +484,230 @@ discrepancies:
     remaining_actions:
       - Compare the parent-folder context, bytes and content, internal metadata, and lineage of both Drive files.
       - Obtain methodology-owner or project-owner approval before designating either inventory as canonical.
+  - discrepancy_id: METH-DISC-034
+    subject: aster-sop-and-reference-evidence-binding
+    compared_sources:
+      - phase02.aster-sop
+      - METH-DISC-020
+      - METH-DISC-021
+      - src/buduunkhad/core/aster.py
+    statement: The ASTER SOP is registered as adopted but has not been independently located or byte-bound, and the reference outputs cited by the historical threshold-basis decision have no durable evidence locator in the repository contract.
+    operational_impact: The existing ASTER implementation can remain a frozen legacy behavior, but its thresholds cannot be changed or described as independently reproduced from authoritative source evidence.
+    status: unresolved
+    proposed_resolution: Locate and byte-bind the exact adopted SOP and reference outputs, record their stable identities and lineage, then have the methodology owner confirm that METH-DISC-020 and METH-DISC-021 still describe the intended algorithm.
+    required_approver: methodology-owner
+    remaining_actions:
+      - Locate the exact ASTER SOP and record its stable file identity, bytes and lineage.
+      - Locate or regenerate the cited reference outputs under a controlled, reviewable provenance record.
+      - Confirm the existing threshold and statistics-basis decisions without changing code opportunistically.
+    related_discrepancy_ids: [METH-DISC-020, METH-DISC-021]
+    evidence_references:
+      - verified-snapshot-sha256:05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
+  - discrepancy_id: METH-DISC-035
+    subject: sentinel-operator-guide-versus-registered-inputs
+    compared_sources:
+      - phase02.sentinel-qgis402-guide
+      - config/input_register.csv
+      - config/raw_manifest.csv
+      - src/buduunkhad/phases/phase02_remote_sensing.py
+    statement: The Sentinel operator guide assumes raw L1C/L2A B02-B12 band inputs and describes band-level preprocessing, but the registered workflow inputs are received composites or ratio products and the expected raw Sentinel folder is absent.
+    operational_impact: The complete operator-guide workflow cannot be reproduced from the registered inputs; treating received composites as raw bands would fabricate provenance and validation coverage.
+    status: unresolved
+    proposed_resolution: Either register and integrity-bind the required raw Sentinel band stack or formally adopt the received composites as the Phase 02 inputs with a narrower supported processing contract.
+    required_approver: methodology-owner and project-geologist
+    remaining_actions:
+      - Decide whether raw Sentinel bands or received composites are the authoritative Phase 02 inputs.
+      - Record the chosen input identities, supported calculations, resampling rules and limitations.
+    evidence_references:
+      - workflow-folder-id:1lKI9SxFot2kQdnULCtXoP2uQ2WHq2krX
+  - discrepancy_id: METH-DISC-036
+    subject: basemap-guide-phase-label
+    compared_sources:
+      - phase02.basemap-qgis402-guide
+      - phase02.guide
+      - methodology.master-v9
+    statement: The high-resolution basemap operator guide labels itself Phase 10 even though its subject and placement make it a Phase 02 operator guide for the tenth Phase 02 input group.
+    operational_impact: The label can be confused with workflow Phase 10 and could assign preprocessing or authority to the wrong lifecycle phase.
+    status: unresolved
+    proposed_resolution: Have the methodology owner confirm that the label means Phase 02 input group 10 and issue corrected source metadata or a versioned guide if so.
+    required_approver: methodology-owner
+    remaining_actions:
+      - Confirm the intended meaning of the Phase 10 label.
+      - Correct the external guide metadata or record an explicit authoritative interpretation.
+    evidence_references:
+      - phase02-basemap-drive-id:1sVmEgKaNWbsh9xEFQAuTy-THZYbHzMCA
+  - discrepancy_id: METH-DISC-037
+    subject: basemap-buffer-policy
+    compared_sources:
+      - phase02.basemap-qgis402-guide
+      - config/project.yaml
+      - src/buduunkhad/phases/phase02_remote_sensing.py
+    statement: The basemap guide permits alternative 500 m or 1 km processing buffers, while current handling varies by registered basemap asset and no adopted record assigns one option to each asset.
+    operational_impact: Buffer choice changes the published extent and can make otherwise identical basemap processing non-reproducible.
+    status: unresolved
+    proposed_resolution: Adopt an asset-specific basemap buffer table with source rationale, or explicitly designate the basemaps as visual-reference products that are not clipped by Phase 02.
+    required_approver: methodology-owner and project-geologist
+    remaining_actions:
+      - Select and document the allowed extent behavior for each registered basemap.
+      - Add a deterministic contract test only after the selection is approved.
+    related_discrepancy_ids: [METH-DISC-016]
+  - discrepancy_id: METH-DISC-038
+    subject: dem-parameter-authority
+    compared_sources:
+      - phase02.dem-qgis402-guide
+      - src/buduunkhad/core/hydrology.py
+      - src/buduunkhad/phases/phase02_remote_sensing.py
+    statement: The DEM guide offers alternative context buffers, contour intervals and hydrology thresholds, while the implementation uses fixed legacy defaults without a source record selecting those exact values.
+    operational_impact: Terrain and drainage products can change materially with buffer, contour and stream-extraction parameters.
+    status: unresolved
+    proposed_resolution: Calibrate and adopt one versioned DEM parameter set per product and scale, including buffer, contour interval, sink treatment and stream threshold, with owner approval.
+    required_approver: methodology-owner and project-geologist
+    remaining_actions:
+      - Compare the documented alternatives against the registered DEM resolutions and intended map scales.
+      - Approve a versioned parameter table before changing the current legacy implementation.
+  - discrepancy_id: METH-DISC-039
+    subject: phase01-generated-boundary-wording
+    compared_sources:
+      - METH-DISC-018
+      - METH-DISC-028
+      - src/buduunkhad/phases/phase01_data_audit.py
+    statement: Active Phase 01 text described buffers only through 20 km and said scan georeferencing was performed in Phase 01, while adopted decisions require a 25 km context and assign final geology-scan georeferencing to Phase 03.
+    operational_impact: Generated QA/QC and operator guidance can misstate phase ownership even when the underlying buffer output is correct.
+    status: unresolved
+    proposed_resolution: Align all active Phase 01 generated text with the adopted 25 km buffer and Phase 03 georeferencing ownership, then retain tests preventing wording regression.
+    required_approver: repository-maintainer
+    remaining_actions:
+      - Correct the active generated text and add regression assertions.
+      - Complete the outstanding human GCP/residual/reviewer records tracked by METH-DISC-044.
+    related_discrepancy_ids: [METH-DISC-018, METH-DISC-028]
+  - discrepancy_id: METH-DISC-040
+    subject: phase03-evidence-readiness-overstatement
+    compared_sources:
+      - phase03.guide
+      - src/buduunkhad/phases/phase03_geology_synthesis.py
+      - phase03 QA/QC outputs
+    statement: Active Phase 03 text called the seventeen-layer GeoPackage authoritative and ready for Phase 04 when the deterministic check can establish only schema presence; layers may be empty while digitizing, georeferencing, the deposit-model matrix and human review remain pending.
+    operational_impact: A structurally valid empty package can be mistaken for complete scientific evidence or an approved downstream handoff.
+    status: unresolved
+    proposed_resolution: Describe the artifact as a preliminary support-evidence schema/package, distinguish structure validity from evidence completeness, and obtain an approved gate rule before any downstream readiness claim.
+    required_approver: project-geologist and methodology-owner
+    remaining_actions:
+      - Correct active generated wording without changing the current gate policy.
+      - Define qualified evidence-completeness and scientific-approval criteria.
+      - Resolve the provisional gate choice in METH-DISC-031.
+    related_discrepancy_ids: [METH-DISC-031]
+  - discrepancy_id: METH-DISC-041
+    subject: phase04-scoring-semantics-versus-guide
+    compared_sources:
+      - phase04.guide section 6
+      - METH-DISC-003
+      - METH-DISC-006
+      - src/buduunkhad/phases/phase04_prospect_ranking.py
+    statement: The guide scores human-drawn prospect polygons with ranged criterion judgments, while the implemented legacy comparator scores fixed grid cells using binary evidence presence that awards zero or a criterion's full weight before dissolving cells.
+    operational_impact: Matching criterion names and total weights do not make the resulting prospect geometry or scores methodologically equivalent.
+    status: unresolved
+    proposed_resolution: Preserve the existing comparator unchanged, design a separate authoritative prospect-level scoring contract, calibrate it against the human reference prospects, and obtain methodology-owner and project-geologist approval before integration.
+    required_approver: methodology-owner and project-geologist
+    remaining_actions:
+      - Specify authoritative prospect geometry ownership and ranged scoring semantics.
+      - Calibrate against the six human reference prospects.
+      - Implement the approved workflow in a separate scientific-methodology change.
+    related_discrepancy_ids: [METH-DISC-003, METH-DISC-006]
+  - discrepancy_id: METH-DISC-042
+    subject: phase05-guide-origin-and-operational-parameters
+    compared_sources:
+      - phase05.guide
+      - methodology.master-v9
+      - Phase 05 registered stub
+    statement: The Phase 05 guide says some content was supplied in "this chat" and proposes flight, GSD, overlap, control and processing parameters without an independently identified source or adopted operational approval.
+    operational_impact: Document presence alone cannot authorize flight planning, safety constraints, survey accuracy or production thresholds.
+    status: unresolved
+    proposed_resolution: Identify the originating evidence, reconcile every operational parameter with vendor, survey, HSE and project requirements, and approve a versioned Phase 05 contract before implementation.
+    required_approver: methodology-owner, qualified-surveyor and HSE-flight-authority
+    remaining_actions:
+      - Identify and preserve the source behind the "this chat" reference.
+      - Validate proposed parameters against equipment, terrain, aviation, survey and HSE constraints.
+      - Keep Phase 05 a stub until the versioned contract is approved.
+    related_discrepancy_ids: [METH-DISC-004]
+  - discrepancy_id: METH-DISC-043
+    subject: inventory-status-versus-observed-files
+    compared_sources:
+      - remote-sensing inventory workbooks
+      - tectonic and DEM inventory workbooks
+      - mineral-occurrence and regional-geology issue logs
+      - read-only workflow-folder metadata review
+    statement: Several inventory and issue-register statuses no longer match observed file placement or derived-output presence, including ASTER DEM, tectonic outputs, mineral-occurrence images and regional-geology output location.
+    operational_impact: Stale status can cause required work to be repeated, present files to be ignored, or provenance to bind to an obsolete location.
+    status: unresolved
+    proposed_resolution: Reconcile each row against a new immutable metadata snapshot, append a dated correction with exact file identity and location, and preserve the prior status as history.
+    required_approver: data-custodian and methodology-owner
+    remaining_actions:
+      - Create a row-level reconciliation table with stable source and output identities.
+      - Append corrections rather than overwriting the historical workbooks.
+      - Assign an owner and due date to each still-open row.
+    evidence_references:
+      - workflow-folder-id:1lKI9SxFot2kQdnULCtXoP2uQ2WHq2krX
+  - discrepancy_id: METH-DISC-044
+    subject: georeference-crs-residual-evidence-gaps
+    compared_sources:
+      - phase01.guide
+      - phase03.guide
+      - georeference QA/QC workbooks and issue logs
+      - METH-DISC-028
+    statement: Multiple registers leave GCP, source/target CRS, transformation, residual/RMSE and reviewer fields blank or pending; one log records an overlay match while also recording a CRS mismatch with both CRS fields blank.
+    operational_impact: Raster presence, filename CRS labels or a visual overlay assertion cannot establish registration accuracy or qualified acceptance.
+    status: unresolved
+    proposed_resolution: Complete source-specific GCP, CRS, transformation, resampling, residual/RMSE, visual-alignment and named-reviewer evidence before treating any affected scan as accepted georeferenced evidence.
+    required_approver: qualified-geospatial-reviewer and project-geologist
+    remaining_actions:
+      - Reconcile every open georeference register against the exact source and derivative hashes.
+      - Record GCPs, transformations, residuals, visual checks, reviewer and review time.
+      - Keep affected Phase 03 evidence preliminary until acceptance is complete.
+    related_discrepancy_ids: [METH-DISC-028]
+  - discrepancy_id: METH-DISC-045
+    subject: aster-kompsat-technical-readiness
+    compared_sources:
+      - ASTER raw-HDF inventory and open-check register
+      - KOMPSAT raw-bundle inventory and readiness checklist
+      - METH-DISC-029
+    statement: ASTER HDF4 opening, subdataset, geolocation and CRS checks are incomplete, while the KOMPSAT readiness checklist has blank status cells and its licence record remains missing.
+    operational_impact: Neither dataset can be represented as fully validated or ready for production processing, external egress or scientific interpretation.
+    status: unresolved
+    proposed_resolution: Complete supported local ASTER HDF4/subdataset/geolocation validation and KOMPSAT bundle, RPC, orthorectification, checklist and licence validation with exact source identities.
+    required_approver: geospatial-data-custodian, project-geologist and legal for KOMPSAT licensing
+    remaining_actions:
+      - Complete and preserve the ASTER open, subdataset, geolocation and CRS results.
+      - Complete all KOMPSAT checklist states and orthorectification prerequisites.
+      - Resolve the missing EULA under METH-DISC-029 before external use.
+    related_discrepancy_ids: [METH-DISC-029, METH-DISC-034]
+  - discrepancy_id: METH-DISC-046
+    subject: licence-boundary-qaqc-completeness
+    compared_sources:
+      - licence-boundary QA/QC register
+      - config/raw_manifest.csv
+      - Phase 01 boundary and buffer outputs
+    statement: The reviewed licence-boundary QA/QC records only a temporary archive CRC32 while SHA-256 identity, parsing, coordinate extraction, CRS conversion, topology, area/perimeter and generated-buffer checks remain pending.
+    operational_impact: Every spatial phase depends on this boundary, so incomplete validation can propagate a wrong extent or geometry through buffers, clipping, ranking and publication.
+    status: unresolved
+    proposed_resolution: Bind the exact raw boundary bundle and derivative, then complete deterministic parse, CRS, topology, measurement and buffer checks with qualified review.
+    required_approver: geospatial-data-custodian and qualified-geospatial-reviewer
+    remaining_actions:
+      - Reconcile the boundary bundle against the Phase 00 SHA-256 baseline.
+      - Record parse, coordinate, CRS, topology, area/perimeter and buffer validation results.
+      - Keep scientific downstream use provisional until the review is signed.
+  - discrepancy_id: METH-DISC-047
+    subject: duplicate-qaqc-register-lineage
+    compared_sources:
+      - seven duplicate QA/QC and register pairs in the workflow folder
+      - read-only connected-Drive metadata review
+    statement: Seven QA/QC or register pairs have distinct Drive identities but no recorded canonical-copy, replica or supersession relationship.
+    operational_impact: Future edits can diverge silently and downstream provenance may bind to the wrong copy.
+    status: unresolved
+    proposed_resolution: Compare exact bytes, parent-folder context, internal identifiers and edit lineage, then record one canonical source or an explicit immutable-replica relationship for each pair.
+    required_approver: data-custodian and methodology-owner
+    remaining_actions:
+      - Record both stable Drive IDs and hashes for every duplicate pair.
+      - Compare lineage and obtain owner approval for canonical or replica status.
+      - Preserve non-canonical copies as historical evidence rather than deleting them silently.
+    evidence_references:
+      - workflow-folder-id:1lKI9SxFot2kQdnULCtXoP2uQ2WHq2krX

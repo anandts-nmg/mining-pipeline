@@ -2,10 +2,18 @@ format_version: 1.0.0
 phase_id: "05"
 requirements:
   - requirement_id: P05-STUB-PRESERVATION-001
-    statement: The current Phase 05 stub remains unchanged in this migration slice.
-    source_refs: [agents.repository-authority, METH-DISC-004]
+    statement: The detailed Phase 05 guide exists, but the registered phase remains a stub until a separately approved implementation adopts its operational contracts.
+    source_refs: [repository.methodology-contracts, phase05.guide, METH-DISC-004]
+    status: adopted-with-unresolved-discrepancy
+  - requirement_id: P05-SOURCE-PROVENANCE-001
+    statement: References to content supplied in "this chat" are not durable methodology authority for flight, GSD, overlap, control or accuracy parameters.
+    source_refs: [repository.methodology-contracts, phase05.guide, METH-DISC-042]
     status: adopted-with-unresolved-discrepancy
   - requirement_id: P05-NO-NEW-THRESHOLD-001
-    statement: No undocumented flight, survey or accuracy threshold may become authoritative.
-    source_refs: [agents.repository-authority, phase05.guide]
+    statement: No flight, survey, overlap, control, accuracy, HSE or mission threshold becomes production policy solely because it appears in the guide.
+    source_refs: [repository.methodology-contracts, phase05.guide, METH-DISC-042]
+    status: adopted
+  - requirement_id: P05-HUMAN-AUTHORITY-001
+    statement: Qualified humans retain flight, HSE, mission, control-network and acceptance authority; AI may only propose priorities or interpretations.
+    source_refs: [repository.methodology-contracts, phase05.guide]
     status: adopted

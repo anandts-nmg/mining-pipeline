@@ -58,7 +58,7 @@ boundaries:
       - Scientific approval; automatic merge into legacy Phase 03 evidence.
     blocking_dependencies:
       - Human-digitized layers and the completed 03A score matrix.
-    status: implemented
+    status: partially-implemented
     migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
   - phase_id: "04"
     automation_category: desktop-deterministic
@@ -71,7 +71,7 @@ boundaries:
       - Recalibrating the adopted scoring matrix as an incidental change.
     blocking_dependencies:
       - Authoritative handoff integration adapter (deferred).
-    status: implemented
+    status: legacy-comparator
     migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
   - phase_id: "05"
     automation_category: field-acquisition

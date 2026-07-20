@@ -103,11 +103,12 @@ assert critic.components[0].text
 assert vertical.components[0].text
 assert authority.sources
 assert phase05.phase_id == "05"
-assert len(discrepancies.discrepancies) == 33
+assert len(discrepancies.discrepancies) == 47
 assert any(
     item.discrepancy_id == "METH-DISC-033"
     for item in discrepancies.discrepancies
 )
+assert discrepancies.discrepancies[-1].discrepancy_id == "METH-DISC-047"
 assert discrepancies.unresolved()
 print(prompt.identity.sha256)
 """

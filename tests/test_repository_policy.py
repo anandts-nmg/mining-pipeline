@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import codecs
 import subprocess
+import zipfile
 from pathlib import Path, PurePosixPath
 
 import pytest
 
 from buduunkhad.repository_policy import (
+    APPROVED_METHODOLOGY_DOCUMENTS,
     APPROVED_SYNTHETIC_FIXTURES,
     artifact_violations,
     repository_policy_violations,
@@ -88,6 +90,49 @@ def test_fixture_exceptions_are_exact_not_directory_wide() -> None:
     assert not APPROVED_SYNTHETIC_FIXTURES
     path = PurePosixPath("tests/fixtures/synthetic/arbitrary.gpkg")
     assert artifact_violations(REPOSITORY_ROOT, (path,)) == (str(path),)
+
+
+def test_reviewed_methodology_documents_are_exact_path_and_hash_exceptions() -> None:
+    assert len(APPROVED_METHODOLOGY_DOCUMENTS) == 17
+    assert artifact_violations(REPOSITORY_ROOT, APPROVED_METHODOLOGY_DOCUMENTS) == ()
+
+
+def test_reviewed_methodology_documents_are_secret_free() -> None:
+    for path in APPROVED_METHODOLOGY_DOCUMENTS:
+        candidate = REPOSITORY_ROOT / Path(path.as_posix())
+        assert secret_findings(candidate) == (), str(path)
+
+
+def test_changed_methodology_document_loses_its_exception(tmp_path: Path) -> None:
+    path = next(iter(APPROVED_METHODOLOGY_DOCUMENTS))
+    candidate = tmp_path / Path(path.as_posix())
+    candidate.parent.mkdir(parents=True)
+    candidate.write_bytes(b"not the reviewed methodology bytes")
+    assert artifact_violations(tmp_path, (path,)) == (str(path),)
+
+
+def test_unlisted_methodology_docx_remains_forbidden(tmp_path: Path) -> None:
+    path = PurePosixPath("docs/methodology/phase_02/unreviewed.docx")
+    candidate = tmp_path / Path(path.as_posix())
+    candidate.parent.mkdir(parents=True)
+    candidate.write_bytes(b"unreviewed")
+    assert artifact_violations(tmp_path, (path,)) == (str(path),)
+
+
+def test_methodology_exception_rejects_a_symlink_substitution(tmp_path: Path) -> None:
+    path, expected = next(iter(APPROVED_METHODOLOGY_DOCUMENTS.items()))
+    source = REPOSITORY_ROOT / Path(path.as_posix())
+    assert source.is_file()
+    outside = tmp_path / "outside.docx"
+    outside.write_bytes(source.read_bytes())
+    candidate = tmp_path / "repository" / Path(path.as_posix())
+    candidate.parent.mkdir(parents=True)
+    try:
+        candidate.symlink_to(outside)
+    except OSError:
+        pytest.skip("this platform cannot create the required file symlink")
+    assert expected == APPROVED_METHODOLOGY_DOCUMENTS[path]
+    assert artifact_violations(tmp_path / "repository", (path,)) == (str(path),)
 
 
 @pytest.mark.parametrize(
@@ -176,6 +221,22 @@ def test_utf8_and_bom_marked_utf16_are_scanned(tmp_path: Path, encoding: str, bo
 def test_text_like_file_with_invalid_utf8_fails_closed(tmp_path: Path) -> None:
     path = tmp_path / "malformed.noextension"
     path.write_bytes(b"ordinary text followed by invalid UTF-8: \xff")
+    assert secret_findings(path) == ("unscannable text encoding",)
+
+
+def test_docx_text_members_are_secret_scanned(tmp_path: Path) -> None:
+    path = tmp_path / "methodology.docx"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(
+            "word/document.xml",
+            "<w:document>CLIENT_SE" + "CRET=sensitive_value_123456</w:document>",
+        )
+    assert "suspicious secret assignment" in secret_findings(path)
+
+
+def test_invalid_docx_fails_closed_for_secret_scanning(tmp_path: Path) -> None:
+    path = tmp_path / "methodology.docx"
+    path.write_bytes(b"not a valid package")
     assert secret_findings(path) == ("unscannable text encoding",)
 
 

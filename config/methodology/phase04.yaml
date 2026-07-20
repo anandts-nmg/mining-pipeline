@@ -3,13 +3,21 @@ phase_id: "04"
 requirements:
   - requirement_id: P04-PROPOSAL-ONLY-001
     statement: AI may propose prospect geometry, rationale and limitations but cannot publish or approve it.
-    source_refs: [agents.repository-authority, phase04.guide]
+    source_refs: [repository.methodology-contracts, phase04.guide]
     status: adopted
   - requirement_id: P04-LEGACY-COMPARATOR-001
-    statement: The fixed-grid evidence method remains unchanged as the legacy comparator in this migration slice.
-    source_refs: [agents.repository-authority, METH-DISC-003]
+    statement: The fixed-grid evidence method remains unchanged as a legacy comparator; it is not the guide's human-drawn prospect workflow and does not establish authoritative integration.
+    source_refs: [repository.methodology-contracts, phase04.guide, METH-DISC-003, METH-DISC-041]
     status: adopted-with-unresolved-discrepancy
   - requirement_id: P04-SCORING-MATRIX-PRESERVATION-001
-    statement: The implemented Phase 04 desktop matrix follows the resolved decision METH-DISC-006; the master lifecycle matrix stays reserved for the Phase 10 final integrated ranking and must not be imported without an approved migration.
-    source_refs: [agents.repository-authority, METH-DISC-006]
+    statement: The implemented Phase 04 desktop criterion weights follow METH-DISC-006, but its binary/full-weight cell semantics remain a legacy comparator difference from the guide's ranged prospect-level scoring; the master lifecycle matrix stays reserved for Phase 10.
+    source_refs: [repository.methodology-contracts, phase04.guide, METH-DISC-006, METH-DISC-041]
+    status: adopted-with-unresolved-discrepancy
+  - requirement_id: P04-AI-ISOLATION-001
+    statement: AI_DRAFT, AI_VALIDATED, HUMAN_REVIEWED, ACCEPTED_EVIDENCE and GEOLOGIST_APPROVED handoff records remain outside Phase 04 until an explicit authoritative adapter is adopted.
+    source_refs: [repository.methodology-contracts]
     status: adopted
+  - requirement_id: P04-GATE-PROVISIONAL-001
+    statement: Automated completion does not imply scientific approval; the existing provisional-advance behavior remains explicit while the pause-versus-advance decision is unresolved.
+    source_refs: [repository.methodology-contracts, METH-DISC-031]
+    status: adopted-with-unresolved-discrepancy

@@ -1,15 +1,10 @@
-format_version: 1.1.0
+format_version: 1.2.0
 # Methodology source authority registry. External documents are addressed only through
 # stable BUDUUNKHAD_WORKFLOW_DOCS_ROOT identifiers — never machine-specific paths.
 # existence_verified records whether the external document's presence was independently
 # verified; a registered identifier alone is not verification. repository_copy points at
-# a tracked rendered copy where one exists.
+# an exact byte-bound source mirror from the recorded verified snapshot where one exists.
 sources:
-  - source_id: agents.repository-authority
-    repository_path: AGENTS.md
-    role: repository-governance
-    authority_status: adopted
-    existence_verified: true
   - source_id: repository.methodology-contracts
     repository_path: config/methodology
     role: versioned-methodology-contracts
@@ -20,18 +15,39 @@ sources:
     role: methodology-source
     authority_status: adopted
     expected_document: XV-023222_Buduunkhad_Exploration_Workflow_Methodology_78Inputs_v9_25km_Clickable_TOC_PageNumbers.docx
-    repository_copy: docs/XV-023222_Buduunkhad_Exploration_Workflow_Methodology_78Inputs_v9_25km_Clickable_TOC_PageNumbers.docx.pdf
+    repository_copy: docs/methodology/master/XV-023222_Buduunkhad_Exploration_Workflow_Methodology_78Inputs_v9_25km_Clickable_TOC_PageNumbers.docx
+    repository_copy_sha256: 86ab7c8926aeccf032835c1b1ba9a00518740cdfaea2a1ad01313e4bfcb3b65e
+    repository_copy_size_bytes: 150944
+    repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
     external_file_id: 1ECwfhr6ucFRE8LABo0C9WDzUDOE6oHzb
     existence_verified: true
     existence_verified_at: "2026-07-17T07:55:05Z"
     existence_verified_by: Anand Tsogtjargal
     existence_evidence_reference: connected-google-drive-read-only-metadata-verification::2026-07-17T07:55:05Z
+  - source_id: methodology.master-v5-v6
+    external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::superseded-master-v5-v6
+    role: methodology-source
+    authority_status: obsolete
+    expected_document: XV-023222_Buduunkhad_Exploration_Workflow_Methodology_78Inputs_v6_Phasewise_File_Processing_Output_Matrix.docx
+    repository_copy: docs/methodology/master/XV-023222_Buduunkhad_Exploration_Workflow_Methodology_78Inputs_v6_Phasewise_File_Processing_Output_Matrix.docx
+    repository_copy_sha256: 2b27b9035b24e2239caa8ce0b345969bf23f7d1d0beb69c3f6f4f2a0fe7cd996
+    repository_copy_size_bytes: 339386
+    repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
+    external_file_id: 13Rle5Bgj0vuKXeXnyy-mT5iLvzwvtloI
+    existence_verified: true
+    existence_verified_at: "2026-07-20T03:14:02Z"
+    existence_verified_by: Codex read-only review
+    existence_evidence_reference: verified-local-snapshot-copy::05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
+    superseding_contract: methodology.master-v9
   - source_id: phase01.guide
     external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::approved-phase01-methodology
     role: phase-source
     authority_status: adopted
     expected_document: XV-023222_Buduunkhad_Phase1_Methodology.docx
-    repository_copy: docs/phase_01/XV-023222_Buduunkhad_Phase1_Methodology.docx.pdf
+    repository_copy: docs/methodology/phase_01/XV-023222_Buduunkhad_Phase1_Methodology.docx
+    repository_copy_sha256: 99bb2d59fc649701c9aa5656e40fc7c2a220ab6ccfe2a343c0a1831d40123349
+    repository_copy_size_bytes: 24195
+    repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
     external_file_id: 1Ff9rAshnm1kihhh3uOxz6N5Kh6rUFX8Z
     existence_verified: true
     existence_verified_at: "2026-07-17T07:55:05Z"
@@ -42,7 +58,10 @@ sources:
     role: phase-source
     authority_status: adopted
     expected_document: Phase_2_Remote_Sensing_Preprocessing_Guide_MN.docx
-    repository_copy: docs/phase_02/Phase_2_Remote_Sensing_Preprocessing_Guide_MN.docx.pdf
+    repository_copy: docs/methodology/phase_02/Phase_2_Remote_Sensing_Preprocessing_Guide_MN.docx
+    repository_copy_sha256: 77d194c1914b463486bda553e0303d865b0742e5847a81d4e9da85abea4590f2
+    repository_copy_size_bytes: 37882
+    repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
     external_file_id: 1bFjeFQz2BWzrOP38oPMutlh-nSBw3QLD
     existence_verified: true
     existence_verified_at: "2026-07-17T07:55:05Z"
@@ -57,12 +76,57 @@ sources:
     superseding_contract: src/buduunkhad/core/aster.py implements the adopted scheme (METH-DISC-020, METH-DISC-021).
     remaining_actions:
       - Verify presence in the external methodology root on next access.
+  - source_id: phase02.sentinel-qgis402-guide
+    external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::phase02-sentinel-qgis402-guide
+    role: operator-sop
+    authority_status: reference-only
+    expected_document: XV023222_Buduunkhad_Sentinel2_QGIS402_Detailed_Guide_v01.docx
+    repository_copy: docs/methodology/phase_02/operator_guides/XV023222_Buduunkhad_Sentinel2_QGIS402_Detailed_Guide_v01.docx
+    repository_copy_sha256: 98ecf4defac3058f474d78ffa5ca2acda25e561688714bd045f27ebe66ff2fe2
+    repository_copy_size_bytes: 1120963
+    repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
+    external_file_id: 1HDS0TItrqcyBmx-q7WbVS-rTibvqh347
+    existence_verified: true
+    existence_verified_at: "2026-07-20T03:14:02Z"
+    existence_verified_by: Codex read-only review
+    existence_evidence_reference: verified-local-snapshot-copy::05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
+  - source_id: phase02.basemap-qgis402-guide
+    external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::phase02-basemap-qgis402-guide
+    role: operator-sop
+    authority_status: reference-only
+    expected_document: QGIS_4_0_2_Google_HighResolution_Basemap_Detailed_Guide.docx
+    repository_copy: docs/methodology/phase_02/operator_guides/QGIS_4_0_2_Google_HighResolution_Basemap_Detailed_Guide.docx
+    repository_copy_sha256: 1c6380686574e2bc92558bcf6dc787d07454ec092de0ee47268a30ce633ebaaf
+    repository_copy_size_bytes: 46281
+    repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
+    external_file_id: 1sVmEgKaNWbsh9xEFQAuTy-THZYbHzMCA
+    existence_verified: true
+    existence_verified_at: "2026-07-20T03:14:02Z"
+    existence_verified_by: Codex read-only review
+    existence_evidence_reference: verified-local-snapshot-copy::05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
+  - source_id: phase02.dem-qgis402-guide
+    external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::phase02-dem-qgis402-guide
+    role: operator-sop
+    authority_status: reference-only
+    expected_document: XV023222_Buduunkhad_QGIS402_DEM_ALOS_PALSAR_ASTERGDEM_Detailed_Guide.docx
+    repository_copy: docs/methodology/phase_02/operator_guides/XV023222_Buduunkhad_QGIS402_DEM_ALOS_PALSAR_ASTERGDEM_Detailed_Guide.docx
+    repository_copy_sha256: 84f809fef429bb0279bbd67f036fbaa0e03a70427a827f8139284f4190b5f081
+    repository_copy_size_bytes: 50688
+    repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
+    external_file_id: 1hc6mZrqSX1Jt-rUsRcp0XtIHGAckH3Xn
+    existence_verified: true
+    existence_verified_at: "2026-07-20T03:14:02Z"
+    existence_verified_by: Codex read-only review
+    existence_evidence_reference: verified-local-snapshot-copy::05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
   - source_id: phase03.guide
     external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::approved-phase03-methodology
     role: phase-source
     authority_status: adopted
     expected_document: Phase_3_Geological_Metallogenic_and_CMCS_Synthesis_Guide_MN.docx
-    repository_copy: "docs/phase_03/03. Phase 3 — Geological, Metallogenic and CMCS Synthesis .docx.pdf"
+    repository_copy: docs/methodology/phase_03/Phase_3_Geological_Metallogenic_and_CMCS_Synthesis_Guide_MN.docx
+    repository_copy_sha256: deceebe736db6dcd70500204a5e30391b6992d7973633afb8abdc4016aff8b49
+    repository_copy_size_bytes: 30322
+    repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
     external_file_id: 1Ttxau5QEOkCc1LbrCuS8jA9wV3JPaLyl
     existence_verified: true
     existence_verified_at: "2026-07-17T07:55:05Z"
@@ -73,6 +137,10 @@ sources:
     role: phase-source
     authority_status: adopted
     expected_document: Phase_4_Preliminary_Prospect_Delineation_and_Ranking_Guide_MN.docx
+    repository_copy: docs/methodology/phase_04/Phase_4_Preliminary_Prospect_Delineation_and_Ranking_Guide_MN.docx
+    repository_copy_sha256: b73044d954e625c7c3c65a6042e378bfdb479f58d13be6c4120912c092f4b003
+    repository_copy_size_bytes: 50969
+    repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
     external_file_id: 1er5vXLXDX9_s4paZC81xDxbB8mU6UR3e
     existence_verified: true
     existence_verified_at: "2026-07-17T07:55:05Z"
@@ -83,6 +151,10 @@ sources:
     role: phase-source
     authority_status: adopted
     expected_document: Phase_5_Drone_LiDAR_Photogrammetry_Detailed_Guide_MN.docx
+    repository_copy: docs/methodology/phase_05/Phase_5_Drone_LiDAR_Photogrammetry_Detailed_Guide_MN.docx
+    repository_copy_sha256: f1add3a2c229224454ff1624f70602f2592ad2240b23f45be3d5744c07700ade
+    repository_copy_size_bytes: 155330
+    repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
     external_file_id: 13RbcciT0bvK5HqT05JFqiTUf92QViVMm
     existence_verified: true
     existence_verified_at: "2026-07-17T07:55:05Z"
@@ -109,7 +181,15 @@ sources:
     role: phase-source
     authority_status: pending-review
     expected_document: Phase_6_Recon_Mapping_and_pXRF_Field_Screening_Detailed_Guide_MN.docx
-    existence_verified: false
+    repository_copy: docs/methodology/phase_06/Phase_6_Recon_Mapping_and_pXRF_Field_Screening_Detailed_Guide_MN.docx
+    repository_copy_sha256: 71433eee7c1cdf972e0b7ab48bdc8ab0539068fd3e8d73502d55473d0fe7e40f
+    repository_copy_size_bytes: 49495
+    repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
+    external_file_id: 1cphSAinA-JsIduphfi5-FmFGNq1K7OWF
+    existence_verified: true
+    existence_verified_at: "2026-07-20T03:14:02Z"
+    existence_verified_by: Codex read-only review
+    existence_evidence_reference: verified-local-snapshot-copy::05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
     remaining_actions:
       - Adopt into a phase06 methodology contract when the phase is built.
   - source_id: phase07.guide
@@ -117,7 +197,15 @@ sources:
     role: phase-source
     authority_status: pending-review
     expected_document: Phase_7_Rock_Chip_Channel_Verification_Sampling_Guide_MN.docx
-    existence_verified: false
+    repository_copy: docs/methodology/phase_07/Phase_7_Rock_Chip_Channel_Verification_Sampling_Guide_MN.docx
+    repository_copy_sha256: 95e040dbe1a4c1bb5d99ddced1d555e6aef632c844070b59b40143864eb071e1
+    repository_copy_size_bytes: 50895
+    repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
+    external_file_id: 13uu5wdWrop2XT05ikIJb-m7a2YgoXAEd
+    existence_verified: true
+    existence_verified_at: "2026-07-20T03:14:02Z"
+    existence_verified_by: Codex read-only review
+    existence_evidence_reference: verified-local-snapshot-copy::05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
     remaining_actions:
       - Adopt into a phase07 methodology contract when the phase is built.
   - source_id: phase08.guide
@@ -125,7 +213,15 @@ sources:
     role: phase-source
     authority_status: pending-review
     expected_document: Phase_8_Orientation_Soil_StreamSediment_HeavyMineral_Check_Detailed_Guide_MN.docx
-    existence_verified: false
+    repository_copy: docs/methodology/phase_08/Phase_8_Orientation_Soil_StreamSediment_HeavyMineral_Check_Detailed_Guide_MN.docx
+    repository_copy_sha256: d01817cfc34c3b4c117828551f9854d0d5978092337d9186364340f44023410a
+    repository_copy_size_bytes: 50972
+    repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
+    external_file_id: 1vSZWXwpO1d36s42mT9WVx79sT35t44DV
+    existence_verified: true
+    existence_verified_at: "2026-07-20T03:14:02Z"
+    existence_verified_by: Codex read-only review
+    existence_evidence_reference: verified-local-snapshot-copy::05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
     remaining_actions:
       - Adopt into a phase08 methodology contract when the phase is built.
   - source_id: phase09.guide
@@ -133,7 +229,15 @@ sources:
     role: phase-source
     authority_status: pending-review
     expected_document: Phase_9_Systematic_Soil_Grid_Laboratory_QAQC_Detailed_Guide_MN.docx
-    existence_verified: false
+    repository_copy: docs/methodology/phase_09/Phase_9_Systematic_Soil_Grid_Laboratory_QAQC_Detailed_Guide_MN.docx
+    repository_copy_sha256: 2c58418831d81be2b4e6b665707074668f8080bd15cbe39a3bbf0ba8c0012737
+    repository_copy_size_bytes: 50650
+    repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
+    external_file_id: 1zjPWbXfR11rMfqF_9L13D99g6u1PvNfm
+    existence_verified: true
+    existence_verified_at: "2026-07-20T03:14:02Z"
+    existence_verified_by: Codex read-only review
+    existence_evidence_reference: verified-local-snapshot-copy::05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
     remaining_actions:
       - Adopt into a phase09 methodology contract when the phase is built.
   - source_id: phase10.guide
@@ -141,7 +245,15 @@ sources:
     role: phase-source
     authority_status: pending-review
     expected_document: Phase_10_Integrated_Interpretation_Final_Target_Ranking_Guide_MN.docx
-    existence_verified: false
+    repository_copy: docs/methodology/phase_10/Phase_10_Integrated_Interpretation_Final_Target_Ranking_Guide_MN.docx
+    repository_copy_sha256: cab3d4b2f0e28b833894469df28311a6c32ebacb924ec4d2ae27f5f5ee59af4a
+    repository_copy_size_bytes: 51856
+    repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
+    external_file_id: 1YRLm_4SXOvMz8BO1NRvVv7Jn7nIKGSAo
+    existence_verified: true
+    existence_verified_at: "2026-07-20T03:14:02Z"
+    existence_verified_by: Codex read-only review
+    existence_evidence_reference: verified-local-snapshot-copy::05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
     remaining_actions:
       - Adopt into a phase10 methodology contract when the phase is built.
   - source_id: phase11.guide
@@ -149,7 +261,15 @@ sources:
     role: phase-source
     authority_status: pending-review
     expected_document: Phase_11_Follow_Up_Trench_Geophysics_Scout_Drill_Planning_Guide_MN.docx
-    existence_verified: false
+    repository_copy: docs/methodology/phase_11/Phase_11_Follow_Up_Trench_Geophysics_Scout_Drill_Planning_Guide_MN.docx
+    repository_copy_sha256: ee3d9dd4a1cb28541926fb1a8319c30cd884d20f8774762a0303506df74eda69
+    repository_copy_size_bytes: 46418
+    repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
+    external_file_id: 1uUpG-5ySCVrgtjEh62ySulaszREWf6dN
+    existence_verified: true
+    existence_verified_at: "2026-07-20T03:14:02Z"
+    existence_verified_by: Codex read-only review
+    existence_evidence_reference: verified-local-snapshot-copy::05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
     remaining_actions:
       - Adopt into a phase11 methodology contract when the phase is built.
   - source_id: phase99.guide
@@ -157,11 +277,17 @@ sources:
     role: phase-source
     authority_status: pending-review
     expected_document: 99_Final_Deliverables_Detailed_Guide_MN.docx
-    existence_verified: false
+    repository_copy: docs/methodology/phase_99/99_Final_Deliverables_Detailed_Guide_MN.docx
+    repository_copy_sha256: dc20825afaff3cd5cc4c8f0d22913af4177a9abe3e2ff7f11289b2417e812fe7
+    repository_copy_size_bytes: 47285
+    repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
+    external_file_id: 1GlYTv_v4StNTv9fyag41g-WT0g4v27-O
+    existence_verified: true
+    existence_verified_at: "2026-07-20T03:14:02Z"
+    existence_verified_by: Codex read-only review
+    existence_evidence_reference: verified-local-snapshot-copy::05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
     remaining_actions:
       - Adopt into a phase99 methodology contract when the phase is built.
 precedence:
-  - agents.repository-authority
   - repository.methodology-contracts
   - methodology.master-v9
-  - phase-specific-approved-source

@@ -5,7 +5,7 @@ structure / occurrence vectors, writing the deposit model, doing the scoring —
 work in QGIS / Excel / Word. This module scaffolds the 12-folder tree, emits every
 register / template / schema, ingests the machine-tractable inputs (the #68 mineralized-
 point XLSX and any human-digitized layers), builds the CMCS 5/10/20/25 km context buffer off
-the Phase 01 licence boundary, assembles the authoritative 17-layer evidence GPKG, and
+the Phase 01 licence boundary, assembles the preliminary 17-layer support-evidence schema, and
 runs the QA/QC + 6-condition gate.
 
 Follows the adopted requirements in ``config/methodology/phase03.yaml`` and the approved external
@@ -58,7 +58,7 @@ EVIDENCE_FIELDS: dict[str, str] = {
     "review_date": "str:32",
 }
 
-# The authoritative 17-layer evidence GPKG: (layer_name, geometry_type, feature_id prefix).
+# The preliminary 17-layer support-evidence GPKG: (layer_name, geometry_type, feature_id prefix).
 # A prefix of "" means the layer has no Appendix-A feature-ID prefix (inherited/context
 # layers). The 17-layer legacy schema remains the implemented deterministic contract.
 EVIDENCE_LAYERS: list[tuple[str, str, str]] = [
@@ -243,7 +243,8 @@ class Phase03GeologySynthesis(Phase):
         "Geology/structure/occurrence/prospectivity/metallogenic context from #1-8,#53-72 in "
         "Master GIS; occurrence coordinate QA/QC done; CMCS 5/10/20/25 km buffer register ready; "
         "Preliminary Deposit Model.docx + score matrix ready; all evidence stamped "
-        "'Historical only'; 17-layer geological evidence package ready for Phase 4 ranking."
+        "'Historical only'; 17-layer support-evidence schema emitted. Human evidence completion "
+        "and review remain required before authoritative downstream use."
     )
     custom_subfolders = [
         "01_Input_Working_Copy",
@@ -1041,10 +1042,13 @@ class Phase03GeologySynthesis(Phase):
             note="Stamped on ingested points/layers and CMCS buffer; empty layers carry the schema.",
         )
         report.add(
-            "17-layer geological evidence package ready for Phase 4 A/B/C prospect ranking",
+            "17-layer preliminary support-evidence schema/package emitted",
             RECORDED_ACCEPTANCE,
             decision=Decision.PASS if layers_ok else Decision.FAIL,
-            note=f"Authoritative evidence GPKG holds {len(self._evidence_layers)} layers.",
+            note=(
+                f"Preliminary support-evidence GPKG holds {len(self._evidence_layers)} schema "
+                "layers; layer presence is not evidence completeness or scientific approval."
+            ),
         )
         report.add(
             "Human-digitized geology/structure/occurrence layers ingested",
@@ -1137,7 +1141,9 @@ _PHASE3_NOTE = (
     "The pipeline scaffolds the 12-folder tree, emits every register/template/schema, builds\n"
     "the CMCS 5/10/20/25 km context buffer off the Phase 01 licence boundary, ingests the #68\n"
     "mineralized-point XLSX (4326->32647) and any human-digitized layers, and assembles the\n"
-    "authoritative 17-layer `Geological_Evidence_Layers_v01.gpkg`.\n\n"
+    "preliminary 17-layer support-evidence schema/package in "
+    "`Geological_Evidence_Layers_v01.gpkg`. Layer presence is not evidence completeness, "
+    "scientific approval, or authoritative Phase 04 readiness.\n\n"
     "**Evidence rule (non-negotiable):** every Phase 03 output is historical / contextual /\n"
     "preliminary support only — not decision-grade, not ore proof. Every feature records\n"
     '`validation_status = "Historical only"` and a `limitation` note; CMCS/MRPAM buffer hits\n'

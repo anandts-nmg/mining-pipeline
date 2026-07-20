@@ -38,12 +38,15 @@ Command-line entry points
 
 Where things live
 -----------------
-- Agent and engineering instructions: AGENTS.md (the only tracked Markdown
-  file; repository governance and the implemented-state summary).
+- Agent permissions, safety and implemented-state summary: AGENTS.md (the only
+  tracked Markdown file).
 - Methodology authority and unresolved discrepancies: config/methodology/
-  (versioned YAML contracts). Approved external methodology documents are
-  reached read-only through the BUDUUNKHAD_WORKFLOW_DOCS_ROOT environment
-  root; they are not Git content.
+  (versioned YAML contracts).
+- Reviewed methodology source mirrors: docs/methodology/. Each approved
+  document exception is bound to an exact repository path, SHA-256, byte size
+  and verified snapshot identity by the authority and repository-policy contracts.
+- External methodology remains reachable read-only through the
+  BUDUUNKHAD_WORKFLOW_DOCS_ROOT environment root for source reconciliation.
 - Raw geological data and production outputs are external to Git. The raw
   archive is immutable and checksum-verified; outputs are written to a
   configured local output root and published deliberately.

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from importlib import resources
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Literal
 
 import yaml
@@ -20,6 +20,13 @@ HISTORICAL_UNKNOWN = "historical-unknown"
 
 DiscrepancyStatus = Literal["unresolved", "resolved", "superseded", "withdrawn"]
 AuthorityStatus = Literal["adopted", "reference-only", "pending-review", "obsolete"]
+RequirementStatus = Literal["adopted", "adopted-with-unresolved-discrepancy"]
+AutomationStatus = Literal[
+    "implemented",
+    "partially-implemented",
+    "legacy-comparator",
+    "stub",
+]
 
 
 class MethodologySource(BaseModel):
@@ -32,6 +39,9 @@ class MethodologySource(BaseModel):
     authority_status: AuthorityStatus = "adopted"
     expected_document: str | None = None
     repository_copy: str | None = None
+    repository_copy_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    repository_copy_size_bytes: int | None = Field(default=None, ge=0)
+    repository_snapshot_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     existence_verified: bool = False
     external_file_id: str | None = Field(default=None, min_length=1)
     existence_verified_at: datetime | None = None
@@ -49,6 +59,31 @@ class MethodologySource(BaseModel):
             "BUDUUNKHAD_WORKFLOW_DOCS_ROOT::"
         ):
             raise ValueError("external methodology must use BUDUUNKHAD_WORKFLOW_DOCS_ROOT")
+        copy_facts = (
+            self.repository_copy_sha256,
+            self.repository_copy_size_bytes,
+            self.repository_snapshot_sha256,
+        )
+        if self.repository_copy is None:
+            if any(value is not None for value in copy_facts):
+                raise ValueError("repository-copy identity requires repository_copy")
+        else:
+            if not all(value is not None for value in copy_facts):
+                raise ValueError(
+                    "repository_copy requires SHA-256, byte size, and snapshot SHA-256"
+                )
+            copy_path = PurePosixPath(self.repository_copy)
+            if (
+                copy_path.is_absolute()
+                or copy_path.as_posix() != self.repository_copy
+                or ".." in copy_path.parts
+                or copy_path.parts[:2] != ("docs", "methodology")
+            ):
+                raise ValueError(
+                    "repository_copy must be a canonical relative path below docs/methodology"
+                )
+            if self.expected_document is None or copy_path.name != self.expected_document:
+                raise ValueError("repository_copy filename must match expected_document")
         verification_facts = (
             self.existence_verified_at,
             self.existence_verified_by,
@@ -81,7 +116,13 @@ class MethodologyRequirement(BaseModel):
     requirement_id: str
     statement: str
     source_refs: tuple[str, ...] = Field(min_length=1)
-    status: str
+    status: RequirementStatus
+
+    @model_validator(mode="after")
+    def _source_refs_are_unique(self) -> MethodologyRequirement:
+        if len(set(self.source_refs)) != len(self.source_refs):
+            raise ValueError("methodology requirement contains duplicate source references")
+        return self
 
 
 class PhaseMethodology(BaseModel):
@@ -102,9 +143,25 @@ class PhaseMethodology(BaseModel):
 class AuthorityRegistry(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    format_version: Literal["1.1.0"]
+    format_version: Literal["1.2.0"]
     sources: tuple[MethodologySource, ...]
     precedence: tuple[str, ...]
+
+    @model_validator(mode="after")
+    def _source_identities_and_precedence_are_valid(self) -> AuthorityRegistry:
+        identities = tuple(item.source_id for item in self.sources)
+        if len(set(identities)) != len(identities):
+            raise ValueError("methodology authority contains duplicate source IDs")
+        if not self.precedence or self.precedence[0] != "repository.methodology-contracts":
+            raise ValueError("methodology precedence must begin with repository contracts")
+        if len(set(self.precedence)) != len(self.precedence):
+            raise ValueError("methodology precedence contains duplicate source IDs")
+        unknown = set(self.precedence) - set(identities)
+        if unknown:
+            raise ValueError(
+                f"methodology precedence references unknown sources: {sorted(unknown)}"
+            )
+        return self
 
 
 class MethodologyDiscrepancy(BaseModel):
@@ -117,7 +174,7 @@ class MethodologyDiscrepancy(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    discrepancy_id: str
+    discrepancy_id: str = Field(pattern=r"^METH-DISC-\d{3}$")
     subject: str
     compared_sources: tuple[str, ...] = Field(min_length=2)
     statement: str
@@ -135,6 +192,8 @@ class MethodologyDiscrepancy(BaseModel):
     superseded_by: str | None = None
     withdrawal_reason: str | None = None
     migration_source: str | None = None
+    related_discrepancy_ids: tuple[str, ...] = ()
+    evidence_references: tuple[str, ...] = ()
 
     @model_validator(mode="after")
     def _status_requirements(self) -> MethodologyDiscrepancy:
@@ -192,7 +251,7 @@ class MethodologyDiscrepancy(BaseModel):
 class DiscrepancyRegistry(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    format_version: Literal["1.1.0"]
+    format_version: Literal["1.2.0"]
     discrepancies: tuple[MethodologyDiscrepancy, ...]
 
     @model_validator(mode="after")
@@ -201,6 +260,7 @@ class DiscrepancyRegistry(BaseModel):
         if len(set(identities)) != len(identities):
             raise ValueError("methodology discrepancies contain duplicate stable IDs")
         known = set(identities)
+        positions = {identity: index for index, identity in enumerate(identities)}
         successors = {
             item.discrepancy_id: item.superseded_by
             for item in self.discrepancies
@@ -216,6 +276,20 @@ class DiscrepancyRegistry(BaseModel):
                     raise ValueError(f"supersession chain is cyclic at: {cursor}")
                 seen.add(cursor)
                 cursor = successors.get(cursor)
+        for item in self.discrepancies:
+            if len(set(item.related_discrepancy_ids)) != len(item.related_discrepancy_ids):
+                raise ValueError(
+                    f"related_discrepancy_ids contains duplicates: {item.discrepancy_id}"
+                )
+            for related in item.related_discrepancy_ids:
+                if related not in known:
+                    raise ValueError(
+                        f"related_discrepancy_ids references an unknown record: {related}"
+                    )
+                if positions[related] >= positions[item.discrepancy_id]:
+                    raise ValueError(
+                        "new discrepancy records may link only to earlier append-only history"
+                    )
         return self
 
     def unresolved(self) -> tuple[MethodologyDiscrepancy, ...]:
@@ -241,7 +315,7 @@ class AutomationBoundary(BaseModel):
     ai_permitted: tuple[str, ...] = ()
     ai_prohibited: tuple[str, ...] = Field(min_length=1)
     blocking_dependencies: tuple[str, ...] = ()
-    status: Literal["implemented", "stub"]
+    status: AutomationStatus
     migration_source: str
 
 
@@ -265,7 +339,16 @@ class AutomationBoundariesRegistry(BaseModel):
 def load_phase_methodology(phase_id: str) -> PhaseMethodology:
     if phase_id not in {f"{value:02d}" for value in range(6)}:
         raise MethodologyError(f"unsupported methodology phase: {phase_id}")
-    return PhaseMethodology.model_validate(_load_packaged_yaml(f"phase{phase_id}.yaml"))
+    try:
+        phase = PhaseMethodology.model_validate(_load_packaged_yaml(f"phase{phase_id}.yaml"))
+        _validate_phase_source_refs(
+            phase,
+            load_authority_registry(),
+            load_discrepancy_registry(),
+        )
+    except ValueError as exc:
+        raise MethodologyError(f"phase methodology is invalid: {phase_id}: {exc}") from exc
+    return phase
 
 
 def load_authority_registry() -> AuthorityRegistry:
@@ -303,9 +386,35 @@ def _load_packaged_yaml(filename: str) -> object:
 def load_phase_methodology_from_checkout(root: Path, phase_id: str) -> PhaseMethodology:
     path = root / "config" / "methodology" / f"phase{phase_id}.yaml"
     try:
-        return PhaseMethodology.model_validate(_parse_yaml(path.read_text(encoding="utf-8")))
+        phase = PhaseMethodology.model_validate(_parse_yaml(path.read_text(encoding="utf-8")))
+        methodology_root = root / "config" / "methodology"
+        authority = AuthorityRegistry.model_validate(
+            _parse_yaml((methodology_root / "authority.yaml").read_text(encoding="utf-8"))
+        )
+        discrepancies = DiscrepancyRegistry.model_validate(
+            _parse_yaml((methodology_root / "discrepancies.yaml").read_text(encoding="utf-8"))
+        )
+        _validate_phase_source_refs(phase, authority, discrepancies)
+        return phase
     except (OSError, UnicodeError, yaml.YAMLError, ValueError) as exc:
-        raise MethodologyError(f"methodology file is invalid: {path}") from exc
+        raise MethodologyError(f"methodology file is invalid: {path}: {exc}") from exc
+
+
+def _validate_phase_source_refs(
+    phase: PhaseMethodology,
+    authority: AuthorityRegistry,
+    discrepancies: DiscrepancyRegistry,
+) -> None:
+    known = {item.source_id for item in authority.sources} | {
+        item.discrepancy_id for item in discrepancies.discrepancies
+    }
+    for requirement in phase.requirements:
+        unknown = set(requirement.source_refs) - known
+        if unknown:
+            raise ValueError(
+                f"{requirement.requirement_id} references unknown methodology sources: "
+                f"{sorted(unknown)}"
+            )
 
 
 class _UniqueKeyLoader(yaml.SafeLoader):

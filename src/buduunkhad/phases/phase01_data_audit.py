@@ -3,7 +3,7 @@
 Make the 79 inputs GIS-ready and stand up the EPSG:32647 master database:
 
 1. Import the license-boundary KMZ (№8) -> GeoPackage, reprojected to EPSG:32647.
-2. Generate the project buffers (500 m, 1 km, 5 km, 10 km, 20 km).
+2. Generate the project buffers (500 m, 1 km, 5 km, 10 km, 20 km, 25 km).
 3. Audit every raster's CRS / resolution / extent / nodata / band count.
 4. Create the Master GeoPackage schema (13 typed, empty layers).
 5. Write the CRS/Georeference QA/QC log and the Data Confidence Ranking.
@@ -580,7 +580,10 @@ class Phase01DataAudit(Phase):
             "Scan georeference residual and confidence logged",
             RECORDED_ACCEPTANCE,
             decision=Decision.PENDING,
-            note="Scan georeferencing performed in QGIS (Phase 1 sub-workflow); residuals logged by operator.",
+            note=(
+                "Phase 1 emits the QA/QC scaffold; final geology-scan georeferencing is a "
+                "Phase 3 human sub-workflow and requires operator GCP/residual evidence."
+            ),
         )
         report.add(
             "Master GPKG schema created",

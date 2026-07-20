@@ -377,7 +377,12 @@ def test_phase03_method_note_published_location(raw_archive):
     _ctx_, _phase, _result = _run_real(config, register)
     pdir = paths.phase_dir(config.output_root, "03")
     note_name = f"{config.register_prefix}_Phase3_Method_Note.md"
-    assert (pdir / "12_Phase3_QAQC_and_Handover" / note_name).exists()
+    note = pdir / "12_Phase3_QAQC_and_Handover" / note_name
+    assert note.exists()
+    note_text = note.read_text(encoding="utf-8")
+    assert "preliminary 17-layer support-evidence schema/package" in note_text
+    assert "authoritative 17-layer" not in note_text
+    assert "Layer presence is not evidence completeness" in note_text
     assert not (pdir / "01_Input_Working_Copy" / note_name).exists()
     assert note_name in {p.name for p in collect_deliverables(config.output_root)}
 
@@ -460,7 +465,12 @@ def test_phase03_qaqc_items_and_gate_go(raw_archive):
     assert any("CMCS/MRPAM 5/10/20/25 km buffer" in i for i in items)
     assert any("Preliminary Deposit Model" in i for i in items)
     assert any("Historical only" in i for i in items)
-    assert any("ready for Phase 4" in i for i in items)
+    assert any("preliminary support-evidence schema/package emitted" in i for i in items)
+    assert not any("ready for Phase 4" in i for i in items)
+    schema_item = next(
+        item for item in report.items if "preliminary support-evidence schema/package" in item.item
+    )
+    assert "not evidence completeness or scientific approval" in schema_item.note
     assert not report.has_failures
 
     decision = phase.gate(report, ctx)

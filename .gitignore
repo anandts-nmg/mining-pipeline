@@ -94,9 +94,12 @@ artifacts/
 *.xls
 *.xlsm
 *.ods
-# Word sources are never tracked — the methodology lives in the repo as markdown
-# (canonical, under docs/) + human-readable PDF; .docx stays on Drive.
+# Word sources are ignored by default. The reviewed methodology snapshot under
+# docs/methodology is an exact path-and-hash exception enforced by repository policy.
 *.docx
+!docs/methodology/
+!docs/methodology/**/
+!docs/methodology/**/*.docx
 *.doc
 *.docm
 *.odt

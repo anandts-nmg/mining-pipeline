@@ -127,6 +127,10 @@ def test_phase01_real_run(raw_archive):
     _assert_phase1_deliverables(pdir)
 
     report = phase.qaqc(ctx)
+    georef = next(item for item in report.items if "Scan georeference" in item.item)
+    assert "Phase 3 human sub-workflow" in georef.note
+    assert "performed in QGIS (Phase 1 sub-workflow)" not in georef.note
+    assert 25000 in config.boundary.buffers_m
     decision = phase.gate(report, ctx)
     assert decision.status is GateStatus.GO, decision.reason
 

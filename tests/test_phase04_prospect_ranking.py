@@ -256,6 +256,9 @@ def test_phase04_real_run_grid_and_gate(raw_archive):
     )
     assert PHASE04_DESKTOP_MATRIX_LABEL in method_text
     assert PHASE04_DESKTOP_MATRIX_LABEL in qaqc_text
+    assert "fixed-grid binary/full-weight **legacy comparator**" in method_text
+    assert "human-drawn prospect and ranged-judgment workflow" in method_text
+    assert "METH-DISC-041" in method_text
     assert "v9 §5 8-criterion matrix" not in method_text
     assert "v9 §5 8-criterion matrix" not in qaqc_text
 

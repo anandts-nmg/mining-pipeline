@@ -86,6 +86,31 @@ def test_gate_provisional_on_pending():
     assert "PENDING" in decision.reason
 
 
+def test_gate_can_require_pending_human_items_to_block() -> None:
+    report = new_report("03", "Test")
+    report.add("done", "ok", decision=Decision.PASS)
+    report.add("todo", "human completes", decision=Decision.PENDING)
+
+    blocked = evaluate_gate(report, pending_blocks=True)
+    assert blocked.status is GateStatus.BLOCKED
+    assert not blocked.provisional
+    assert not blocked.can_advance
+
+    overridden = evaluate_gate(report, pending_blocks=True, override=True)
+    assert overridden.status is GateStatus.GO
+    assert overridden.overridden
+    assert "OVERRIDDEN" in overridden.reason
+
+    strict = evaluate_gate(
+        report,
+        pending_blocks=True,
+        override=True,
+        pending_override_allowed=False,
+    )
+    assert strict.status is GateStatus.BLOCKED
+    assert not strict.overridden
+
+
 def test_gate_not_provisional_when_all_pass():
     report = new_report("00", "Test")
     report.add("done", "ok", decision=Decision.PASS)

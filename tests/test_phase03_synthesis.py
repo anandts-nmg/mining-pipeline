@@ -12,6 +12,7 @@ import openpyxl
 
 from buduunkhad.core import paths, vector_io
 from buduunkhad.core.gates import GateStatus
+from buduunkhad.core.qaqc import Decision
 from buduunkhad.phases.base import RunContext
 from buduunkhad.phases.phase00_archive import Phase00Archive
 from buduunkhad.phases.phase01_data_audit import Phase01DataAudit
@@ -455,7 +456,7 @@ def test_phase03_keeps_ai_handoff_evidence_out_of_legacy_schema_normalization(ra
     assert any("kept separate from legacy normalization" in note for note in phase._notes)
 
 
-def test_phase03_qaqc_items_and_gate_go(raw_archive):
+def test_phase03_pending_human_evidence_blocks_master_handoff(raw_archive):
     config, register, _raw = raw_archive
     ctx, phase, _result = _run_real(config, register)
     report = phase.qaqc(ctx)
@@ -463,7 +464,11 @@ def test_phase03_qaqc_items_and_gate_go(raw_archive):
     assert any("Master GIS" in i for i in items)
     assert any("coordinate QA/QC" in i for i in items)
     assert any("CMCS/MRPAM 5/10/20/25 km buffer" in i for i in items)
-    assert any("Preliminary Deposit Model" in i for i in items)
+    assert any("Preliminary Deposit Model and score-matrix templates emitted" in i for i in items)
+    assert any("Geology-scan georeferencing acceptance evidence complete" in i for i in items)
+    assert any(
+        "Licence-boundary identity, CRS and topology acceptance complete" in i for i in items
+    )
     assert any("Historical only" in i for i in items)
     assert any("preliminary support-evidence schema/package emitted" in i for i in items)
     assert not any("ready for Phase 4" in i for i in items)
@@ -474,7 +479,24 @@ def test_phase03_qaqc_items_and_gate_go(raw_archive):
     assert not report.has_failures
 
     decision = phase.gate(report, ctx)
-    assert decision.status is GateStatus.GO, decision.reason
+    assert decision.status is GateStatus.BLOCKED, decision.reason
+    assert "PENDING human completion" in decision.reason
+    assert not decision.can_advance
+
+    override_ctx = RunContext(
+        config=config,
+        register=register,
+        run_id="test03-override",
+        override=True,
+    )
+    overridden = phase.gate(report, override_ctx)
+    assert overridden.status is GateStatus.BLOCKED
+    assert not overridden.overridden
+
+    report.add("Synthetic scientific handoff failure", "must fail", decision=Decision.FAIL)
+    failed_with_override = phase.gate(report, override_ctx)
+    assert failed_with_override.status is GateStatus.BLOCKED
+    assert not failed_with_override.overridden
 
 
 def test_phase03_human_layer_reprojected_from_4326(raw_archive):

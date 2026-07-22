@@ -22,6 +22,7 @@ from datetime import date
 from pathlib import Path
 
 from buduunkhad.core import naming, registers, vector_io
+from buduunkhad.core.gates import GateDecision, evaluate_gate
 from buduunkhad.core.qaqc import RECORDED_ACCEPTANCE, Decision, QAQCReport, new_report
 from buduunkhad.phases.base import Phase, PhaseResult, RunContext
 
@@ -242,9 +243,10 @@ class Phase03GeologySynthesis(Phase):
     gate_condition = (
         "Geology/structure/occurrence/prospectivity/metallogenic context from #1-8,#53-72 in "
         "Master GIS; occurrence coordinate QA/QC done; CMCS 5/10/20/25 km buffer register ready; "
-        "Preliminary Deposit Model.docx + score matrix ready; all evidence stamped "
-        "'Historical only'; 17-layer support-evidence schema emitted. Human evidence completion "
-        "and review remain required before authoritative downstream use."
+        "Preliminary Deposit Model and score-matrix templates emitted; all evidence stamped "
+        "'Historical only'; 17-layer support-evidence schema emitted. Completed digitizing, "
+        "georeferencing evidence, deposit-model scoring and qualified review are required before "
+        "the Phase 03 handoff can advance."
     )
     custom_subfolders = [
         "01_Input_Working_Copy",
@@ -260,6 +262,17 @@ class Phase03GeologySynthesis(Phase):
         "11_Evidence_Scoring_and_DataGap",
         "12_Phase3_QAQC_and_Handover",
     ]
+
+    def gate(self, qaqc: QAQCReport, ctx: RunContext) -> GateDecision:
+        """Require the master's human/scientific Phase 03 handoff items to be complete."""
+
+        return evaluate_gate(
+            qaqc,
+            condition=self.gate_condition,
+            override=False,
+            pending_blocks=True,
+            pending_override_allowed=False,
+        )
 
     # populated during run() for qaqc()
     _evidence_layers: list[str]
@@ -1030,10 +1043,30 @@ class Phase03GeologySynthesis(Phase):
             ),
         )
         report.add(
-            "Preliminary Deposit Model.docx and score matrix ready",
+            "Preliminary Deposit Model and score-matrix templates emitted",
             RECORDED_ACCEPTANCE,
             decision=Decision.PENDING,
             note="Template + 6-model evidence table + 8x6 score matrix emitted; human to complete.",
+        )
+        report.add(
+            "Geology-scan georeferencing acceptance evidence complete",
+            RECORDED_ACCEPTANCE,
+            decision=Decision.PENDING,
+            note=(
+                "Source/target CRS, GCPs, transformation, residual/RMSE, derivative hashes and "
+                "named qualified review remain required under METH-READY-004; the handling "
+                "decision is recorded by METH-DISC-055."
+            ),
+        )
+        report.add(
+            "Licence-boundary identity, CRS and topology acceptance complete",
+            RECORDED_ACCEPTANCE,
+            decision=Decision.PENDING,
+            note=(
+                "Exact bundle/derivative identity, parse, CRS, topology, measurements, buffers "
+                "and qualified review remain required under METH-READY-005; the handling "
+                "decision is recorded by METH-DISC-057."
+            ),
         )
         report.add(
             "All historical evidence stamped validation_status = 'Historical only'",

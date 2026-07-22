@@ -30,7 +30,7 @@ supplied only at execution time.
 
 Command-line entry points
 -------------------------
-    buduunkhad list | info | validate | run | publish | backup-raw
+    buduunkhad list | info | validate | methodology-status | run | publish | backup-raw
     buduunkhad ai snapshot-create | snapshot-verify | prepare | approve-egress
                   | execute | ingest-response | process-response | evaluate
                   | inspect-job
@@ -40,8 +40,8 @@ Where things live
 -----------------
 - Agent permissions, safety and implemented-state summary: AGENTS.md (the only
   tracked Markdown file).
-- Methodology authority and unresolved discrepancies: config/methodology/
-  (versioned YAML contracts).
+- Methodology authority, append-only decisions and operational readiness:
+  config/methodology/ (versioned YAML contracts).
 - Reviewed methodology source mirrors: docs/methodology/. Each approved
   document exception is bound to an exact repository path, SHA-256, byte size
   and verified snapshot identity by the authority and repository-policy contracts.

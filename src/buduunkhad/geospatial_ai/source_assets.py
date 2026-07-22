@@ -16,6 +16,12 @@ from buduunkhad.geospatial_ai.path_safety import StorageRoots
 from buduunkhad.geospatial_ai.render import render_pdf_page
 
 _RASTER_EXTENSIONS = {".tif", ".tiff", ".png", ".jpg", ".jpeg"}
+_DRIVER_MEDIA_TYPES = {
+    "BMP": "image/bmp",
+    "GTiff": "image/tiff",
+    "JPEG": "image/jpeg",
+    "PNG": "image/png",
+}
 
 
 class SourceAssetError(ValueError):
@@ -112,7 +118,10 @@ def _raster_record(
                 relative_path=relative_path,
                 sha256=digest,
                 size=source.stat().st_size,
-                media_type=mimetypes.guess_type(source.name)[0] or "application/octet-stream",
+                media_type=_DRIVER_MEDIA_TYPES.get(
+                    dataset.driver,
+                    mimetypes.guess_type(source.name)[0] or "application/octet-stream",
+                ),
                 width=dataset.width,
                 height=dataset.height,
                 band_count=dataset.count,

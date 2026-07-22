@@ -34,7 +34,7 @@ boundaries:
   - phase_id: "02"
     automation_category: desktop-deterministic
     deterministic_authority:
-      - Reprojection, per-product clipping, COG output, spectral band math, terrain derivatives, the adopted ASTER SOP chain, hydrology products, the machine lineament draft.
+      - Reprojection, per-product clipping, COG output, spectral band math, terrain derivatives, the frozen ASTER support-evidence chain, hydrology products, the machine lineament draft.
     human_review_boundary:
       - Interpretation of validated imagery; adoption of any new threshold or calculation.
     ai_permitted:
@@ -42,7 +42,7 @@ boundaries:
     ai_prohibited:
       - Changing existing calculations or thresholds without an approved source and methodology record.
     blocking_dependencies:
-      - KOMPSAT RPC orthorectification and Sentinel index inputs depend on external tooling (method notes).
+      - KOMPSAT remains excluded under METH-READY-002; ASTER HDF remains dataset-blocked under METH-READY-003 while other Phase 02 products may proceed.
       - Lineament and outcrop digitizing rules are expert inputs.
     status: implemented
     migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
@@ -58,6 +58,7 @@ boundaries:
       - Scientific approval; automatic merge into legacy Phase 03 evidence.
     blocking_dependencies:
       - Human-digitized layers and the completed 03A score matrix.
+      - METH-READY-004, METH-READY-005 and METH-READY-006 block scientific handoff and cannot be bypassed by the ordinary operational override.
     status: partially-implemented
     migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
   - phase_id: "04"
@@ -70,7 +71,7 @@ boundaries:
       - Consuming AI-lifecycle or handoff evidence without the approved authoritative adapter.
       - Recalibrating the adopted scoring matrix as an incidental change.
     blocking_dependencies:
-      - Authoritative handoff integration adapter (deferred).
+      - The master-aligned prospect-polygon target is specified in phase04_migration.yaml but remains unintegrated under METH-READY-004 through METH-READY-007.
     status: legacy-comparator
     migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
   - phase_id: "05"
@@ -84,8 +85,7 @@ boundaries:
     ai_prohibited:
       - Flight or safety decisions, mission constraints, accuracy calculations.
     blocking_dependencies:
-      - Physical drone flights.
-      - DJI Terra raw-LiDAR decode dependency.
+      - Phase 05 is parked under METH-READY-001 pending physical acquisition, operational approvals and a separately reviewed implementation.
     status: stub
     migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
   - phase_id: "06"

@@ -72,7 +72,14 @@ def test_phase02_real_run(raw_archive):
         )
     )
     assert list((pdir / "01_Sentinel2_SNAP13" / "04_Indices").glob("*.md"))
-    assert list((pdir / "02_ASTER_Workflow_v5" / "04_Index_Calculation").glob("*.md"))
+    aster_notes = list((pdir / "02_ASTER_Workflow_v5" / "04_Index_Calculation").glob("*.md"))
+    assert aster_notes
+    aster_note = aster_notes[0].read_text(encoding="utf-8")
+    assert "The exact master requires" in aster_note
+    assert "unlocated and obsolete as authority" in aster_note
+    assert "frozen support-evidence chain" in aster_note
+    assert "geologist's QGIS SOP" not in aster_note
+    assert "reference `ASTER_Project` outputs" not in aster_note
     assert list((pdir / "03_KOMPSAT2_ILWIS368_QGIS" / "04_Orthorectification").glob("*.md"))
 
     # KOMPSAT bands + ASTER HDF are method-note rows (not processed in-pipeline)

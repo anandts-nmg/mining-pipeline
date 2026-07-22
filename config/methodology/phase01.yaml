@@ -15,16 +15,16 @@ requirements:
     status: adopted
   - requirement_id: P01-GEOREF-REVIEW-001
     statement: Phase 01 creates the georeferencing QA/QC scaffold; Phase 03 owns final georeferencing of its geology scans, and deterministic residual checks plus qualified human review remain required.
-    source_refs: [repository.methodology-contracts, phase01.guide, phase03.guide, METH-DISC-028, METH-DISC-039, METH-DISC-044]
-    status: adopted-with-unresolved-discrepancy
+    source_refs: [repository.methodology-contracts, methodology.master-v9, phase01.guide, phase03.guide, METH-DISC-028, METH-DISC-039, METH-DISC-055, METH-DISC-066]
+    status: adopted
   - requirement_id: P01-EVIDENCE-COMPLETENESS-001
     statement: A present raster, EPSG label, empty schema or overlay assertion cannot replace source CRS, control points, transform, residual/RMSE, visual-alignment and reviewer evidence.
-    source_refs: [repository.methodology-contracts, METH-DISC-044]
-    status: adopted-with-unresolved-discrepancy
+    source_refs: [repository.methodology-contracts, METH-DISC-055]
+    status: adopted
   - requirement_id: P01-LICENCE-QAQC-001
     statement: Licence-boundary use remains provisional until registered integrity, parsing, coordinate, CRS, topology, measurement and buffer checks are complete.
-    source_refs: [repository.methodology-contracts, METH-DISC-046]
-    status: adopted-with-unresolved-discrepancy
+    source_refs: [repository.methodology-contracts, METH-DISC-057]
+    status: adopted
   - requirement_id: P01-AI-GCP-001
     statement: AI may suggest map control evidence but cannot authoritatively georeference or accept registration.
     source_refs: [repository.methodology-contracts, phase01.guide]

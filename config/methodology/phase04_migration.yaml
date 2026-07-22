@@ -1,0 +1,80 @@
+format_version: 1.0.0
+phase_id: "04"
+authority_source: methodology.master-v9
+authority_sha256: 86ab7c8926aeccf032835c1b1ba9a00518740cdfaea2a1ad01313e4bfcb3b65e
+scoring_source: phase04.guide
+class_band_source: methodology.master-v9
+decision_sources: [METH-DISC-060, METH-DISC-068]
+status: specified-not-integrated
+legacy_comparator_status: retained-regression-only
+target_geometry: human-reviewed-prospect-polygons
+criteria:
+  - criterion_id: geology
+    maximum_points: 20
+    scoring_semantics: ranged-prospect-level
+  - criterion_id: occurrence
+    maximum_points: 15
+    scoring_semantics: ranged-prospect-level
+  - criterion_id: geochemistry
+    maximum_points: 20
+    scoring_semantics: ranged-prospect-level
+  - criterion_id: remote_sensing
+    maximum_points: 15
+    scoring_semantics: ranged-prospect-level
+  - criterion_id: structure
+    maximum_points: 10
+    scoring_semantics: ranged-prospect-level
+  - criterion_id: deposit_model_fit
+    maximum_points: 10
+    scoring_semantics: ranged-prospect-level
+  - criterion_id: access
+    maximum_points: 5
+    scoring_semantics: ranged-prospect-level
+  - criterion_id: confidence
+    maximum_points: 5
+    scoring_semantics: ranged-prospect-level
+class_bands:
+  - class_id: A
+    minimum_score: 75
+    maximum_score: 100
+  - class_id: B
+    minimum_score: 55
+    maximum_score: 74
+  - class_id: C
+    minimum_score: 35
+    maximum_score: 54
+  - class_id: D
+    minimum_score: 0
+    maximum_score: 34
+required_input_contracts:
+  - Phase 03 source traceability and completion evidence passes the strict handoff gate.
+  - Human-reviewed prospect geometry preserves original evidence and edit provenance.
+  - The completed 03A deposit-model matrix is bound to the same evidence package.
+  - Access, safety and workability evidence is present or explicitly recorded as a data gap.
+required_fields:
+  - dominant_deposit_model
+  - model_confidence
+  - missing_model_evidence
+  - validation_priority
+  - confidence
+  - limitation
+  - data_gap
+  - next_action
+  - reviewer
+  - review_timestamp
+ai_policy:
+  - AI may propose draft prospect geometry, evidence links, rationale, limitations and scores.
+  - Deterministic code validates geometry, provenance, arithmetic and class assignment.
+  - A named qualified human owns reviewed prospect geometry and scientific score judgments.
+  - AI output cannot publish, approve or satisfy the Phase 04 handoff gate.
+activation_requirements:
+  - Implement this contract as a separate authoritative workflow; do not mutate the legacy comparator.
+  - Calibrate ranged scoring against a methodology-owner-approved, provenance-bound human reference set; the adopted sources specify no fixed reference-count requirement.
+  - Add resolver-backed Phase 03 accepted-evidence integration.
+  - Complete licence-boundary and georeferencing validation evidence.
+  - Obtain methodology-owner and project-geologist acceptance of the calibrated implementation.
+blocking_readiness_ids:
+  - METH-READY-004
+  - METH-READY-005
+  - METH-READY-006
+  - METH-READY-007

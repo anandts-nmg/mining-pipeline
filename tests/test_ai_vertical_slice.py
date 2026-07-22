@@ -75,6 +75,7 @@ from buduunkhad.geospatial_ai.snapshots import (
     create_snapshot_manifest,
     verify_snapshot_manifest,
 )
+from buduunkhad.geospatial_ai.source_assets import register_raster_source
 from buduunkhad.geospatial_ai.stitching import StitchCandidate, deduplicate_candidates
 from buduunkhad.geospatial_ai.tiles import TileParameters
 from tests.support.providers import CapturingLiveProvider
@@ -133,6 +134,31 @@ def _write_legend_crop(path: Path) -> Path:
     ) as dataset:
         dataset.write(data)
     return path
+
+
+def test_source_registration_uses_detected_bmp_media_type_for_jpg_name(
+    ai_roots: StorageRoots,
+) -> None:
+    source = ai_roots.require_snapshot_root() / "mislabeled-scan.jpg"
+    data = np.zeros((3, 4, 4), dtype=np.uint8)
+    with rasterio.open(
+        source,
+        "w",
+        driver="BMP",
+        width=4,
+        height=4,
+        count=3,
+        dtype="uint8",
+    ) as dataset:
+        dataset.write(data)
+
+    original = source.read_bytes()
+    record = register_raster_source(source, roots=ai_roots, target_crs=TARGET_CRS)
+
+    assert record.relative_path == "mislabeled-scan.jpg"
+    assert record.media_type == "image/bmp"
+    assert record.sha256 == sha256_file(source)
+    assert source.read_bytes() == original
 
 
 def _prepare(

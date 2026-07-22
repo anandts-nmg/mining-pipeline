@@ -2,13 +2,13 @@ format_version: 1.0.0
 phase_id: "05"
 requirements:
   - requirement_id: P05-STUB-PRESERVATION-001
-    statement: The detailed Phase 05 guide exists, but the registered phase remains a stub until a separately approved implementation adopts its operational contracts.
-    source_refs: [repository.methodology-contracts, phase05.guide, METH-DISC-004]
-    status: adopted-with-unresolved-discrepancy
+    statement: Phase 05 is explicitly parked as a registered stub under METH-READY-001 until a separately approved implementation has physical campaign inputs and operational authority.
+    source_refs: [methodology.master-v9, repository.methodology-contracts, phase05.guide, METH-DISC-048]
+    status: adopted
   - requirement_id: P05-SOURCE-PROVENANCE-001
-    statement: References to content supplied in "this chat" are not durable methodology authority for flight, GSD, overlap, control or accuracy parameters.
-    source_refs: [repository.methodology-contracts, phase05.guide, METH-DISC-042]
-    status: adopted-with-unresolved-discrepancy
+    statement: The exact master governs Phase 05; the reference-only guide and its "this chat" provenance cannot authorize flight, GSD, overlap, control or accuracy parameters.
+    source_refs: [methodology.master-v9, repository.methodology-contracts, phase05.guide, METH-DISC-042, METH-DISC-069]
+    status: adopted
   - requirement_id: P05-NO-NEW-THRESHOLD-001
     statement: No flight, survey, overlap, control, accuracy, HSE or mission threshold becomes production policy solely because it appears in the guide.
     source_refs: [repository.methodology-contracts, phase05.guide, METH-DISC-042]

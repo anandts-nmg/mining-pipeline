@@ -51,12 +51,18 @@ def evaluate_gate(
     *,
     condition: str = "",
     override: bool = False,
+    pending_blocks: bool = False,
+    pending_override_allowed: bool = True,
 ) -> GateDecision:
     """Derive a :class:`GateDecision` from a QA/QC report.
 
     - any failed item                 -> BLOCKED (or GO if ``override``)
-    - items present, none failed       -> GO (``provisional`` if any item is PENDING)
+    - items present, none failed       -> GO (``provisional`` if any item is PENDING), unless
+                                          ``pending_blocks`` requires completed human evidence
     - no items recorded                -> BLOCKED (nothing was checked)
+
+    ``pending_override_allowed`` applies only to pending-item blocks. A phase with a
+    non-overridable scientific handoff can also call this function with ``override=False``.
     """
     if qaqc.has_failures:
         failed = [i.item for i in qaqc.items if i.decision.value == "Fail"]
@@ -79,6 +85,15 @@ def evaluate_gate(
     if pending:
         base = condition or "All automated QA/QC checks passed"
         reason = f"{base}; {len(pending)} item(s) PENDING human completion."
+        if pending_blocks:
+            if override and pending_override_allowed:
+                return GateDecision(
+                    qaqc.phase_id,
+                    GateStatus.GO,
+                    f"OVERRIDDEN - {reason}",
+                    overridden=True,
+                )
+            return GateDecision(qaqc.phase_id, GateStatus.BLOCKED, reason)
         return GateDecision(qaqc.phase_id, GateStatus.GO, reason, provisional=True)
 
     reason = condition or "All QA/QC checks passed."

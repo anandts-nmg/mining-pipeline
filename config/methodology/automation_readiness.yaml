@@ -1,0 +1,113 @@
+format_version: 1.0.0
+interpretation: Operational prerequisites and exclusions; not unresolved methodology authority, scientific approval or a gate decision.
+obligations:
+  - obligation_id: METH-READY-001
+    subject: phase05-parked
+    affected_phases: ["05"]
+    status: parked
+    blocks_phase_completion: true
+    decision: Keep Phase 05 registered as a stub and outside the current automation scope.
+    required_evidence:
+      - Accepted Phase 04 A/B prospect polygons from the future authoritative prospect workflow.
+      - Acquired drone, LiDAR, GNSS/control, flight-log and environmental records.
+      - Flight, HSE and operational approvals plus a separately reviewed implementation.
+    deterministic_next_steps:
+      - None in the current scope; do not infer or implement mission parameters.
+    required_human_authority:
+      - project owner
+      - qualified flight and HSE authorities
+    source_refs: [methodology.master-v9, phase05.guide, METH-DISC-048, METH-DISC-069]
+  - obligation_id: METH-READY-002
+    subject: kompsat-licence-and-readiness-exclusion
+    affected_phases: ["02", "05"]
+    status: excluded
+    blocks_phase_completion: false
+    decision: Exclude KOMPSAT imagery from processing, provider egress and publication until licence and technical readiness evidence are complete; Phase 02 may finish other datasets with an explicit data gap.
+    required_evidence:
+      - KOMPSATEULAForm_3.1.pdf with owner/legal interpretation.
+      - Exact bundle identity, complete RPC/EPH/TXT sidecars and orthorectification readiness evidence.
+    deterministic_next_steps:
+      - Continue checksum, inventory and sidecar-completeness reporting without opening or transmitting imagery.
+    required_human_authority:
+      - project owner and legal for licence interpretation
+      - geospatial data custodian for technical readiness
+    source_refs: [methodology.master-v9, METH-DISC-049, METH-DISC-056]
+  - obligation_id: METH-READY-003
+    subject: aster-hdf-technical-validation
+    affected_phases: ["02"]
+    status: blocked-dataset
+    blocks_phase_completion: false
+    decision: Generated ASTER HDF derivatives remain provisional support evidence and unavailable for authoritative downstream use until exact-source technical validation succeeds; other Phase 02 products may proceed.
+    required_evidence:
+      - Exact source SHA-256 and size.
+      - HDF4 open result, subdataset inventory, geolocation and CRS checks.
+      - Reprojection and output-validation record tied to the same source identity.
+    deterministic_next_steps:
+      - Implement a fail-closed local readiness validator and persist its machine-readable result.
+    required_human_authority:
+      - geospatial data custodian
+      - project geologist for interpretation acceptance
+    source_refs: [methodology.master-v9, METH-DISC-056, METH-DISC-063]
+  - obligation_id: METH-READY-004
+    subject: phase03-georeference-acceptance
+    affected_phases: ["03", "04"]
+    status: blocked-human-evidence
+    blocks_phase_completion: true
+    decision: Treat every scan lacking complete georeference evidence as non-spatial or preliminary; it cannot satisfy Phase 03 or feed authoritative Phase 04.
+    required_evidence:
+      - Exact source and derivative hashes.
+      - Source/target CRS, GCPs, transformation, resampling, residuals/RMSE and visual-alignment checks.
+      - Named qualified reviewer, review time and decision.
+    deterministic_next_steps:
+      - Detect source content, prepare controlled derivatives, propose GCPs and calculate residual metrics without assigning acceptance.
+    required_human_authority:
+      - qualified geospatial reviewer
+      - project geologist
+    source_refs: [methodology.master-v9, METH-DISC-050, METH-DISC-055]
+  - obligation_id: METH-READY-005
+    subject: licence-boundary-scientific-acceptance
+    affected_phases: ["01", "02", "03", "04"]
+    status: blocked-human-evidence
+    blocks_phase_completion: true
+    decision: Deterministic boundary and buffer scaffolds may be generated, but downstream scientific handoff remains blocked until the exact run-bound boundary validation is accepted.
+    required_evidence:
+      - Registered source identity and run SHA-256.
+      - Parse, coordinate, CRS, topology, area/perimeter and buffer validation results.
+      - Exact derivative identities and named qualified review.
+    deterministic_next_steps:
+      - Extend Phase 01 QA/QC to seal and report every deterministic check without inventing reviewer acceptance.
+    required_human_authority:
+      - geospatial data custodian
+      - qualified geospatial reviewer
+    source_refs: [methodology.master-v9, METH-DISC-057]
+  - obligation_id: METH-READY-006
+    subject: phase03-scientific-handoff
+    affected_phases: ["03", "04"]
+    status: blocked-human-evidence
+    blocks_phase_completion: true
+    decision: Keep Phase 03 preliminary until human digitizing/interpretation and the 03A deposit-model matrix are reviewed; AI drafts and ACCEPTED_EVIDENCE do not satisfy this obligation.
+    required_evidence:
+      - Reviewed source-specific geology, structure, occurrence and alteration interpretations.
+      - Completed and reviewed 03A deposit-model matrix.
+      - Explicit Phase 03 scientific handoff record.
+    deterministic_next_steps:
+      - Prepare review packages, validate geometry/provenance and calculate reproducible summaries.
+    required_human_authority:
+      - project geologist
+    source_refs: [methodology.master-v9, phase03.guide, METH-DISC-040, METH-DISC-062, METH-DISC-067]
+  - obligation_id: METH-READY-007
+    subject: phase04-authoritative-activation
+    affected_phases: ["04"]
+    status: blocked-human-evidence
+    blocks_phase_completion: true
+    decision: Retain the fixed-grid comparator and keep the master-aligned prospect-polygon workflow unintegrated until its activation contract is met.
+    required_evidence:
+      - Resolver-backed accepted Phase 03 evidence and completed 03A model.
+      - A methodology-owner-approved, provenance-bound human reference set and calibration results; no fixed reference-count requirement is adopted.
+      - Human-reviewed prospect geometry and scoring acceptance.
+    deterministic_next_steps:
+      - Implement the separate target workflow only after upstream evidence contracts can be resolved exactly.
+    required_human_authority:
+      - methodology owner
+      - project geologist
+    source_refs: [methodology.master-v9, phase04.guide, phase04_migration.yaml, METH-DISC-003, METH-DISC-060, METH-DISC-068]

@@ -139,6 +139,27 @@ def validate(config: Path = _CONFIG_OPT) -> None:
     raise typer.Exit(0)
 
 
+@app.command("methodology-status")
+def methodology_status(config: Path = _CONFIG_OPT) -> None:
+    """Print master-first operational readiness and registered missing inputs as JSON."""
+
+    from buduunkhad.geospatial_ai.readiness import (
+        build_methodology_readiness_report,
+        render_methodology_readiness_report,
+    )
+
+    cfg, _register = load_project(config)
+    if cfg.manifest_path is None:
+        typer.secho("Project configuration has no raw manifest path.", fg="red", err=True)
+        raise typer.Exit(2)
+    try:
+        report = build_methodology_readiness_report(cfg.manifest_path)
+    except (OSError, ValueError) as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(2) from exc
+    typer.echo(render_methodology_readiness_report(report), nl=False)
+
+
 @app.command("publish")
 def publish_deliverables(
     config: Path = _CONFIG_OPT,

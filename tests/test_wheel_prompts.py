@@ -51,12 +51,15 @@ def test_installed_wheel_loads_packaged_prompt_registry(tmp_path: Path) -> None:
         "buduunkhad/schema_data/contracts.json",
         "buduunkhad/methodology_data/authority.yaml",
         "buduunkhad/methodology_data/automation_boundaries.yaml",
+        "buduunkhad/methodology_data/automation_readiness.yaml",
         "buduunkhad/methodology_data/discrepancies.yaml",
         "buduunkhad/methodology_data/phase00.yaml",
         "buduunkhad/methodology_data/phase01.yaml",
         "buduunkhad/methodology_data/phase02.yaml",
+        "buduunkhad/methodology_data/phase02_processing.yaml",
         "buduunkhad/methodology_data/phase03.yaml",
         "buduunkhad/methodology_data/phase04.yaml",
+        "buduunkhad/methodology_data/phase04_migration.yaml",
         "buduunkhad/methodology_data/phase05.yaml",
     }
     assert expected_resources <= names
@@ -86,7 +89,10 @@ import buduunkhad
 from buduunkhad.ai.prompts import PromptRegistry, default_schema_registry
 from buduunkhad.geospatial_ai.methodology import (
     load_authority_registry,
+    load_automation_readiness,
     load_discrepancy_registry,
+    load_phase02_processing_contract,
+    load_phase04_migration_contract,
     load_phase_methodology,
 )
 
@@ -98,18 +104,25 @@ vertical = registry.get("vertical.geological-feature-proposal", "1.0.0")
 authority = load_authority_registry()
 phase05 = load_phase_methodology("05")
 discrepancies = load_discrepancy_registry()
+phase04_migration = load_phase04_migration_contract()
+readiness = load_automation_readiness()
+phase02_processing = load_phase02_processing_contract()
 assert prompt.components[0].text
 assert critic.components[0].text
 assert vertical.components[0].text
 assert authority.sources
 assert phase05.phase_id == "05"
-assert len(discrepancies.discrepancies) == 47
+assert len(discrepancies.discrepancies) == 69
 assert any(
     item.discrepancy_id == "METH-DISC-033"
     for item in discrepancies.discrepancies
 )
-assert discrepancies.discrepancies[-1].discrepancy_id == "METH-DISC-047"
-assert discrepancies.unresolved()
+assert discrepancies.discrepancies[-1].discrepancy_id == "METH-DISC-069"
+assert len(discrepancies.unresolved()) == 0
+assert len(discrepancies.historical_unresolved()) == 22
+assert len(readiness.obligations) == 7
+assert phase02_processing.scientific_use == "support-evidence-only"
+assert phase04_migration.status == "specified-not-integrated"
 print(prompt.identity.sha256)
 """
     result = subprocess.run(

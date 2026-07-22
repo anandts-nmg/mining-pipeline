@@ -74,7 +74,7 @@ _SENTINEL = {74, 77, 78}  # received composites/ratio stacks -> reproject+clip(l
 _BASEMAP_NOCLIP = {75}  # 2.4 m Google basemap -> reproject only
 _BASEMAP_CLIP = {76}  # 0.15 m high-res basemap -> reproject + clip 1 km
 _KOMPSAT_BANDS = {24, 28, 32, 36, 40}  # method-note only (RPC ortho is external)
-_ASTER_HDF = {73}  # automated SOP chain when an HDF4-capable gdalwarp exists, else method note
+_ASTER_HDF = {73}  # frozen support chain when HDF4-capable gdalwarp exists, else method note
 
 _DEM_CLIP_M = 5000
 _BASEMAP_CLIP_M = 1000
@@ -310,7 +310,7 @@ class Phase02RemoteSensing(Phase):
             f"{self._derivatives} terrain derivative(s); {self._skipped} skipped (no overlap); "
             f"{self._failed} failed"
             + (
-                f"; ASTER SOP chain: {self._aster_targets} target polygon(s)"
+                f"; ASTER frozen support chain: {self._aster_targets} target polygon(s)"
                 if self._aster_processed
                 else "; ASTER: method-note fallback"
             )
@@ -542,22 +542,21 @@ class Phase02RemoteSensing(Phase):
         }
 
     # ------------------------------------------------------------------ #
-    # ASTER SOP chain (#73): extract → project → indices → score → targets
+    # ASTER frozen support chain (#73): extract → project → indices → score → targets
     # ------------------------------------------------------------------ #
 
     def _do_aster(self, ctx: RunContext, rec, pdir: Path, stats_aoi) -> dict[str, object]:  # type: ignore[no-untyped-def]
-        """Run the automated ASTER SOP chain, degrading to the method note on any obstacle.
+        """Run the frozen ASTER support chain, degrading to the method note on any obstacle.
 
-        ``stats_aoi`` (the 5 km buffer GeoDataFrame, or None) is the anomaly-threshold
-        statistics basis — the geologist's decided licence-area subset (2026-07-07, 02-3):
-        thresholds from AOI pixels, applied full-scene. Degradation (missing working copy, no
-        HDF4-capable gdalwarp, extraction/processing failure) is recorded as a Method-note
-        row — never a batch failure: ASTER is support evidence and the manual method note
-        remains a methodology-acceptable fallback.
+        ``stats_aoi`` (the 5 km buffer GeoDataFrame, or None) is the frozen METH-DISC-021
+        anomaly-statistics basis: thresholds from AOI pixels, applied full-scene. Degradation
+        (missing working copy, no HDF4-capable gdalwarp, extraction/processing failure) is
+        recorded as a Method-note row rather than a batch failure; ASTER remains an explicit
+        provisional data gap under METH-READY-003.
         """
         row = self._base_row(
             rec,
-            action="HDF4 extract → EPSG:32647 → alteration indices → target score (SOP)",
+            action="HDF4 extract → EPSG:32647 → frozen alteration support score",
             clip_label="Full scene",
             compress="DEFLATE",
         )
@@ -599,7 +598,7 @@ class Phase02RemoteSensing(Phase):
             derivative=f"{len(res.index_files)} indices + {len(res.score_files) - 1} binaries "
             f"+ score + {res.n_targets} target polygon(s)",
             decision="Pass",
-            note="SOP chain: 11 bands → 7 indices → mean+1.5σ binaries → weighted score "
+            note="Frozen support chain: 11 bands → 7 indices → mean+1.5σ binaries → weighted score "
             "(2·clay+ferric+chlorite+silica) → targets ≥3.",
         )
         return row
@@ -862,7 +861,7 @@ class Phase02RemoteSensing(Phase):
             + (f" Flow notes: {'; '.join(self._flow_skips)}." if self._flow_skips else ""),
         )
         report.add(
-            "ASTER alteration indices + porphyry target score produced (SOP chain)",
+            "ASTER alteration indices + porphyry target score produced (frozen support chain)",
             RECORDED_ACCEPTANCE,
             decision=Decision.PASS if self._aster_processed else Decision.NA,
             note=(
@@ -935,18 +934,20 @@ _SENTINEL_NOTE = (
 )
 
 _ASTER_NOTE = (
-    "# Phase 02 — ASTER L1B alteration processing (automated SOP chain)\n\n"
-    "The pipeline automates the geologist's QGIS SOP (`ASTER_QGIS_402_SOP_non_geologist_MN`,\n"
-    "2026-06-03 — the recipe behind the reference `ASTER_Project` outputs) for #73: 11 swath\n"
+    "# Phase 02 — ASTER L1B alteration processing (frozen support-evidence chain)\n\n"
+    "The exact master requires the ASTER HDF/band/project/index/score/class/mask sequence. The\n"
+    "standalone `ASTER_QGIS_402_SOP_non_geologist_MN` is unlocated and obsolete as authority\n"
+    "under METH-DISC-063. For reproducibility, the repository retains its historical numeric\n"
+    "algorithm from METH-DISC-020/021 without claiming independent reference-output validation:\n"
+    "11 swath\n"
     "bands (VNIR/SWIR/TIR) GCP-warped to EPSG:32647 via an HDF4-capable `gdalwarp`\n"
     "(QGIS-bundled; `BUDUUNKHAD_GDAL_BIN` overrides discovery), aligned to the 30 m SWIR grid\n"
     "(bilinear), then:\n\n"
-    "- **Indices (SOP Appendix A):** Ferric_Iron=B02/B01 · Clay_AlOH=B05/B06 (≡ Sericite/\n"
+    "- **Frozen indices:** Ferric_Iron=B02/B01 · Clay_AlOH=B05/B06 (≡ Sericite/\n"
     "  Illite) · Advanced_Argillic=B04/B06 · Chlorite_Epidote_MgOH=B07/B08 (≡ Carbonate/\n"
     "  Mg-OH) · Silica=B13/B12 · Quartz_Rich=B14/B12 · NDVI=(B3N−B02)/(B3N+B02)\n"
     "- **Anomaly binaries:** index > mean + 1.5·σ with the statistics computed on the\n"
-    "  **licence-area subset (5 km buffer AOI)** — the geologist's decided basis (2026-07-07,\n"
-    "  02-3), matching how the reference outputs were thresholded on licence-clipped rasters —\n"
+    "  **licence-area subset (5 km buffer AOI)** — the frozen METH-DISC-021 statistics basis —\n"
     "  and the threshold applied full-scene (thresholds + basis logged in the\n"
     "  `ASTER_Anomaly_Threshold_Register`).\n"
     "- **Porphyry target score:** 2·clay + ferric + chlorite + silica (0–5); **target\n"

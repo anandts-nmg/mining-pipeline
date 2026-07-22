@@ -15,7 +15,15 @@ runner = CliRunner()
 def test_help_lists_stable_core_commands() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
-    for command in ("run", "list", "info", "validate", "phase00", "phase99"):
+    for command in (
+        "run",
+        "list",
+        "info",
+        "validate",
+        "methodology-status",
+        "phase00",
+        "phase99",
+    ):
         assert command in result.stdout
 
 

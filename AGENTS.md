@@ -9,14 +9,20 @@ belong in the existing versioned YAML, JSON, CSV, or Python contracts, not in ad
 Apply authority in this order:
 
 1. This file for agent permissions, safety, engineering process, and the implemented-state summary.
-2. `config/methodology/` for adopted methodology requirements, source authority, automation
-   boundaries, unresolved discrepancies, and append-only decision history.
-3. `config/project.yaml`, `config/input_register.csv`, and `config/raw_manifest.csv` for project
+2. The exact byte-bound `methodology.master-v9` source registered in
+   `config/methodology/authority.yaml` for workflow and scientific-methodology requirements.
+3. `config/methodology/` for the master-conforming implementation contracts, automation
+   boundaries, operational readiness, and append-only discrepancy/decision history.
+4. `config/project.yaml`, `config/input_register.csv`, and `config/raw_manifest.csv` for project
    constants and registered raw inputs.
-4. Tests and code for currently implemented behavior.
-5. Byte-bound repository methodology mirrors under `docs/methodology/`, interpreted through
+5. Tests and code for currently implemented behavior.
+6. Other byte-bound repository methodology mirrors under `docs/methodology/`, interpreted through
    `config/methodology/authority.yaml`.
-6. External methodology reached read-only through `BUDUUNKHAD_WORKFLOW_DOCS_ROOT`.
+7. External methodology reached read-only through `BUDUUNKHAD_WORKFLOW_DOCS_ROOT`.
+
+Repository contracts may make traceable safety additions or register reconciled inputs, but they
+must not contradict the exact master. Phase and operator guides refine the master only where they
+are consistent with it; conflicting guide text is reference evidence rather than policy.
 
 Do not silently resolve conflicts. Add a new linked record to
 `config/methodology/discrepancies.yaml`, state the sources, impact, proposed resolution, required
@@ -48,9 +54,17 @@ dirty worktree. Never invent authority, identity, review, approval, dates, evide
 - Phase 03 has a substantial deterministic scaffold and an opt-in AI review handoff, but remains
   scientifically incomplete and dependent on qualified human georeferencing, digitizing,
   interpretation, and deposit-model work.
+- Pending master-required Phase 03 human/scientific handoff items block advancement; the ordinary
+  operational override does not turn them into completed evidence.
 - Phase 04 is a deterministic fixed-grid legacy comparator. It is not the hand-drawn prospect
   workflow described by the Phase 04 guide and is not a replacement for Phase 10 final ranking.
-- Phases 05–11 and 99 are registered stubs; registration is not implementation.
+- The master-aligned Phase 04 prospect-polygon target is specified separately in
+  `config/methodology/phase04_migration.yaml` and is not integrated into the comparator.
+- Twenty-two historical methodology ambiguities are closed by linked decisions in discrepancy
+  contract v1.4.0. Missing data and human acceptance were not fabricated: seven operational
+  prerequisites and exclusions remain explicit in `config/methodology/automation_readiness.yaml`.
+- Phase 05 is deliberately parked. Phases 05–11 and 99 are registered stubs; registration is not
+  implementation.
 - The default profile is `legacy`: AI disabled, provider `disabled`, and external egress false.
 - The keyless AI-to-QGIS slice can prepare inspectable packages, ingest saved responses, validate
   and transform pixel geometry, produce `AI_DRAFT` GIS/QGIS outputs, and evaluate them offline.

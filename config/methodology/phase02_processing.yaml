@@ -1,0 +1,43 @@
+format_version: 1.0.0
+phase_id: "02"
+authority_source: methodology.master-v9
+decision_sources: [METH-DISC-052, METH-DISC-053]
+policy_status: adopted-support-evidence-contract
+scientific_use: support-evidence-only
+basemap_assets:
+  - input_number: 75
+    role: district-context-visual-reference
+    operation: reproject-full-extent
+    clip_buffer_m: null
+    rationale: Preserve the registered 2.4 m district-context image as a visual-reference product; it is not an analytical mask or positive prospectivity evidence.
+  - input_number: 76
+    role: detailed-surface-visual-reference
+    operation: reproject-and-clip
+    clip_buffer_m: 1000
+    rationale: Use the larger guide-permitted 1 km context for the 0.15 m detailed surface basemap while preventing unbounded publication extent.
+dem_profiles:
+  - profile_id: alos-palsar-12p5m-support-v1
+    input_number: 12
+    nominal_resolution_m: 12.5
+    clip_buffer_m: 5000
+    raster_derivatives: true
+    vector_hydrology: true
+    sink_treatment: fill-depressions
+    contour_interval_m: 20.0
+    stream_threshold_cells: 1000
+    minimum_basin_area_ha: 25.0
+    rationale: Freeze the existing deterministic legacy-support implementation so reruns are reproducible; these parameters are not a mineralization threshold or scientific approval.
+  - profile_id: aster-gdem-30m-support-v1
+    input_number: 9
+    nominal_resolution_m: 30.0
+    clip_buffer_m: 5000
+    raster_derivatives: true
+    vector_hydrology: false
+    sink_treatment: not-applied
+    contour_interval_m: null
+    stream_threshold_cells: null
+    minimum_basin_area_ha: null
+    rationale: Retain ASTER GDEM as a secondary raster-terrain comparison; the current pipeline does not derive the authoritative vector hydrology package from it.
+parameter_policy:
+  - These values freeze reproducible support-evidence behavior; they do not establish ore, grade, target or field-decision thresholds.
+  - A future scientific recalibration must create a new versioned profile and discrepancy decision rather than mutating these values silently.

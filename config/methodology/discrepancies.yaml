@@ -1,4 +1,4 @@
-format_version: 1.2.0
+format_version: 1.4.0
 # Append-only methodology decision register. Complete history — unresolved, resolved,
 # superseded, and withdrawn records. Resolved history is never erased; a later issue
 # gets a new linked record instead of reopening one. Historical records migrated from
@@ -711,3 +711,385 @@ discrepancies:
       - Preserve non-canonical copies as historical evidence rather than deleting them silently.
     evidence_references:
       - workflow-folder-id:1lKI9SxFot2kQdnULCtXoP2uQ2WHq2krX
+  - discrepancy_id: METH-DISC-048
+    subject: phase05-parked-decision
+    compared_sources:
+      - METH-DISC-004
+      - methodology.master-v9
+      - AGENTS.md implemented-state boundary
+    statement: The current automation scope needs an explicit disposition for the unimplemented Phase 05 campaign.
+    operational_impact: Phase 05 remains visible without implying that flight planning, acquisition, safety approval or processing exists.
+    status: resolved
+    resolution: Park Phase 05 as a registered stub; no Phase 05 production implementation begins until a separately authorized task supplies accepted Phase 04 priorities, physical campaign data and operational approvals.
+    rationale: Parking is the only truthful current disposition because software cannot create physical acquisition evidence or flight/HSE authority.
+    approver: repository-owner directive
+    resolved_on: "2026-07-22"
+    effective_version: methodology-contracts-v1.4.0
+    implementation_evidence: config/methodology/automation_readiness.yaml METH-READY-001; existing Phase 05 stub remains unchanged.
+    resolves_discrepancy_ids: [METH-DISC-004]
+    related_discrepancy_ids: [METH-DISC-004]
+  - discrepancy_id: METH-DISC-049
+    subject: kompsat-fail-closed-exclusion
+    compared_sources:
+      - METH-DISC-029
+      - config/raw_manifest.csv input 23
+      - methodology.master-v9
+    statement: A deterministic disposition is required while the KOMPSAT licence document remains absent.
+    operational_impact: KOMPSAT cannot silently enter processing, external egress, publication or scientific interpretation, while unrelated Phase 02 work need not stop.
+    status: resolved
+    resolution: Exclude KOMPSAT imagery from processing, provider egress and publication until the exact EULA and technical-readiness evidence are supplied; permit only inventory, integrity and sidecar-completeness reporting and record an explicit data gap.
+    rationale: Exclusion does not infer a licence, waive legal review or claim technical readiness; it converts an ambiguous missing document into a fail-closed execution rule.
+    approver: repository-owner directive
+    resolved_on: "2026-07-22"
+    effective_version: methodology-contracts-v1.4.0
+    implementation_evidence: config/methodology/automation_readiness.yaml METH-READY-002; config/methodology/phase02.yaml KOMPSAT exclusion requirement.
+    resolves_discrepancy_ids: [METH-DISC-029]
+    related_discrepancy_ids: [METH-DISC-029, METH-DISC-045]
+  - discrepancy_id: METH-DISC-050
+    subject: detected-content-handling-for-mislabeled-scans
+    compared_sources:
+      - METH-DISC-030
+      - config/input_register.csv inputs 3-6
+      - repository source-asset contract
+    statement: The four explanatory-text scans require a deterministic rule for filename/content-type disagreement.
+    operational_impact: Readers and request packages can preserve truthful media identity without modifying the raw files.
+    status: resolved
+    resolution: Preserve the original .jpg filenames and bytes, open them by detected BMP content, record the detected media type, and allow only separately hashed controlled derivatives with exact source lineage.
+    rationale: Content detection is a technical fact rather than geological approval; retaining original identity while truthfully labelling derivatives is lossless and reversible.
+    approver: repository-owner directive
+    resolved_on: "2026-07-22"
+    effective_version: methodology-contracts-v1.4.0
+    implementation_evidence: source-asset detected-media regression and config/methodology/automation_readiness.yaml METH-READY-004.
+    resolves_discrepancy_ids: [METH-DISC-030]
+    related_discrepancy_ids: [METH-DISC-030, METH-DISC-044]
+  - discrepancy_id: METH-DISC-051
+    subject: execution-inventory-authority
+    compared_sources:
+      - METH-DISC-033
+      - config/input_register.csv
+      - config/raw_manifest.csv
+    statement: Automation needs one execution inventory without falsely designating either duplicate external workbook canonical.
+    operational_impact: Run provenance no longer depends on choosing an unreconciled Google Drive workbook.
+    status: resolved
+    resolution: Make the version-controlled input register and raw manifest the sole execution inventory contract; retain both external workbooks as non-authoritative historical evidence and designate neither one canonical.
+    rationale: Repository contracts already have higher execution precedence than external workbooks, are reviewable and versioned, and avoid an unsupported canonical-copy claim.
+    approver: repository-owner directive
+    resolved_on: "2026-07-22"
+    effective_version: methodology-contracts-v1.4.0
+    implementation_evidence: AGENTS.md authority order; config/input_register.csv; config/raw_manifest.csv; deterministic ingest loaders.
+    resolves_discrepancy_ids: [METH-DISC-033]
+    related_discrepancy_ids: [METH-DISC-033, METH-DISC-043, METH-DISC-047]
+  - discrepancy_id: METH-DISC-052
+    subject: asset-specific-basemap-extent-policy
+    compared_sources:
+      - METH-DISC-037
+      - phase02.basemap-qgis402-guide
+      - src/buduunkhad/phases/phase02_remote_sensing.py
+    statement: The two registered basemap assets need stable, asset-specific extent behavior.
+    operational_impact: Basemap output extent becomes reproducible without changing evidence interpretation.
+    status: resolved
+    resolution: Reproject input 75 at full extent as district-context visual reference and reproject/clip input 76 to the permitted 1 km buffer as detailed surface visual reference; neither product is positive prospectivity evidence.
+    rationale: This records the existing deterministic handling explicitly and selects the conservative larger guide-permitted context for the detailed basemap without inventing a geological threshold.
+    approver: repository-owner directive
+    resolved_on: "2026-07-22"
+    effective_version: methodology-contracts-v1.4.0
+    implementation_evidence: config/methodology/phase02_processing.yaml basemap_assets; Phase 02 input-number routing.
+    resolves_discrepancy_ids: [METH-DISC-037]
+    related_discrepancy_ids: [METH-DISC-016, METH-DISC-037]
+  - discrepancy_id: METH-DISC-053
+    subject: versioned-dem-support-parameters
+    compared_sources:
+      - METH-DISC-038
+      - phase02.dem-qgis402-guide
+      - src/buduunkhad/core/hydrology.py
+      - src/buduunkhad/phases/phase02_remote_sensing.py
+    statement: Existing DEM processing parameters require an explicit reproducibility contract distinct from scientific adoption.
+    operational_impact: Reruns can reproduce the legacy support layers and cannot silently mutate terrain/hydrology parameters.
+    status: resolved
+    resolution: Freeze the current support-evidence profiles in phase02_processing.yaml, including product role, 5 km clip, ALOS 20 m contours, fill-depressions, 1000-cell stream extraction and 25 ha basin filter; ASTER GDEM remains secondary raster terrain without vector hydrology.
+    rationale: The contract records implemented behavior rather than claiming these values are ore, target or field-decision thresholds; scientific recalibration requires a new versioned decision.
+    approver: repository-owner directive
+    resolved_on: "2026-07-22"
+    effective_version: methodology-contracts-v1.4.0
+    implementation_evidence: config/methodology/phase02_processing.yaml and exact-value contract tests against the current Phase 02 implementation.
+    resolves_discrepancy_ids: [METH-DISC-038]
+    related_discrepancy_ids: [METH-DISC-038]
+  - discrepancy_id: METH-DISC-054
+    subject: repository-run-provenance-over-stale-workbook-status
+    compared_sources:
+      - METH-DISC-043
+      - config/input_register.csv
+      - config/raw_manifest.csv
+      - run-local manifests and sealed output artifacts
+    statement: Automation needs a deterministic response to stale external workbook status rows without rewriting historical evidence.
+    operational_impact: Present files are neither ignored nor accepted solely because an old workbook status says so.
+    status: resolved
+    resolution: Treat external inventory and issue-register statuses as historical observations only; derive current execution state from the version-controlled registers, immutable source identity and sealed run artifacts, preserving the workbooks unchanged.
+    rationale: This avoids repeated work and stale-path binding while respecting the append-only history and without inventing row-level corrections that were not independently verified.
+    approver: repository-owner directive
+    resolved_on: "2026-07-22"
+    effective_version: methodology-contracts-v1.4.0
+    implementation_evidence: config/input_register.csv; config/raw_manifest.csv; source/run manifest and publication sealing contracts.
+    resolves_discrepancy_ids: [METH-DISC-043]
+    related_discrepancy_ids: [METH-DISC-033, METH-DISC-043, METH-DISC-047]
+  - discrepancy_id: METH-DISC-055
+    subject: fail-closed-georeference-evidence-policy
+    compared_sources:
+      - METH-DISC-044
+      - methodology.master-v9 Appendix E
+      - phase03.guide
+    statement: The pipeline requires one deterministic status for scans whose georeference acceptance evidence is incomplete.
+    operational_impact: Unaccepted scans cannot become spatial evidence or advance Phase 03 merely because a raster exists or overlays visually.
+    status: resolved
+    resolution: Treat affected scans as non-spatial narrative context or preliminary evidence until exact source/derivative identity, CRS, GCP, transform, residual, visual-check and named-review evidence is complete; block the Phase 03 scientific handoff meanwhile.
+    rationale: This resolves the handling rule without fabricating residuals or reviewer approval and follows the master's explicit non-spatial-context fallback.
+    approver: repository-owner directive
+    resolved_on: "2026-07-22"
+    effective_version: methodology-contracts-v1.4.0
+    implementation_evidence: config/methodology/automation_readiness.yaml METH-READY-004; Phase 03 strict pending-item gate and QA/QC records.
+    resolves_discrepancy_ids: [METH-DISC-044]
+    related_discrepancy_ids: [METH-DISC-028, METH-DISC-044]
+  - discrepancy_id: METH-DISC-056
+    subject: fail-closed-aster-kompsat-readiness-policy
+    compared_sources:
+      - METH-DISC-045
+      - methodology.master-v9
+      - repository Phase 02 implementation
+    statement: ASTER and KOMPSAT need explicit dataset-level readiness states instead of a phase-wide ambiguous claim.
+    operational_impact: Other deterministic Phase 02 products can proceed while unavailable sensor outputs remain explicit data gaps.
+    status: resolved
+    resolution: Require exact-source technical validation before ASTER HDF outputs are available for authoritative downstream use; exclude KOMPSAT processing until both technical and licence evidence are complete; never infer readiness from filename, bundle presence or a method note.
+    rationale: Dataset-scoped fail-closed readiness preserves useful automation without overstating incomplete sensor evidence.
+    approver: repository-owner directive
+    resolved_on: "2026-07-22"
+    effective_version: methodology-contracts-v1.4.0
+    implementation_evidence: config/methodology/automation_readiness.yaml METH-READY-002 and METH-READY-003; Phase 02 requirements.
+    resolves_discrepancy_ids: [METH-DISC-045]
+    related_discrepancy_ids: [METH-DISC-029, METH-DISC-034, METH-DISC-045]
+  - discrepancy_id: METH-DISC-057
+    subject: fail-closed-boundary-acceptance-policy
+    compared_sources:
+      - METH-DISC-046
+      - methodology.master-v9
+      - Phase 00 and Phase 01 integrity contracts
+    statement: Boundary scaffolding and scientific boundary acceptance need distinct states.
+    operational_impact: Deterministic setup can proceed while no downstream scientific handoff falsely claims the unreviewed boundary is accepted.
+    status: resolved
+    resolution: Permit deterministic run-bound parsing, reprojection, topology, measurement and buffer generation, but keep downstream scientific handoff blocked until the exact source and derivative identities plus all checks receive named qualified review.
+    rationale: Separating machine validation from reviewer acceptance maximizes automation without treating a runtime hash or valid geometry as authority.
+    approver: repository-owner directive
+    resolved_on: "2026-07-22"
+    effective_version: methodology-contracts-v1.4.0
+    implementation_evidence: config/methodology/automation_readiness.yaml METH-READY-005; Phase 01 boundary QA/QC and downstream Phase 03 strict gate.
+    resolves_discrepancy_ids: [METH-DISC-046]
+    related_discrepancy_ids: [METH-DISC-046]
+  - discrepancy_id: METH-DISC-058
+    subject: runtime-exclusion-of-unreconciled-register-duplicates
+    compared_sources:
+      - METH-DISC-047
+      - version-controlled methodology and input contracts
+      - run-local manifests
+    statement: Automation needs a safe rule for duplicate external QA/QC and register files whose lineage is not reconciled.
+    operational_impact: An arbitrary external duplicate cannot silently become execution or approval authority.
+    status: resolved
+    resolution: Exclude all seven duplicate external pairs from authoritative runtime resolution; use version-controlled contracts and newly generated run-local records, and require exact ID/hash/lineage ingestion before any external workbook can be promoted later.
+    rationale: This avoids arbitrary canonical selection, preserves every external file as historical evidence and makes future promotion explicit and auditable.
+    approver: repository-owner directive
+    resolved_on: "2026-07-22"
+    effective_version: methodology-contracts-v1.4.0
+    implementation_evidence: AGENTS.md authority order; config/methodology/automation_readiness.yaml; run-local provenance contracts.
+    resolves_discrepancy_ids: [METH-DISC-047]
+    related_discrepancy_ids: [METH-DISC-033, METH-DISC-043, METH-DISC-047]
+  - discrepancy_id: METH-DISC-059
+    subject: byte-bound-master-edition-identity
+    compared_sources:
+      - METH-DISC-002
+      - methodology.master-v9
+      - config/methodology/authority.yaml
+    statement: The master filename and internal heading have different version labels, but automation needs one stable authority identity.
+    operational_impact: A label-only comparison cannot displace or ambiguously identify the adopted methodology bytes.
+    status: resolved
+    resolution: Identify the adopted master by its exact repository path, SHA-256 and authority source ID; retain the filename v9 and internal-heading v8 labels as source metadata rather than treating either label as authority.
+    rationale: The repository-owner master-first directive selects the verified master bytes, while the authority contract makes the identity independently reproducible.
+    approver: repository-owner directive
+    resolved_on: "2026-07-22"
+    effective_version: methodology-contracts-v1.4.0
+    implementation_evidence: config/methodology/authority.yaml exact master identity and precedence; AGENTS.md authority order.
+    resolves_discrepancy_ids: [METH-DISC-002]
+    related_discrepancy_ids: [METH-DISC-002, METH-DISC-032]
+  - discrepancy_id: METH-DISC-060
+    subject: master-aligned-phase04-target-selection
+    compared_sources:
+      - METH-DISC-003
+      - methodology.master-v9
+      - phase04.guide
+      - src/buduunkhad/phases/phase04_prospect_ranking.py
+    statement: Phase 04 needs an authoritative target without silently changing the existing fixed-grid comparator.
+    operational_impact: The intended prospect geometry is explicit while current scoring and outputs remain unchanged.
+    status: resolved
+    resolution: Adopt the master's human-reviewed prospect-polygon workflow as the target Phase 04 method and retain the existing fixed-grid implementation only as an isolated regression comparator until the target workflow is separately activated.
+    rationale: This resolves which workflow governs without allowing unreviewed evidence, geometry or scoring changes into current production behavior.
+    approver: repository-owner directive
+    resolved_on: "2026-07-22"
+    effective_version: methodology-contracts-v1.4.0
+    implementation_evidence: config/methodology/phase04_migration.yaml; Phase 04 legacy-comparator isolation tests.
+    resolves_discrepancy_ids: [METH-DISC-003]
+    related_discrepancy_ids: [METH-DISC-003, METH-DISC-006, METH-DISC-041]
+  - discrepancy_id: METH-DISC-061
+    subject: historical-phase02-composite-retirement
+    compared_sources:
+      - METH-DISC-005
+      - methodology.master-v9
+      - src/buduunkhad/phases/phase02_remote_sensing.py
+    statement: The historical weighted composite lacks authoritative structure and lithology derivations.
+    operational_impact: Automation must not calculate a scientifically misleading composite from undocumented inputs.
+    status: resolved
+    resolution: Retire the historical weighted composite as a non-authoritative reference; deterministic Phase 02 may emit only individually derived measurements whose inputs and formulas are explicitly bound.
+    rationale: The master requires reproducible processing and preserved evidence but does not authorize the missing derivations; keeping the composite disabled prevents fabricated provenance.
+    approver: repository-owner directive
+    resolved_on: "2026-07-22"
+    effective_version: methodology-contracts-v1.4.0
+    implementation_evidence: config/methodology/phase02.yaml and the disabled historical weighted-composite path in src/buduunkhad/phases/phase02_remote_sensing.py.
+    resolves_discrepancy_ids: [METH-DISC-005]
+    related_discrepancy_ids: [METH-DISC-005, METH-DISC-020]
+  - discrepancy_id: METH-DISC-062
+    subject: phase03-non-overridable-scientific-handoff
+    compared_sources:
+      - METH-DISC-031
+      - methodology.master-v9
+      - src/buduunkhad/core/gates.py
+      - src/buduunkhad/phases/phase03_geology_synthesis.py
+    statement: A single gate policy must distinguish deterministic scaffolds from Phase 03's required scientific handoff.
+    operational_impact: Downstream workflow cannot consume incomplete Phase 03 scientific evidence merely because automated scaffolding completed.
+    status: resolved
+    resolution: Preserve provisional advance for deterministic scaffolds generally, but require Phase 03 to block while master-required human georeferencing, digitizing, deposit-model and scientific-handoff QA/QC items remain pending; the ordinary operational override cannot waive them.
+    rationale: A global pending-item block would deadlock legitimate scaffold phases, while the master makes completed Phase 03 evidence a prerequisite for authoritative downstream use.
+    approver: repository-owner directive
+    resolved_on: "2026-07-22"
+    effective_version: methodology-contracts-v1.4.0
+    implementation_evidence: Phase 03 strict gate override and focused gate regression tests.
+    resolves_discrepancy_ids: [METH-DISC-031]
+    related_discrepancy_ids: [METH-DISC-031, METH-DISC-040]
+  - discrepancy_id: METH-DISC-063
+    subject: master-authority-over-unlocated-aster-sop
+    compared_sources:
+      - METH-DISC-034
+      - methodology.master-v9
+      - phase02.aster-sop
+      - src/buduunkhad/core/aster.py
+    statement: The unlocated standalone ASTER SOP cannot remain an adopted authority over the exact byte-bound master.
+    operational_impact: The missing document no longer blocks authority selection, while technical dataset validation remains explicit.
+    status: resolved
+    resolution: Mark the unlocated standalone ASTER SOP obsolete and use the exact master plus repository-controlled implementation contracts for the ASTER processing sequence; do not claim the historical reference outputs were independently reproduced.
+    rationale: Master-first precedence resolves the source conflict without pretending the missing SOP or reference evidence was verified.
+    approver: repository-owner directive
+    resolved_on: "2026-07-22"
+    effective_version: methodology-contracts-v1.4.0
+    implementation_evidence: config/methodology/authority.yaml marks phase02.aster-sop obsolete; active ASTER code and generated notes label the numeric algorithm as a frozen support-evidence contract; METH-READY-003 preserves exact-source technical validation.
+    resolves_discrepancy_ids: [METH-DISC-034]
+    related_discrepancy_ids: [METH-DISC-020, METH-DISC-021, METH-DISC-034, METH-DISC-045]
+  - discrepancy_id: METH-DISC-064
+    subject: registered-sentinel-received-derivative-branch
+    compared_sources:
+      - METH-DISC-035
+      - methodology.master-v9
+      - config/input_register.csv
+      - config/raw_manifest.csv
+    statement: The registered inputs are received Sentinel composites or ratio products rather than the raw band stack described by the operator guide.
+    operational_impact: Phase 02 can use the actual registered products without inventing raw-band preprocessing lineage.
+    status: resolved
+    resolution: Adopt the registered, integrity-bound received Sentinel derivatives as the available Phase 02 inputs and use the master's explicit received-derivative branch; do not claim or fabricate raw-band preprocessing.
+    rationale: The master permits recording received derivative metadata, and the canonical register contains received products rather than the complete raw band stack.
+    approver: repository-owner directive
+    resolved_on: "2026-07-22"
+    effective_version: methodology-contracts-v1.4.0
+    implementation_evidence: config/input_register.csv and config/raw_manifest.csv identities; config/methodology/phase02.yaml limitations; Phase 02 received-product handling.
+    resolves_discrepancy_ids: [METH-DISC-035]
+    related_discrepancy_ids: [METH-DISC-035]
+  - discrepancy_id: METH-DISC-065
+    subject: basemap-guide-lifecycle-phase-interpretation
+    compared_sources:
+      - METH-DISC-036
+      - methodology.master-v9
+      - phase02.basemap-qgis402-guide
+    statement: The basemap guide's Phase 10 self-label conflicts with the master's Phase 02 assignment and lifecycle Phase 10 meaning.
+    operational_impact: Basemap preprocessing cannot be assigned to the final-ranking lifecycle phase by a guide label.
+    status: resolved
+    resolution: Interpret the guide only as a Phase 02 basemap operator reference; its self-label does not assign work to lifecycle Phase 10 and cannot override the master's phase assignment.
+    rationale: The master assigns the registered basemaps and their preprocessing to Phase 02, while lifecycle Phase 10 is final integration and ranking.
+    approver: repository-owner directive
+    resolved_on: "2026-07-22"
+    effective_version: methodology-contracts-v1.4.0
+    implementation_evidence: config/methodology/authority.yaml precedence and reference-only guide status; config/methodology/phase02.yaml.
+    resolves_discrepancy_ids: [METH-DISC-036]
+    related_discrepancy_ids: [METH-DISC-036]
+  - discrepancy_id: METH-DISC-066
+    subject: phase01-generated-method-wording-alignment
+    compared_sources:
+      - METH-DISC-039
+      - methodology.master-v9
+      - src/buduunkhad/phases/phase01_data_audit.py
+    statement: Active Phase 01 output wording must reflect the adopted 25 km context and Phase 03 scan-georeferencing ownership.
+    operational_impact: Operators receive accurate phase ownership and buffer context without a false georeferencing-completion claim.
+    status: resolved
+    resolution: Align active Phase 01 generated text with the master's 5/10/20/25 km context and Phase 03 ownership of final geology-scan georeferencing.
+    rationale: The wording correction follows the exact master and leaves missing human georeferencing acceptance explicit under METH-READY-004.
+    approver: repository-owner directive
+    resolved_on: "2026-07-22"
+    effective_version: methodology-contracts-v1.4.0
+    implementation_evidence: Active Phase 01 method note and QA/QC text plus regression assertions.
+    resolves_discrepancy_ids: [METH-DISC-039]
+    related_discrepancy_ids: [METH-DISC-018, METH-DISC-028, METH-DISC-039, METH-DISC-044]
+  - discrepancy_id: METH-DISC-067
+    subject: phase03-preliminary-evidence-and-gate-truthfulness
+    compared_sources:
+      - METH-DISC-040
+      - methodology.master-v9
+      - phase03.guide
+      - src/buduunkhad/phases/phase03_geology_synthesis.py
+    statement: Structurally valid Phase 03 files cannot be represented as complete scientific evidence or a downstream-ready handoff.
+    operational_impact: Empty or incomplete layers remain useful scaffolds without being promoted through a misleading gate.
+    status: resolved
+    resolution: Describe Phase 03 outputs only as preliminary support-evidence structures and block the Phase 03 gate while master-required human or scientific-completeness items remain pending.
+    rationale: Structural validity does not establish completed digitizing, accepted georeferencing, a completed deposit-model matrix or scientific approval.
+    approver: repository-owner directive
+    resolved_on: "2026-07-22"
+    effective_version: methodology-contracts-v1.4.0
+    implementation_evidence: Phase 03 generated wording and strict gate regression tests; AGENTS.md implemented-state boundary.
+    resolves_discrepancy_ids: [METH-DISC-040]
+    related_discrepancy_ids: [METH-DISC-031, METH-DISC-040]
+  - discrepancy_id: METH-DISC-068
+    subject: separate-phase04-prospect-polygon-contract
+    compared_sources:
+      - METH-DISC-041
+      - methodology.master-v9
+      - phase04.guide
+      - src/buduunkhad/phases/phase04_prospect_ranking.py
+    statement: The guide's ranged prospect-level scoring and the fixed-grid comparator's binary cell scoring are distinct methods.
+    operational_impact: Matching criterion names cannot be mistaken for equivalent geometry or score semantics.
+    status: resolved
+    resolution: Specify the master-aligned target as human-reviewed prospect polygons with ranged prospect-level criteria, while retaining the fixed-grid binary/full-weight implementation solely as a legacy comparator; require an approved provenance-bound calibration set without adopting the historical six-prospect count as a sourced requirement.
+    rationale: The separate target contract removes semantic ambiguity without asserting that calibration, accepted evidence or integration already exists. Neither the exact master nor the adopted Phase 04 guide specifies a fixed count of human reference prospects.
+    approver: repository-owner directive
+    resolved_on: "2026-07-22"
+    effective_version: methodology-contracts-v1.4.0
+    implementation_evidence: config/methodology/phase04_migration.yaml and its resolver/readiness requirements.
+    resolves_discrepancy_ids: [METH-DISC-041]
+    related_discrepancy_ids: [METH-DISC-003, METH-DISC-006, METH-DISC-041, METH-DISC-060]
+  - discrepancy_id: METH-DISC-069
+    subject: phase05-master-only-operational-authority
+    compared_sources:
+      - METH-DISC-042
+      - methodology.master-v9
+      - phase05.guide
+    statement: The detailed Phase 05 guide includes unverified chat-origin parameters that cannot authorize flight, survey, processing or HSE behavior.
+    operational_impact: Phase 05 remains safely parked without importing unsupported operational thresholds.
+    status: resolved
+    resolution: Treat the exact master as the sole adopted Phase 05 methodology and the detailed guide as reference-only; no guide-only flight, GSD, overlap, control, processing or safety parameter is authoritative.
+    rationale: This removes the unverified chat-origin guide from the authority path while preserving it as evidence, and it does not fabricate the campaign data or qualified approvals needed for implementation.
+    approver: repository-owner directive
+    resolved_on: "2026-07-22"
+    effective_version: methodology-contracts-v1.4.0
+    implementation_evidence: config/methodology/authority.yaml reference-only status; METH-READY-001 parks Phase 05.
+    resolves_discrepancy_ids: [METH-DISC-042]
+    related_discrepancy_ids: [METH-DISC-004, METH-DISC-042, METH-DISC-048]

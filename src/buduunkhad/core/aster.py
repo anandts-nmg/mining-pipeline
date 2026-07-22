@@ -1,9 +1,12 @@
-"""ASTER L1B alteration processing (Phase 02 — the geologist's QGIS SOP, automated).
+"""ASTER L1B alteration processing (Phase 02 frozen support-evidence algorithm).
 
-Implements the ASTER SOP (``ASTER_QGIS_402_SOP_non_geologist_MN``, 2026-06-03 — the recipe
-that produced the human reference ``ASTER_Project`` outputs): HDF4 band extraction →
-EPSG:32647 GCP warp → common 30 m analysis grid → band-ratio alteration indices →
-mean + k·σ anomaly binaries → weighted porphyry target score → target polygons.
+The exact master requires HDF import, band extraction, UTM47 projection, indices, separate raw
+scores/classes/binary masks, and support-only QA/QC outputs. This module retains the repository's
+historical numeric implementation for reproducibility: HDF4 band extraction → EPSG:32647 GCP
+warp → common 30 m analysis grid → band-ratio alteration indices → mean + k·σ anomaly binaries
+→ weighted porphyry target score → target polygons. The unlocated standalone ASTER SOP is
+obsolete under METH-DISC-063, so this module does not claim independent reproduction of that
+document or its historical reference outputs.
 
 The HDF4 → GeoTIFF step needs a GDAL build with the **HDF4 driver**, which the pip rasterio
 wheel lacks. We shell out to a QGIS-bundled ``gdalwarp`` (discovered via
@@ -12,8 +15,8 @@ everything else in rasterio/numpy. Callers must degrade to the method note when
 :func:`find_hdf4_gdalwarp` returns ``None`` or :class:`AsterError` is raised.
 
 Every output is **support evidence only — not ore proof** (invariant #8). The parameters are
-deterministic constants from the SOP, exposed on :class:`AsterParams` so any tuning is an
-explicit, logged config change rather than hidden judgment.
+frozen repository constants from historical decisions METH-DISC-020/021, exposed on
+:class:`AsterParams` so any future tuning requires an explicit versioned methodology decision.
 """
 
 from __future__ import annotations
@@ -25,7 +28,7 @@ from pathlib import Path
 
 import numpy as np
 
-#: Bands the SOP indices need: band name -> (swath, subdataset). VNIR 15 m, SWIR 30 m, TIR 90 m.
+#: Bands the frozen index chain needs: band name -> (swath, subdataset).
 BAND_SUBDATASETS: dict[str, tuple[str, str]] = {
     "B01": ("VNIR_Swath", "ImageData1"),
     "B02": ("VNIR_Swath", "ImageData2"),
@@ -40,7 +43,7 @@ BAND_SUBDATASETS: dict[str, tuple[str, str]] = {
     "B14": ("TIR_Swath", "ImageData14"),
 }
 
-#: SOP Appendix-A ratio indices: output name -> (numerator band, denominator band).
+#: Frozen ratio indices: output name -> (numerator band, denominator band).
 #: Sericite/Illite (B05/B06) and Carbonate/Mg-OH (B07/B08) share formulas with Clay and
 #: Chlorite respectively — computed once under the canonical name (noted in the QA register).
 RATIO_INDICES: dict[str, tuple[str, str]] = {
@@ -52,7 +55,7 @@ RATIO_INDICES: dict[str, tuple[str, str]] = {
     "Quartz_Rich_B14_B12": ("B14", "B12"),
 }
 
-#: SOP §13.2 target-score components: short name -> (index name, weight).
+#: Frozen target-score components: short name -> (index name, weight).
 SCORE_COMPONENTS: dict[str, tuple[str, int]] = {
     "clay": ("Clay_AlOH_B05_B06", 2),
     "ferric": ("Ferric_Iron_B02_B01", 1),
@@ -69,13 +72,13 @@ class AsterError(RuntimeError):
 
 @dataclass(frozen=True)
 class AsterParams:
-    """SOP constants — deterministic defaults; changes are explicit config, not judgment."""
+    """Frozen support defaults; changes require a versioned methodology decision."""
 
     epsg: int = 32647
-    grid_res: float = 30.0  # common analysis grid = SWIR resolution (SOP §8.1)
-    threshold_k: float = 1.5  # anomaly threshold = mean + k*std (SOP §13.1)
-    score_min: int = 3  # polygonize score >= this (SOP §13.3)
-    min_area_ha: float = 0.5  # drop noise polygons below this (SOP §13.3)
+    grid_res: float = 30.0  # frozen common analysis grid = SWIR resolution
+    threshold_k: float = 1.5  # frozen anomaly threshold = mean + k*std
+    score_min: int = 3  # frozen polygonization score floor
+    min_area_ha: float = 0.5  # frozen support-layer noise filter
 
 
 @dataclass
@@ -208,7 +211,7 @@ def read_aligned(band_files: dict[str, Path], *, ref_band: str = "B04"):  # type
 
 
 def compute_indices(arrays: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
-    """SOP Appendix-A indices: the band ratios + NDVI. Float32, NaN where invalid."""
+    """Frozen band-ratio indices plus NDVI; Float32 with NaN where invalid."""
     out: dict[str, np.ndarray] = {}
     for name, (num, den) in RATIO_INDICES.items():
         a, b = arrays[num], arrays[den]
@@ -226,7 +229,7 @@ def compute_indices(arrays: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
 
 
 def anomaly_threshold(index: np.ndarray, *, k: float) -> tuple[float, float, float]:
-    """SOP §13.1 statistical threshold: returns ``(mean, std, mean + k*std)``."""
+    """Frozen statistical rule returning ``(mean, std, mean + k*std)``."""
     mean = float(np.nanmean(index))
     std = float(np.nanstd(index))
     return mean, std, mean + k * std
@@ -252,14 +255,13 @@ def score_targets(
     stats_mask: np.ndarray | None = None,
     stats_basis: str = "full scene",
 ) -> tuple[dict[str, np.ndarray], np.ndarray, list[dict[str, object]]]:
-    """Anomaly binaries + the weighted porphyry target score (SOP §13.1–13.2).
+    """Frozen anomaly binaries plus the weighted porphyry support score.
 
-    ``stats_mask`` restricts the mean/σ **statistics** to an AOI (the geologist's decided
-    basis is the licence-area subset — the 5 km buffer — matching how the reference outputs
-    were thresholded on licence-clipped rasters); the resulting threshold is still applied
-    to the whole scene so the score keeps its district context. ``stats_basis`` labels the
-    basis in the stats rows. Returns ``(binaries, score, stats_rows)``; score is uint8 with
-    255 = nodata (outside the imaged swath).
+    ``stats_mask`` restricts the mean/σ **statistics** to an AOI. The frozen
+    METH-DISC-021 basis is the licence-area subset (the 5 km buffer); the resulting threshold
+    is still applied to the whole scene so the score keeps its district context.
+    ``stats_basis`` labels the basis in the stats rows. Returns ``(binaries, score,
+    stats_rows)``; score is uint8 with 255 = nodata (outside the imaged swath).
     """
     binaries: dict[str, np.ndarray] = {}
     stats: list[dict[str, object]] = []
@@ -299,7 +301,7 @@ def polygonize_targets(
     *,
     params: AsterParams,
 ):  # type: ignore[no-untyped-def]
-    """Target polygons from score >= ``params.score_min`` (SOP §13.3–13.7).
+    """Support polygons from score >= the frozen ``params.score_min``.
 
     Returns a GeoDataFrame (possibly empty) with target_score / confidence / area_ha and the
     support-evidence stamps.
@@ -324,7 +326,7 @@ def polygonize_targets(
                 "area_ha": round(area_ha, 3),
                 "validation_status": "Support evidence only",
                 "limitation": "Not ore proof; requires field/lab validation",
-                "source": "ASTER L1B #73 — SOP band-ratio anomaly scoring",
+                "source": "ASTER L1B #73 — frozen repository band-ratio support scoring",
             }
         )
         geoms.append(poly)

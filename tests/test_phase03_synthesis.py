@@ -9,6 +9,7 @@ mineralized-point XLSX ingest is expected to SKIP gracefully on the synthetic pl
 from __future__ import annotations
 
 import openpyxl
+import pytest
 
 from buduunkhad.core import paths, vector_io
 from buduunkhad.core.gates import GateStatus
@@ -111,7 +112,9 @@ def test_phase03_dry_run_templates_only(project):
     assert list(
         (pdir / "02_Tectonic_Terrane_Context").glob("*Tectonic_Terrane_Context_Register*.xlsx")
     )
-    assert list((pdir / "12_Phase3_QAQC_and_Handover").glob("*Phase3_QAQC_Log*.xlsx"))
+    assert list(
+        (pdir / "12_Phase3_QAQC_and_Handover").glob("*Phase3_Technical_Processing_Log*.xlsx")
+    )
     # schema present but empty (no ingested points, no CMCS buffer built)
     gpkg = _evidence_gpkg(config)
     assert len(vector_io.list_gpkg_layers(gpkg)) == 17
@@ -267,6 +270,26 @@ def test_phase03_xlsx_ingest_real_workbook(raw_archive):
     assert gdf.crs is not None and gdf.crs.to_epsg() == config.target_epsg
     assert sorted(gdf["feature_id"]) == ["BUD-MIN-0001", "BUD-MIN-0002"]
     assert (gdf["validation_status"] == "Historical only").all()
+    assert (gdf["reviewer"].fillna("") == "").all()
+    assert (gdf["review_date"].fillna("") == "").all()
+
+    pdir = paths.phase_dir(config.output_root, "03")
+    coord_log = next(
+        (pdir / "07_Occurrence_Register_and_Coordinate_QAQC").glob(
+            "*Occurrence_Coordinate_QAQC_Log*.xlsx"
+        )
+    )
+    coord_sheet = openpyxl.load_workbook(coord_log).active
+    assert coord_sheet is not None
+    coord_rows = list(coord_sheet.iter_rows(values_only=True))
+    coord_header, coord_data = coord_rows[0], coord_rows[1:]
+    crs_values = {str(row[coord_header.index("detected_crs")]) for row in coord_data}
+    assert crs_values == {
+        "geographic coordinates; configured source CRS EPSG:4326; reprojected to EPSG:32647"
+    }
+    assert {str(row[coord_header.index("decision")]) for row in coord_data} == {
+        "Provisional — source cross-check pending"
+    }
 
 
 def test_phase03_xlsx_ingest_mongolian_dms(raw_archive):
@@ -462,7 +485,7 @@ def test_phase03_pending_human_evidence_blocks_master_handoff(raw_archive):
     report = phase.qaqc(ctx)
     items = [i.item for i in report.items]
     assert any("Master GIS" in i for i in items)
-    assert any("coordinate QA/QC" in i for i in items)
+    assert any("coordinate ingest provenance" in i for i in items)
     assert any("CMCS/MRPAM 5/10/20/25 km buffer" in i for i in items)
     assert any("Preliminary Deposit Model and score-matrix templates emitted" in i for i in items)
     assert any("Geology-scan georeferencing acceptance evidence complete" in i for i in items)
@@ -532,6 +555,27 @@ def test_phase03_human_layer_reprojected_from_4326(raw_archive):
     assert not coords.empty and (coords["x"].abs() > 1000).all()
 
 
+def test_phase03_crsless_human_layer_fails_closed(raw_archive):
+    """Directory proximity cannot turn a CRS-less geometry into target-CRS evidence."""
+
+    import geopandas as gpd
+    from shapely.geometry import LineString
+
+    config, register, _raw = raw_archive
+    phase = Phase03GeologySynthesis()
+    gdf = gpd.GeoDataFrame(
+        {"note": ["ambiguous fault"]},
+        geometry=[LineString([(400000, 5000000), (401000, 5001000)])],
+    )
+
+    with pytest.raises(ValueError, match="has no CRS; explicit source CRS is required"):
+        phase._prepare_evidence_gdf(
+            gdf,
+            "faults_structures_line",
+            target_epsg=config.target_epsg,
+        )
+
+
 def test_phase03_xlsx_ingest_utm_easting_northing(raw_archive):
     """A #68 workbook in UTM easting/northing (metre-scale) is NOT mislabeled as lon/lat -> no (inf, inf)."""
     import openpyxl as pyxl
@@ -567,6 +611,53 @@ def test_phase03_xlsx_ingest_utm_easting_northing(raw_archive):
     assert (coords["x"].abs() < 1e7).all() and (
         coords["y"].abs() < 1e7
     ).all()  # finite, not (inf, inf)
+
+    pdir = paths.phase_dir(config.output_root, "03")
+    coord_log = next(
+        (pdir / "07_Occurrence_Register_and_Coordinate_QAQC").glob(
+            "*Occurrence_Coordinate_QAQC_Log*.xlsx"
+        )
+    )
+    coord_sheet = openpyxl.load_workbook(coord_log).active
+    assert coord_sheet is not None
+    coord_rows = list(coord_sheet.iter_rows(values_only=True))
+    coord_header, coord_data = coord_rows[0], coord_rows[1:]
+    crs_values = {str(row[coord_header.index("detected_crs")]) for row in coord_data}
+    assert crs_values == {
+        "projected coordinates; configured source CRS EPSG:32647; no reprojection"
+    }
+    assert not any("WGS84" in value for value in crs_values)
+
+
+def test_projected_xlsx_requires_an_explicit_crs(tmp_path):
+    import openpyxl as pyxl
+
+    workbook = tmp_path / "projected.xlsx"
+    wb = pyxl.Workbook()
+    ws = wb.active
+    assert ws is not None
+    ws.append(["easting", "northing"])
+    ws.append([305000.0, 5040000.0])
+    wb.save(workbook)
+
+    with pytest.raises(ValueError, match="require an explicit projected_epsg"):
+        vector_io.xlsx_points_with_provenance(workbook)
+
+
+def test_xlsx_mixed_coordinate_modes_fail_closed(tmp_path):
+    import openpyxl as pyxl
+
+    workbook = tmp_path / "mixed.xlsx"
+    wb = pyxl.Workbook()
+    ws = wb.active
+    assert ws is not None
+    ws.append(["x", "y"])
+    ws.append([96.5, 45.5])
+    ws.append([305000.0, 5040000.0])
+    wb.save(workbook)
+
+    with pytest.raises(ValueError, match="mixes geographic and projected"):
+        vector_io.xlsx_points_with_provenance(workbook, projected_epsg=32647)
 
 
 def test_phase03_license_boundary_populated(raw_archive):

@@ -248,7 +248,9 @@ def test_phase04_real_run_grid_and_gate(raw_archive):
 
     method_note = next((pdir / "05_A_B_C_D_Field_Priority").glob("*Method_Note.md"))
     method_text = method_note.read_text(encoding="utf-8")
-    qaqc_log = next((pdir / "05_A_B_C_D_Field_Priority").glob("*Phase4_QAQC_Log*.xlsx"))
+    qaqc_log = next(
+        (pdir / "05_A_B_C_D_Field_Priority").glob("*Phase4_Legacy_Comparator_Technical_Log*.xlsx")
+    )
     qaqc_sheet = openpyxl.load_workbook(qaqc_log).active
     assert qaqc_sheet is not None
     qaqc_text = " ".join(
@@ -259,6 +261,9 @@ def test_phase04_real_run_grid_and_gate(raw_archive):
     assert "fixed-grid binary/full-weight **legacy comparator**" in method_text
     assert "human-drawn prospect and ranged-judgment workflow" in method_text
     assert "METH-DISC-041" in method_text
+    assert "METH-DISC-060 and METH-DISC-068" in method_text
+    assert "unresolved geometry" not in method_text
+    assert "review signals, not an authoritative Go/No-Go decision" in method_text
     assert "v9 §5 8-criterion matrix" not in method_text
     assert "v9 §5 8-criterion matrix" not in qaqc_text
 
@@ -295,6 +300,29 @@ def test_phase04_delineates_prospects(raw_archive):
     assert ws is not None
     assert ws.max_row == 1 + len(g)
 
+    decision_matrix = next(
+        (pdir / "05_A_B_C_D_Field_Priority").glob("*Go_NoGo_Desktop_Decision_Matrix*.xlsx")
+    )
+    decision_sheet = openpyxl.load_workbook(decision_matrix).active
+    assert decision_sheet is not None
+    decision_rows = list(decision_sheet.iter_rows(values_only=True))
+    decision_header, decision_data = decision_rows[0], decision_rows[1:]
+    decisions = {str(row[decision_header.index("desktop_decision")]) for row in decision_data}
+    assert decisions <= {
+        "Advance for expert review",
+        "Retain for expert review with data gaps",
+        "Do not advance; monitor",
+    }
+    assert not decisions & {"Go", "Conditional", "No-Go (monitor)"}
+    assert all(
+        "not a scientific or operational approval" in str(row[decision_header.index("rationale")])
+        for row in decision_data
+    )
+    assert all(
+        str(row[decision_header.index("next_action")]) != "Drone survey + recon mapping"
+        for row in decision_data
+    )
+
 
 def test_phase04_attribute_evidence_activates_rs_and_elements(raw_archive):
     # Attribute-aware path: feeding ASTER-alteration + a geochem-anomaly (with elements) activates
@@ -324,6 +352,24 @@ def test_phase04_attribute_evidence_activates_rs_and_elements(raw_archive):
     # geology 20 + occurrence 15 + geochem 20 + rs 15 + structure 10 + confidence -> class A
     assert int(g["max_score"].max()) >= 75
     assert (g["prospect_class"] == "A").any()
+
+    decision_matrix = next(
+        (pdir / "05_A_B_C_D_Field_Priority").glob("*Go_NoGo_Desktop_Decision_Matrix*.xlsx")
+    )
+    decision_sheet = openpyxl.load_workbook(decision_matrix).active
+    assert decision_sheet is not None
+    rows = list(decision_sheet.iter_rows(values_only=True))
+    header, data = rows[0], rows[1:]
+    class_a = [row for row in data if row[header.index("prospect_class")] == "A"]
+    assert class_a
+    assert all(
+        row[header.index("desktop_decision")] == "Advance for expert review" for row in class_a
+    )
+    assert all(
+        row[header.index("next_action")]
+        == "Qualified geological review before any field or drone decision"
+        for row in class_a
+    )
 
 
 @pytest.mark.parametrize(

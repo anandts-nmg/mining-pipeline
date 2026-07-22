@@ -1,7 +1,7 @@
 """Phase 04 — Preliminary Prospect Delineation & Ranking (BUILD).
 
 Turns the Phase 03 geological-evidence package into ranked preliminary prospects, per the
-methodology (v9 §04 + the Phase-4 guide §6 **desktop scoring matrix** — conflict 04-1): build an
+methodology (master workflow + the Phase-4 guide §6 **desktop scoring matrix**): build an
 evidence-scoring grid over the licence AOI, score each cell on the 8-criterion weighted matrix
 (geology 20 / occurrence 15 / geochem 20 / RS 15 / structure 10 / deposit-model fit 10 / access 5 /
 confidence 5 = 100), dissolve high-score cells into candidate prospect polygons, assign the
@@ -10,8 +10,9 @@ deposit-model outputs, and emit the four deliverables. The guide's matrix is des
 field/drone criteria — those belong to the v9 §5 lifecycle matrix used at Phase 10), so a
 well-evidenced desktop prospect CAN reach class A.
 
-The implemented grid and binary/full-weight scoring remain a legacy comparator, not the guide's
-human-drawn prospect and ranged-judgment workflow (METH-DISC-003 and METH-DISC-041).
+The implemented grid and binary/full-weight scoring remain a legacy comparator. METH-DISC-060 and
+METH-DISC-068 resolve the historical METH-DISC-003/041 ambiguity by selecting a separate,
+human-reviewed prospect-polygon target without changing this comparator.
 
 **Attribute-aware scoring.** Beyond the Phase 03 evidence GPKG (a geometry-only shared schema),
 Phase 04 also reads *attribute-bearing* prospectivity layers dropped anywhere under the Phase 03/04
@@ -46,10 +47,11 @@ PROSPECT_LIMITATION = (
 )
 PHASE04_DESKTOP_MATRIX_LABEL = "Phase-4 guide §6 desktop 8-criterion matrix"
 
-# Phase-4 guide §6 desktop scoring matrix — 8 weighted criteria summing to 100 (conflict 04-1:
-# adopted over the master v9 §5 lifecycle matrix, per the repo rule that the later per-phase
-# deep-dive guide is the phase authority; §5 — which adds field/pXRF/drone criteria — remains the
-# lifecycle matrix for the Phase 10 final ranking). DISTINCT from Phase 03's SCORING_CRITERIA
+# Phase-4 guide §6 desktop scoring matrix — 8 weighted criteria summing to 100. The repository
+# retains this exact implementation as a legacy comparator; it does not displace the master-aligned
+# human-reviewed prospect-polygon target in phase04_migration.yaml. Master v9 §5 — which adds
+# field/pXRF/drone criteria — remains the lifecycle matrix for Phase 10 final ranking. DISTINCT from
+# Phase 03's SCORING_CRITERIA
 # (the 03A deposit-model rubric): this scores prospect *polygons*, that scores deposit *models*.
 # The bool marks criteria whose evidence exists in-pipeline by default; availability is
 # re-derived from the actual evidence at run time.
@@ -89,7 +91,12 @@ def classify(score: float) -> str:
 
 
 _CLASS_VALIDATION_PRIORITY = {"A": "High", "B": "High", "C": "Medium", "D": "Low"}
-_CLASS_DECISION = {"A": "Go", "B": "Go", "C": "Conditional", "D": "No-Go (monitor)"}
+_CLASS_DECISION = {
+    "A": "Advance for expert review",
+    "B": "Advance for expert review",
+    "C": "Retain for expert review with data gaps",
+    "D": "Do not advance; monitor",
+}
 
 # ---- register / gpkg schemas ---------------------------------------------- #
 
@@ -250,13 +257,13 @@ class Phase04ProspectRanking(Phase):
                 "dry-run: 5 folders + prospect schema + empty ranking/GoNoGo templates"
             )
             result.log("dry-run: Phase 04 scaffold + templates (no grid/scoring)")
-            self._write_qaqc_log(ctx, pdir, result)
+            self._write_technical_log(ctx, pdir, result)
             return result
 
         prospects = self._delineate_and_rank(ctx, pdir, result)
         self._emit_registers(ctx, pdir, result, prospects=prospects)
         self._write_method_note(ctx, pdir, result)
-        self._write_qaqc_log(ctx, pdir, result)
+        self._write_technical_log(ctx, pdir, result)
         result.log(
             f"grid cells={self._grid_cells}; candidate prospects={self._n_candidates} "
             f"(classes {self._class_counts}); data-gap criteria={self._data_gaps}"
@@ -819,11 +826,12 @@ class Phase04ProspectRanking(Phase):
                 "prospect_class": p["prospect_class"],
                 "max_score": p["max_score"],
                 "desktop_decision": _CLASS_DECISION[p["prospect_class"]],
-                "rationale": f"Class {p['prospect_class']} (max score {p['max_score']}/100, "
-                f"{p['validation_priority'].lower()} validation priority).",
-                "next_action": "Drone survey + recon mapping"
+                "rationale": f"Legacy comparator class {p['prospect_class']} (max score "
+                f"{p['max_score']}/100, {p['validation_priority'].lower()} validation priority); "
+                "not a scientific or operational approval.",
+                "next_action": "Qualified geological review before any field or drone decision"
                 if p["prospect_class"] in ("A", "B")
-                else "Retain with data gaps; opportunistic/desk check",
+                else "Retain with data gaps for expert desk review",
             }
             for p in prospects
         ]
@@ -881,11 +889,13 @@ class Phase04ProspectRanking(Phase):
         note.write_text(
             f"# Phase 04 — Preliminary Prospect Delineation & Ranking (method note)\n\n"
             f"Created {date.today().isoformat()}. All outputs are **{PROSPECT_VALIDATION}**.\n\n"
-            f"## Scoring ({PHASE04_DESKTOP_MATRIX_LABEL}, weights sum 100 — conflict 04-1)\n"
+            f"## Scoring ({PHASE04_DESKTOP_MATRIX_LABEL}, weights sum 100)\n"
             f"{weights}\n\n"
             f"This is the fixed-grid binary/full-weight **legacy comparator**, not the guide's "
-            f"human-drawn prospect and ranged-judgment workflow; the unresolved geometry and "
-            f"scoring differences are recorded as METH-DISC-003 and METH-DISC-041.\n\n"
+            f"human-drawn prospect and ranged-judgment workflow. The historical geometry and "
+            f"scoring differences in METH-DISC-003 and METH-DISC-041 are resolved for current "
+            f"implementation by METH-DISC-060 and METH-DISC-068: retain this comparator and build "
+            f"the authoritative workflow separately.\n\n"
             f"(The master v9 §5 lifecycle matrix — which adds field/pXRF and drone criteria — is "
             f"used at Phase 10 final ranking, not here; see "
             f"config/methodology/discrepancies.yaml, METH-DISC-006.)\n\n"
@@ -910,18 +920,23 @@ class Phase04ProspectRanking(Phase):
             f"v9 §5 lifecycle matrix at Phase 10.\n\n"
             f"## Ranking map\n`..._Preliminary_Prospect_Ranking_Map.pdf` is a QGIS print layout "
             f"over the prospect polygons (human deliverable); the pipeline emits the polygons, "
-            f"ranking table, Go/No-Go matrix and data-gap register.\n",
+            f"ranking table, legacy compatibility decision matrix and data-gap register. The "
+            f"legacy workbook/column names are retained for compatibility; their values are review "
+            f"signals, not an authoritative Go/No-Go decision.\n",
             encoding="utf-8",
         )
         result.add_output(note)
 
-    def _write_qaqc_log(self, ctx: RunContext, pdir: Path, result: PhaseResult) -> None:
+    def _write_technical_log(self, ctx: RunContext, pdir: Path, result: PhaseResult) -> None:
         report = self.qaqc(ctx)
         path = (
             pdir
             / "05_A_B_C_D_Field_Priority"
             / naming.register_name(
-                ctx.config.register_prefix, "Phase4_QAQC_Log", ext="xlsx", version=1
+                ctx.config.register_prefix,
+                "Phase4_Legacy_Comparator_Technical_Log",
+                ext="xlsx",
+                version=1,
             )
         )
         report.write_xlsx(path)

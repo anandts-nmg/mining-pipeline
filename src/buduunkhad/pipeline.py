@@ -494,7 +494,7 @@ def run_pipeline(
             if not dry_run and not _can_advance(decision):
                 manifest.stopped_at = phase.id
                 logger.warning(
-                    "Phase %s gate blocked advance; stopping (use --override).", phase.id
+                    "Phase %s gate blocked advance; stopping (%s).", phase.id, decision.reason
                 )
                 break
     except Exception as exc:  # startup abort — record it in the manifest, then re-raise

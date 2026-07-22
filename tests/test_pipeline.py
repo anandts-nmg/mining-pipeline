@@ -161,6 +161,39 @@ def test_manifest_surfaces_qaqc_pending_alongside_passed(raw_archive):
     assert d00["pending_human_review_or_qaqc_count"] > 0
 
 
+@pytest.mark.parametrize("override", [False, True])
+def test_runner_stops_phase03_before_phase04_despite_operational_override(
+    raw_archive, override: bool
+):
+    """The real runner must enforce Phase 03's non-overridable scientific handoff gate."""
+
+    config, register, _raw = raw_archive
+    run_id = f"strict-phase03-override-{str(override).lower()}"
+    manifest = run_pipeline(
+        config,
+        register,
+        only=["00", "01", "03", "04"],
+        dry_run=False,
+        override=override,
+        run_id=run_id,
+    )
+
+    assert manifest.selected_phases == ["00", "01", "03", "04"]
+    assert [phase.phase_id for phase in manifest.phases] == ["00", "01", "03"]
+    assert manifest.stopped_at == "03"
+    phase03 = manifest.phases[-1]
+    assert phase03.gate_status == GateStatus.BLOCKED.value
+    assert not phase03.gate_overridden
+    assert phase03.qaqc_pending
+    assert phase03.pending_human_review_or_qaqc_count > 0
+    assert len([path for path in phase03.outputs if path.endswith("_Phase03_QAQC_Log.xlsx")]) == 1
+    assert len([path for path in phase03.outputs if "Phase3_Technical_Processing_Log" in path]) == 1
+
+    run_log = (config.runs_root / run_id / "run.log").read_text(encoding="utf-8")
+    assert "Phase 03 gate blocked advance" in run_log
+    assert "use --override" not in run_log
+
+
 def test_successful_run_manifest_seals_every_publishable_output_and_runner_qaqc(raw_archive):
     from buduunkhad.core.run_artifacts import sha256_file
 

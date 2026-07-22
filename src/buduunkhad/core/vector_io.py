@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import re
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Any, Literal
 
 from buduunkhad.config import GpkgLayer
 
@@ -43,6 +45,34 @@ _PXRF_PROPS: dict[str, str] = {
     "operator": "str:64",
     "notes": "str:254",
 }
+
+
+@dataclass(frozen=True)
+class PointIngestResult:
+    """Point-table data plus the exact coordinate handling applied during ingest."""
+
+    gdf: Any
+    x_column: Any
+    y_column: Any
+    coordinate_mode: Literal["geographic", "projected"]
+    source_epsg: int
+    target_epsg: int
+    reprojection_applied: bool
+    input_row_count: int
+    accepted_row_count: int
+    rejected_row_count: int
+
+    @property
+    def crs_description(self) -> str:
+        action = (
+            f"reprojected to EPSG:{self.target_epsg}"
+            if self.reprojection_applied
+            else "no reprojection"
+        )
+        return (
+            f"{self.coordinate_mode} coordinates; configured source CRS "
+            f"EPSG:{self.source_epsg}; {action}"
+        )
 
 
 def _enable_kml_drivers() -> None:
@@ -269,17 +299,21 @@ def _to_decimal_degrees(value):  # type: ignore[no-untyped-def]
     return -dd if negative else dd
 
 
-def xlsx_points_to_gdf(path: Path, source_epsg: int = 4326, target_epsg: int = 32647):  # type: ignore[no-untyped-def]
-    """Read an XLSX point table, detect coordinate columns, build a reprojected GeoDataFrame.
+def xlsx_points_with_provenance(
+    path: Path,
+    source_epsg: int = 4326,
+    target_epsg: int = 32647,
+    *,
+    projected_epsg: int | None = None,
+) -> PointIngestResult | None:
+    """Read an XLSX point table and retain truthful coordinate-ingest provenance.
 
     Detects lon/lat / x/y / easting-northing column pairs case-insensitively — including the
     Mongolian register headers Уртраг (lon) / Өргөрөг (lat) — and parses DMS strings like
-    ``96°41'16"`` to decimal degrees, then classifies by coordinate MAGNITUDE (not label):
-    |x|<=180 and |y|<=90 are geographic (``source_epsg``, WGS84) and reprojected to
-    ``target_epsg``; metre-scale magnitudes are taken as already in ``target_epsg`` (so a UTM
-    easting/northing table is never mis-reprojected to (inf, inf)). Returns ``None`` gracefully —
-    never raises — when the workbook is unreadable, empty, or has no detectable coordinate column
-    pair (e.g. a synthetic placeholder); the caller notes + skips.
+    ``96°41'16"`` to decimal degrees. Coordinate magnitude distinguishes geographic from projected
+    values, but it never establishes a projected CRS: callers must provide ``projected_epsg`` for
+    metre-scale coordinates. Mixed geographic/projected rows fail closed. Returns ``None`` when the
+    workbook is unreadable, empty, or has no detectable coordinate column pair.
     """
     try:
         import geopandas as gpd
@@ -311,12 +345,20 @@ def xlsx_points_to_gdf(path: Path, source_epsg: int = 4326, target_epsg: int = 3
     ).dropna()
     if coords.empty:
         return None
-    # Trust the coordinate MAGNITUDE, not the column label: degrees (|x|<=180, |y|<=90)
-    # are geographic (source_epsg / WGS84); metre-scale magnitudes are projected and taken
-    # to be already in target_epsg. This stops a UTM easting/northing table being mislabeled
-    # as lon/lat and reprojected to (inf, inf).
-    geographic = coords["x"].abs().max() <= 180 and coords["y"].abs().max() <= 90
-    detected_epsg = source_epsg if geographic else target_epsg
+    geographic_rows = (coords["x"].abs() <= 180) & (coords["y"].abs() <= 90)
+    if geographic_rows.any() and not geographic_rows.all():
+        raise ValueError("point table mixes geographic and projected coordinate magnitudes")
+
+    geographic = bool(geographic_rows.all())
+    if geographic:
+        coordinate_mode: Literal["geographic", "projected"] = "geographic"
+        detected_epsg = source_epsg
+    else:
+        coordinate_mode = "projected"
+        if projected_epsg is None:
+            raise ValueError("projected point coordinates require an explicit projected_epsg")
+        detected_epsg = projected_epsg
+
     attrs = df.loc[coords.index].reset_index(drop=True)
     gdf = gpd.GeoDataFrame(
         attrs,
@@ -325,9 +367,39 @@ def xlsx_points_to_gdf(path: Path, source_epsg: int = 4326, target_epsg: int = 3
         ),
         crs=f"EPSG:{detected_epsg}",
     )
-    if detected_epsg != target_epsg:
+    reprojection_applied = detected_epsg != target_epsg
+    if reprojection_applied:
         gdf = gdf.to_crs(epsg=target_epsg)
-    return gdf
+    return PointIngestResult(
+        gdf=gdf,
+        x_column=x_col,
+        y_column=y_col,
+        coordinate_mode=coordinate_mode,
+        source_epsg=detected_epsg,
+        target_epsg=target_epsg,
+        reprojection_applied=reprojection_applied,
+        input_row_count=len(df),
+        accepted_row_count=len(coords),
+        rejected_row_count=len(df) - len(coords),
+    )
+
+
+def xlsx_points_to_gdf(
+    path: Path,
+    source_epsg: int = 4326,
+    target_epsg: int = 32647,
+    *,
+    projected_epsg: int | None = None,
+):  # type: ignore[no-untyped-def]
+    """Return only the GeoDataFrame; projected coordinates still require explicit CRS input."""
+
+    result = xlsx_points_with_provenance(
+        path,
+        source_epsg=source_epsg,
+        target_epsg=target_epsg,
+        projected_epsg=projected_epsg,
+    )
+    return None if result is None else result.gdf
 
 
 def list_gpkg_layers(path: Path) -> list[str]:

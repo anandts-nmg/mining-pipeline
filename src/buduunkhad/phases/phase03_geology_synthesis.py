@@ -18,7 +18,6 @@ license".
 
 from __future__ import annotations
 
-from datetime import date
 from pathlib import Path
 
 from buduunkhad.core import naming, registers, vector_io
@@ -91,8 +90,6 @@ _MINERALIZED_LAYER = "mineralized_points_point"
 # geometry, and everything not otherwise mapped is preserved verbatim in the cross-reference note.
 _OCC_NAME_KEYS = ("цэгийн дугаар", "occurrence_name", "occurrence", "name", "point", "цэг", "id")
 _OCC_COMMODITY_KEYS = ("агуулга / элемент", "commodity", "element", "агуулга", "элемент", "mineral")
-_OCC_LON_KEYS = ("уртраг", "lon", "long", "longitude", "x", "easting", "east")
-_OCC_LAT_KEYS = ("өргөрөг", "lat", "latitude", "y", "northing", "north")
 
 # 6 candidate deposit models (03A) pre-seeded into the evidence table.
 DEPOSIT_MODELS: list[tuple[str, str]] = [
@@ -286,6 +283,7 @@ class Phase03GeologySynthesis(Phase):
     _coord_qaqc_rows: list[dict[str, object]]
     _xref_rows: list[dict[str, object]]
     _coverage_rows: list[dict[str, object]]
+    _point_ingest: vector_io.PointIngestResult | None
 
     def __init__(self) -> None:
         self._evidence_layers = []
@@ -299,6 +297,7 @@ class Phase03GeologySynthesis(Phase):
         self._coord_qaqc_rows = []
         self._xref_rows = []
         self._coverage_rows = []
+        self._point_ingest = None
 
     # ------------------------------------------------------------------ #
 
@@ -325,10 +324,10 @@ class Phase03GeologySynthesis(Phase):
                 "dry-run: 12 folders + all templates + Preliminary_Deposit_Model.docx "
                 f"+ empty {len(self._evidence_layers)}-layer evidence GPKG schema"
             )
-            self._write_qaqc_log(ctx, pdir, result)
+            self._write_technical_log(ctx, pdir, result)
             return result
 
-        self._write_qaqc_log(ctx, pdir, result)
+        self._write_technical_log(ctx, pdir, result)
         result.log(
             f"CMCS rings={self._cmcs_rings}; mineralized points ingested={self._mineralized_points}; "
             f"human layers ingested={len(self._ingested_layers)}; "
@@ -443,17 +442,20 @@ class Phase03GeologySynthesis(Phase):
             self._notes.append("#68 mineralized-point XLSX not in register; skipped")
             return
         wc = ctx.phase_dir("00") / rec.evidence_group / rec.filename
-        raw_gdf = vector_io.xlsx_points_to_gdf(
+        ingest = vector_io.xlsx_points_with_provenance(
             wc,
             source_epsg=cfg.crs.source_geographic_epsg,
             target_epsg=cfg.target_epsg,
+            projected_epsg=cfg.target_epsg,
         )
-        if raw_gdf is None:
+        if ingest is None:
             self._notes.append(
                 f"#68 XLSX ingest skipped (missing working copy or no detectable coordinate "
                 f"columns): {rec.filename}"
             )
             return
+        raw_gdf = ingest.gdf
+        self._point_ingest = ingest
 
         # The evidence GPKG keeps its fixed 14-column shared schema (geometry-only in), but the
         # #68 source attributes (occurrence id, commodity, rock, mineralization, ...) are preserved
@@ -469,7 +471,7 @@ class Phase03GeologySynthesis(Phase):
             source_group=rec.evidence_group,
         )
         self._mineralized_points = len(gdf)
-        self._build_occurrence_rows(raw_gdf, gdf, rec)
+        self._build_occurrence_rows(raw_gdf, gdf, rec, ingest)
 
         validated_name = naming.data_name(
             cfg.data_prefix,
@@ -486,7 +488,13 @@ class Phase03GeologySynthesis(Phase):
         # Step 7A (v8/v9) — 25 km near-occurrence coverage check on the ingested points.
         self._build_step7a_coverage(ctx, pdir, gdf, rec, result)
 
-    def _build_occurrence_rows(self, raw_gdf, evidence_gdf, rec) -> None:  # type: ignore[no-untyped-def]
+    def _build_occurrence_rows(
+        self,
+        raw_gdf,
+        evidence_gdf,
+        rec,
+        ingest: vector_io.PointIngestResult,
+    ) -> None:  # type: ignore[no-untyped-def]
         """Map #68 source attributes into the occurrence/coordinate/cross-reference register rows.
 
         The minted feature ids and reprojected coordinates come from ``evidence_gdf`` (positionally
@@ -501,7 +509,7 @@ class Phase03GeologySynthesis(Phase):
 
         name_col = pick(_OCC_NAME_KEYS)
         commodity_col = pick(_OCC_COMMODITY_KEYS)
-        lon_col, lat_col = pick(_OCC_LON_KEYS), pick(_OCC_LAT_KEYS)
+        lon_col, lat_col = ingest.x_column, ingest.y_column
         consumed = {c for c in (name_col, commodity_col, lon_col, lat_col) if c}
         consumed.add(raw_gdf.geometry.name)
         extra_cols = [c for c in raw_gdf.columns if c not in consumed and str(c).strip() != "№"]
@@ -545,12 +553,15 @@ class Phase03GeologySynthesis(Phase):
                 {
                     "feature_id": fid,
                     "raw_lon_lat_or_xy": raw_ll,
-                    "detected_crs": "geographic (WGS84) -> reprojected",
+                    "detected_crs": ingest.crs_description,
                     "reprojected_epsg32647": f"{east}, {north}",
                     "in_license_or_buffer": "",
                     "duplicate_check": "",
-                    "decision": "Pass",
-                    "note": "Auto-ingested from #68; verify against #66 text / #67 register.",
+                    "decision": "Provisional — source cross-check pending",
+                    "note": (
+                        "Auto-ingested from #68 using the recorded configured CRS; verify "
+                        "coordinates against #66 text / #67 register."
+                    ),
                 }
             )
             xref.append(
@@ -728,11 +739,13 @@ class Phase03GeologySynthesis(Phase):
         _, geom_type, prefix = next(spec for spec in EVIDENCE_LAYERS if spec[0] == layer)
 
         # invariant #4: every deliverable is EPSG:32647. Human-digitized layers may arrive in any
-        # CRS -> reproject. A CRS-less layer is assumed already in target (noted, never silently wrong).
+        # identified CRS and are reprojected. A missing CRS is ambiguous and must fail closed.
         if target_epsg and gdf.crs is not None and gdf.crs.to_epsg() != target_epsg:
             gdf = gdf.to_crs(epsg=target_epsg)
         elif target_epsg and gdf.crs is None:
-            self._notes.append(f"layer '{layer}': no CRS on ingest; assumed EPSG:{target_epsg}")
+            raise ValueError(
+                f"human evidence layer '{layer}' has no CRS; explicit source CRS is required"
+            )
 
         # promote to the layer's declared Multi* type so appends match the schema (no pyogrio warning)
         def _multi(g):  # type: ignore[no-untyped-def]
@@ -778,7 +791,14 @@ class Phase03GeologySynthesis(Phase):
         setdefault("limitation", limitation)
         setdefault("processing_version", naming.version_tag(1))
         setdefault("reviewer", "")
-        setdefault("review_date", date.today().isoformat())
+        # ``review_date`` is retained for the adopted 14-column legacy schema, but processing is
+        # not a human review. Leave it empty until a genuine named review supplies the date.
+        setdefault("review_date", "")
+
+        reviewers = gdf["reviewer"].fillna("").astype(str).str.strip()
+        review_dates = gdf["review_date"].fillna("").astype(str).str.strip()
+        if ((reviewers == "") != (review_dates == "")).any():
+            raise ValueError("reviewer and review_date must both be present or both be empty")
 
         return gdf[[*EVIDENCE_FIELDS.keys(), "geometry"]]
 
@@ -976,13 +996,15 @@ class Phase03GeologySynthesis(Phase):
             }
         ]
 
-    def _write_qaqc_log(self, ctx: RunContext, pdir: Path, result: PhaseResult) -> None:
+    def _write_technical_log(self, ctx: RunContext, pdir: Path, result: PhaseResult) -> None:
         cfg = ctx.config
         report = self.qaqc(ctx)
         log_path = (
             pdir
             / "12_Phase3_QAQC_and_Handover"
-            / naming.register_name(cfg.register_prefix, "Phase3_QAQC_Log", ext="xlsx", version=1)
+            / naming.register_name(
+                cfg.register_prefix, "Phase3_Technical_Processing_Log", ext="xlsx", version=1
+            )
         )
         report.write_xlsx(log_path)
         result.add_output(log_path)
@@ -1009,14 +1031,21 @@ class Phase03GeologySynthesis(Phase):
             decision=Decision.PASS if layers_ok else Decision.FAIL,
             note=f"{len(self._evidence_layers)}/{len(EVIDENCE_LAYERS)} evidence layers present.",
         )
+        coordinate_provenance = (
+            self._point_ingest.crs_description
+            if self._point_ingest is not None
+            else "no point-coordinate ingest provenance"
+        )
         report.add(
-            "Occurrence / mineralized-point coordinate QA/QC done",
+            "Occurrence / mineralized-point coordinate ingest provenance recorded",
             RECORDED_ACCEPTANCE,
             decision=Decision.PASS,
             note=(
-                f"#68 ingested {self._mineralized_points} validated point(s) (4326->32647); "
-                "coordinate QA/QC log emitted."
-                if self._mineralized_points
+                f"#68 ingested {self._point_ingest.accepted_row_count}/"
+                f"{self._point_ingest.input_row_count} parsed point row(s); "
+                f"{self._point_ingest.rejected_row_count} rejected; "
+                f"{coordinate_provenance}; coordinate QA/QC log emitted."
+                if self._mineralized_points and self._point_ingest is not None
                 else "Coordinate QA/QC log emitted; #68 points ingested where available."
             ),
         )

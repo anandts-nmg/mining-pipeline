@@ -215,7 +215,7 @@ def test_openai_injected_client_executes_without_sdk_or_key(
     assert responses.arguments["model"] == "synthetic-model"
     request_input = responses.arguments["input"]
     assert isinstance(request_input, list)
-    content = request_input[0]["content"]
+    content = request_input[0]["content"]  # ty: ignore[not-subscriptable]
     assert any("tile-1" in item.get("text", "") for item in content)
 
 
@@ -235,7 +235,7 @@ def test_anthropic_injected_client_executes_without_sdk_or_key(
     assert messages.arguments["model"] == "synthetic-model"
     request_messages = messages.arguments["messages"]
     assert isinstance(request_messages, list)
-    content = request_messages[0]["content"]
+    content = request_messages[0]["content"]  # ty: ignore[not-subscriptable]
     assert any("tile-1" in item.get("text", "") for item in content)
 
 

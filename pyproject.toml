@@ -43,9 +43,11 @@ dev = [
     "pip>=24.0",
     "pytest>=8.0",
     "pytest-cov>=5.0",
-    "ruff>=0.5",
-    "mypy>=1.10",
-    "pyright==1.1.410",
+    # Keep CLI, pre-commit, CI, and editor diagnostics deterministic.
+    "ruff==0.15.22",
+    # ty is pre-1.0 and fast-moving; pin it exactly so a routine ty release cannot
+    # silently redden CI. The local pre-commit hook resolves this same environment.
+    "ty==0.0.62",
     "pre-commit>=3.7",
     "types-PyYAML>=6.0",
     "pandas-stubs>=2.1",
@@ -75,32 +77,21 @@ ignore = [
 [tool.ruff.lint.isort]
 known-first-party = ["buduunkhad"]
 
-[tool.mypy]
-python_version = "3.11"
-packages = ["buduunkhad"]
-mypy_path = "src"
-ignore_missing_imports = true
-warn_unused_ignores = false
-warn_redundant_casts = true
-no_implicit_optional = true
-disallow_untyped_defs = false
-check_untyped_defs = true
+# ty (astral-sh/ty) is the project's type checker; it replaces the earlier mypy +
+# pyright pair. Editor integrations should resolve the pinned executable from the
+# project environment. Suppressions are rule-specific `# ty: ignore[<rule>]` comments.
+[tool.ty.environment]
+python-version = "3.11"
 
-# Newer numpy (and tifffile/scikit-image, pulled in via the [dem] extra) ship PEP 695
-# `type` statements that mypy rejects when targeting < 3.12; we don't type-check against
-# their internals, so skip following them (treated as Any, like the other geospatial libs).
-[[tool.mypy.overrides]]
-module = ["numpy", "numpy.*", "tifffile", "tifffile.*", "skimage", "skimage.*"]
-follow_imports = "skip"
-follow_imports_for_stubs = true
-
-[tool.pyright]
+[tool.ty.src]
+# Check the same roots pyright used. The package resolves via the editable install
+# (`pip install -e .`), so first-party imports are found through the environment.
 include = ["src", "tests"]
-pythonVersion = "3.11"
-# Basic mode matches the default Pylance editor experience: it catches real type
-# errors (e.g. unresolved call overloads) without drowning the partially-typed
-# geospatial stack (rasterio/geopandas/fiona) in unknown-type noise.
-typeCheckingMode = "basic"
+
+[tool.ty.terminal]
+# Partially-typed geospatial stubs (geopandas/fiona/rasterio) and guarded optional
+# imports are suppressed per-line rather than globally, so any warning is unexpected.
+error-on-warning = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -17,6 +17,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 
@@ -41,15 +42,15 @@ class LineamentParams:
     min_length_m: float = 500.0
 
 
-def extract_lineaments(hillshade_paths: list[Path], *, params: LineamentParams = LineamentParams()):  # type: ignore[no-untyped-def]
+def extract_lineaments(hillshade_paths: list[Path], *, params: LineamentParams = LineamentParams()):
     """Draft lineament segments from >= 2 co-registered azimuth hillshades.
 
     Returns a GeoDataFrame of LineStrings (length_m, azimuth_deg, n_azimuths + draft stamps)
     in the hillshades' CRS.
     """
     try:
-        from skimage.feature import canny  # pyright: ignore[reportMissingImports]
-        from skimage.transform import (  # pyright: ignore[reportMissingImports]
+        from skimage.feature import canny  # ty: ignore[unresolved-import]
+        from skimage.transform import (  # ty: ignore[unresolved-import]
             probabilistic_hough_line,
         )
     except ImportError as exc:  # pragma: no cover - optional dependency
@@ -57,13 +58,15 @@ def extract_lineaments(hillshade_paths: list[Path], *, params: LineamentParams =
 
     import geopandas as gpd
     import rasterio
+    from affine import Affine
     from shapely.geometry import LineString
 
     if len(hillshade_paths) < 2:
         raise LineamentError(f"need >= 2 azimuth hillshades, got {len(hillshade_paths)}")
 
     edge_stack: np.ndarray | None = None
-    transform = crs = None
+    transform: Affine | None = None
+    crs = None
     shape: tuple[int, int] | None = None
     for path in sorted(hillshade_paths):
         with rasterio.open(path) as ds:
@@ -82,6 +85,7 @@ def extract_lineaments(hillshade_paths: list[Path], *, params: LineamentParams =
         edge_stack = edges.astype("uint8") if edge_stack is None else edge_stack + edges
 
     assert edge_stack is not None
+    assert transform is not None
     consensus = edge_stack >= params.min_azimuth_support
     segments = probabilistic_hough_line(
         consensus,
@@ -93,8 +97,8 @@ def extract_lineaments(hillshade_paths: list[Path], *, params: LineamentParams =
     records: list[dict[str, object]] = []
     geoms = []
     for (c0, r0), (c1, r1) in segments:
-        x0, y0 = transform * (c0 + 0.5, r0 + 0.5)  # type: ignore[operator]
-        x1, y1 = transform * (c1 + 0.5, r1 + 0.5)  # type: ignore[operator]
+        x0, y0 = cast(tuple[float, float], transform * (c0 + 0.5, r0 + 0.5))
+        x1, y1 = cast(tuple[float, float], transform * (c1 + 0.5, r1 + 0.5))
         line = LineString([(x0, y0), (x1, y1)])
         if line.length < params.min_length_m:
             continue
@@ -110,4 +114,4 @@ def extract_lineaments(hillshade_paths: list[Path], *, params: LineamentParams =
             }
         )
         geoms.append(line)
-    return gpd.GeoDataFrame(records, geometry=geoms, crs=crs)
+    return gpd.GeoDataFrame(records, geometry=geoms, crs=crs)  # ty: ignore[no-matching-overload]

@@ -31,14 +31,14 @@ class HydrologyParams:
     min_basin_area_ha: float = 25.0
 
 
-def find_whitebox():  # type: ignore[no-untyped-def]
+def find_whitebox():
     """A ready ``WhiteboxTools`` instance, or ``None`` when unavailable.
 
     ``whitebox`` is an optional dependency and downloads its binary on first use — any
     import/init failure means "not available" rather than an error.
     """
     try:
-        import whitebox  # pyright: ignore[reportMissingImports]
+        import whitebox  # ty: ignore[unresolved-import]
 
         wbt = whitebox.WhiteboxTools()
         wbt.set_verbose_mode(False)
@@ -51,9 +51,9 @@ def build_hydrology(
     dem_path: Path,
     workdir: Path,
     *,
-    wbt,  # type: ignore[no-untyped-def]
+    wbt,
     params: HydrologyParams = HydrologyParams(),
-):  # type: ignore[no-untyped-def]
+):
     """Contour lines, stream lines and watershed polygons from a (clipped) DEM.
 
     Returns ``(contours_gdf, streams_gdf, basins_gdf)`` — GeoDataFrames in the DEM's CRS.
@@ -125,7 +125,7 @@ def build_hydrology(
     for geom, value in rio_shapes(arr.astype("float32"), mask=mask, transform=transform):
         records.append({"basin_id": int(value)})
         geoms.append(shp_shape(geom))
-    basins = gpd.GeoDataFrame(records, geometry=geoms, crs=crs)
+    basins = gpd.GeoDataFrame(records, geometry=geoms, crs=crs)  # ty: ignore[no-matching-overload]
     # dissolve pixel-polygons of the same basin into single watershed polygons, then drop the
     # edge-draining slivers (see HydrologyParams.min_basin_area_ha)
     if len(basins):

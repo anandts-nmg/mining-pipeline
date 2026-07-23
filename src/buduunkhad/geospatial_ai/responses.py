@@ -8,6 +8,7 @@ from dataclasses import fields as dataclass_fields
 from dataclasses import is_dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, cast
 
 from pydantic import BaseModel, ValidationError
 
@@ -169,8 +170,9 @@ def _collect_source_references(value: object) -> tuple[SourceReference, ...]:
             return
         if isinstance(item, Mapping) and {"asset_id", "sha256", "locators"} <= set(item):
             try:
+                source_data = cast(Mapping[str, object], item)
                 source = SourceReference.model_validate(
-                    {key: item[key] for key in ("asset_id", "sha256", "locators")}
+                    {key: source_data[key] for key in ("asset_id", "sha256", "locators")}
                 )
             except ValueError as exc:
                 raise ResponseIngestionError(
@@ -200,7 +202,9 @@ def _collect_source_references(value: object) -> tuple[SourceReference, ...]:
                 for nested in item:
                     visit(nested)
             else:
-                for field in dataclass_fields(item):  # type: ignore[arg-type]
+                # ``is_dataclass`` is the runtime authority here; typeshed cannot narrow
+                # an arbitrary object to its private DataclassInstance protocol.
+                for field in dataclass_fields(cast(Any, item)):
                     visit(object.__getattribute__(item, field.name))
         finally:
             active.remove(identity)

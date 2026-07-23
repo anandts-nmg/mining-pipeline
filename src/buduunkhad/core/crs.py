@@ -116,7 +116,7 @@ def reproject_raster(
 def reproject_clip_cog(
     src: Path,
     dst: Path,
-    aoi_gdf=None,  # type: ignore[no-untyped-def]
+    aoi_gdf=None,
     *,
     dst_epsg: int = TARGET_EPSG,
     cog_compress: str = "DEFLATE",
@@ -183,7 +183,7 @@ def reproject_clip_cog(
     return dst, clip_applied
 
 
-def reproject_gdf(gdf, dst_epsg: int = TARGET_EPSG):  # type: ignore[no-untyped-def]
+def reproject_gdf(gdf, dst_epsg: int = TARGET_EPSG):
     """Reproject a GeoDataFrame to ``dst_epsg``; returns the reprojected frame.
 
     Raises if the source frame has no CRS (we never guess).

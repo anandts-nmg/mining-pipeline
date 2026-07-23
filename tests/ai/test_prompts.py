@@ -38,9 +38,9 @@ def test_packaged_prompt_registry_loads_immutable_text() -> None:
     assert prompt.task_type is TaskType.DOCUMENT_EXTRACTION
     assert prompt.status is PromptStatus.ENABLED
     with pytest.raises(AttributeError):
-        prompt.components.append(prompt.components[0])  # type: ignore[attr-defined]
+        prompt.components.append(prompt.components[0])  # ty: ignore[unresolved-attribute]
     with pytest.raises(ValidationError, match="frozen"):
-        prompt.components[0].text = "mutated"
+        prompt.components[0].text = "mutated"  # ty: ignore[invalid-assignment]
 
 
 def test_publicly_constructed_prompt_registry_is_not_a_trust_boundary() -> None:

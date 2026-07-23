@@ -351,7 +351,7 @@ class Phase03GeologySynthesis(Phase):
     # AOI (Phase 01 licence boundary)
     # ------------------------------------------------------------------ #
 
-    def _load_boundary_aoi(self, ctx: RunContext):  # type: ignore[no-untyped-def]
+    def _load_boundary_aoi(self, ctx: RunContext):
         cfg = ctx.config
         name = naming.data_name(
             cfg.data_prefix,
@@ -494,7 +494,7 @@ class Phase03GeologySynthesis(Phase):
         evidence_gdf,
         rec,
         ingest: vector_io.PointIngestResult,
-    ) -> None:  # type: ignore[no-untyped-def]
+    ) -> None:
         """Map #68 source attributes into the occurrence/coordinate/cross-reference register rows.
 
         The minted feature ids and reprojected coordinates come from ``evidence_gdf`` (positionally
@@ -519,7 +519,7 @@ class Phase03GeologySynthesis(Phase):
         xs, ys = list(reps.x), list(reps.y)
         raw = raw_gdf.reset_index(drop=True)
 
-        def cell(row, col: str | None) -> str:  # type: ignore[no-untyped-def]
+        def cell(row, col: str | None) -> str:
             if not col:
                 return ""
             val = row[col]
@@ -583,7 +583,7 @@ class Phase03GeologySynthesis(Phase):
     # Step 7A — 25 km near-occurrence coverage check (methodology v8/v9)
     # ------------------------------------------------------------------ #
 
-    def _build_step7a_coverage(self, ctx, pdir, gdf, rec, result) -> None:  # type: ignore[no-untyped-def]
+    def _build_step7a_coverage(self, ctx, pdir, gdf, rec, result) -> None:
         """Distance of each ingested occurrence to the licence boundary + the within-25 km
         selection layer + coverage-check register rows.
 
@@ -617,7 +617,7 @@ class Phase03GeologySynthesis(Phase):
             vector_io.write_layer(within25, sel_path, layer="near_mineral_occurrences_within_25km")
             result.add_output(sel_path)
 
-    def _build_coverage_rows(self, distances_m: list[float], rec) -> None:  # type: ignore[no-untyped-def]
+    def _build_coverage_rows(self, distances_m: list[float], rec) -> None:
         rows: list[dict[str, object]] = []
         for i, orow in enumerate(self._occurrence_rows):
             dm = float(distances_m[i]) if i < len(distances_m) else float("nan")
@@ -709,7 +709,7 @@ class Phase03GeologySynthesis(Phase):
 
     def _prepare_evidence_gdf(
         self,
-        gdf,  # type: ignore[no-untyped-def]
+        gdf,
         layer: str,
         *,
         target_epsg: int = 0,
@@ -719,7 +719,7 @@ class Phase03GeologySynthesis(Phase):
         filename: str = "",
         source_group: str = "",
         limitation: str = HISTORICAL_LIMITATION,
-    ):  # type: ignore[no-untyped-def]
+    ):
         """Enforce ``target_epsg``, promote to the layer's Multi* geometry, stamp mandatory
         provenance fields, mint ``feature_id`` where missing/blank, and reindex to *exactly* the
         evidence schema columns + geometry so appending aligns by name (fiona/pyogrio otherwise
@@ -748,7 +748,7 @@ class Phase03GeologySynthesis(Phase):
             )
 
         # promote to the layer's declared Multi* type so appends match the schema (no pyogrio warning)
-        def _multi(g):  # type: ignore[no-untyped-def]
+        def _multi(g):
             if isinstance(g, Polygon):
                 return MultiPolygon([g])
             if isinstance(g, LineString):
@@ -759,7 +759,7 @@ class Phase03GeologySynthesis(Phase):
 
         if gdf.geometry.name != "geometry":
             gdf = gdf.rename_geometry("geometry")
-        gdf["geometry"] = gpd.GeoSeries(
+        gdf["geometry"] = gpd.GeoSeries(  # ty: ignore[no-matching-overload]
             [_multi(g) for g in force_2d(gdf.geometry.to_numpy())], index=gdf.index, crs=gdf.crs
         )
 

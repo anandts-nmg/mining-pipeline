@@ -36,11 +36,10 @@ jobs:
       - name: Ruff format check
         run: ruff format --check .
 
-      - name: Mypy
-        run: mypy
-
-      - name: Pyright
-        run: pyright
+      - name: Ty (type check)
+        # ty resolves third-party imports from the interpreter it is pointed at, so
+        # point it at the job's Python where the package + geospatial deps are installed.
+        run: ty check --python "$(which python)"
 
       - name: Pytest
         run: pytest -q

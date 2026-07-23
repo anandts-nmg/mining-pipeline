@@ -57,11 +57,9 @@ def test_security_records_reject_setattr_and_nested_mutation(scenario_factory) -
     with pytest.raises(ValidationError, match="frozen"):
         artifact.content.content_sha256 = "f" * 64
     with pytest.raises(AttributeError):
-        artifact.events.append(artifact.events[0])  # type: ignore[attr-defined]
+        artifact.events.append(artifact.events[0])
     with pytest.raises(AttributeError):
-        artifact.content.source_references.append(  # type: ignore[attr-defined]
-            artifact.content.source_references[0]
-        )
+        artifact.content.source_references.append(artifact.content.source_references[0])
 
 
 def test_model_copy_and_deprecated_copy_revalidate_every_sensitive_record(

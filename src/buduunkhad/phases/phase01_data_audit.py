@@ -185,7 +185,7 @@ class Phase01DataAudit(Phase):
 
         flat2d = force_2d(gdf32.geometry.to_numpy())
         promoted = [MultiPolygon([g]) if isinstance(g, Polygon) else g for g in flat2d]
-        gdf32 = gdf32.set_geometry(gpd.GeoSeries(promoted, index=gdf32.index, crs=gdf32.crs))
+        gdf32 = gdf32.set_geometry(gpd.GeoSeries(promoted, index=gdf32.index, crs=gdf32.crs))  # ty: ignore[no-matching-overload]
         gdf32["name"] = cfg.project.license_code
         gdf32["source_input"] = f"#{ctx.config.boundary.input_no} {boundary_src.name}"
 
@@ -203,7 +203,7 @@ class Phase01DataAudit(Phase):
         # while the standalone deliverable below carries the full 1B.3 provenance.
         vector_io.write_layer(gdf32, master_path, layer="license_boundary", mode="a")
 
-        def _stamp_provenance(gdf, action: str, output_filename: str):  # type: ignore[no-untyped-def]
+        def _stamp_provenance(gdf, action: str, output_filename: str):
             """Attach the source-traceability fields the methodology (1A.3/1B.3) requires
             on every output layer."""
             gdf["source_raw_input_no"] = str(cfg.boundary.input_no)

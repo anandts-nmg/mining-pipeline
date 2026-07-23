@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from pathlib import Path
+from typing import cast
 
 import typer
 
@@ -25,7 +26,7 @@ phase03_ai_app = typer.Typer(
 ai_app.add_typer(phase03_ai_app, name="phase03")
 
 
-def _context(config_path: Path):  # type: ignore[no-untyped-def]
+def _context(config_path: Path):
     from buduunkhad.config import load_config
     from buduunkhad.geospatial_ai.path_safety import StorageRoots
 
@@ -48,7 +49,7 @@ def snapshot_create(
 ) -> None:
     """Create a write-once checksum manifest for a configured protected source root."""
 
-    from buduunkhad.geospatial_ai.snapshots import create_snapshot_manifest
+    from buduunkhad.geospatial_ai.snapshots import SourceRootId, create_snapshot_manifest
 
     try:
         _config, roots = _context(config)
@@ -58,7 +59,7 @@ def snapshot_create(
         result = create_snapshot_manifest(
             source_root,
             destination,
-            source_root_id=source_root_id,  # type: ignore[arg-type]
+            source_root_id=cast(SourceRootId, source_root_id),
             roots=roots,
             run_id=run_id,
         )
@@ -76,14 +77,14 @@ def snapshot_verify(
 ) -> None:
     """Re-hash a protected source tree against an immutable snapshot manifest."""
 
-    from buduunkhad.geospatial_ai.snapshots import verify_snapshot_manifest
+    from buduunkhad.geospatial_ai.snapshots import SourceRootId, verify_snapshot_manifest
 
     try:
         _config, roots = _context(config)
         result = verify_snapshot_manifest(
             source_root,
             manifest,
-            source_root_id=source_root_id,  # type: ignore[arg-type]
+            source_root_id=cast(SourceRootId, source_root_id),
             roots=roots,
         )
     except (OSError, ValueError, RuntimeError) as exc:
@@ -111,7 +112,7 @@ def prepare(
     """Render a source and create an inspectable request package without executing AI."""
 
     from buduunkhad.ai.contracts import TaskType
-    from buduunkhad.geospatial_ai.requests import prepare_request_package
+    from buduunkhad.geospatial_ai.requests import PreparedProvider, prepare_request_package
     from buduunkhad.geospatial_ai.tiles import TileParameters
 
     try:
@@ -122,7 +123,7 @@ def prepare(
             run_id=run_id,
             task_type=TaskType(task.replace("-", "_")),
             target_crs=project.crs.target_authority,
-            provider=provider,  # type: ignore[arg-type]
+            provider=cast(PreparedProvider, provider),
             model=model,
             tile_parameters=TileParameters(width=tile_size, height=tile_size, overlap=overlap),
             estimated_cost_usd=Decimal(str(estimated_cost)),

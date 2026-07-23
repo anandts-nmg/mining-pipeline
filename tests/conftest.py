@@ -19,6 +19,7 @@ import zipfile
 from collections.abc import Iterator
 from contextlib import suppress
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -79,11 +80,16 @@ class _DeniedSocket(_SYSTEM_SOCKET):
 
 
 def _install_network_denial() -> None:
-    _socket.socket = _DeniedSocket  # type: ignore[attr-defined]
+    # These modules intentionally receive test doubles with broader signatures than
+    # their stubs permit. Keep the dynamic boundary in one explicit cast per module.
+    raw_socket = cast(Any, _socket)
+    public_socket = cast(Any, socket)
+    url_request = cast(Any, urllib.request)
+    raw_socket.socket = _DeniedSocket
     if hasattr(_socket, "SocketType"):
-        _socket.SocketType = _DeniedSocket  # type: ignore[attr-defined]
+        raw_socket.SocketType = _DeniedSocket
     if hasattr(_socket, "socketpair"):
-        _socket.socketpair = _deny_network  # type: ignore[attr-defined]
+        raw_socket.socketpair = _deny_network
     for name in (
         "getaddrinfo",
         "gethostbyname",
@@ -93,21 +99,21 @@ def _install_network_denial() -> None:
     ):
         if hasattr(_socket, name):
             setattr(_socket, name, _deny_network)
-    socket.socket = _DeniedSocket
-    socket.SocketType = _DeniedSocket  # type: ignore[misc]
-    socket.create_connection = _deny_network  # type: ignore[assignment]
-    socket.create_server = _deny_network  # type: ignore[assignment]
-    socket.socketpair = _deny_network  # type: ignore[assignment]
-    socket.getaddrinfo = _deny_network  # type: ignore[assignment]
-    socket.gethostbyname = _deny_network  # type: ignore[assignment]
-    socket.gethostbyname_ex = _deny_network  # type: ignore[assignment]
-    socket.gethostbyaddr = _deny_network  # type: ignore[assignment]
-    socket.getnameinfo = _deny_network  # type: ignore[assignment]
-    socket.getfqdn = _deny_network  # type: ignore[assignment]
-    urllib.request.urlopen = _deny_network  # type: ignore[assignment]
-    http.client.HTTPConnection.connect = _deny_network  # type: ignore[assignment]
-    http.client.HTTPConnection.request = _deny_network  # type: ignore[assignment]
-    http.client.HTTPSConnection.connect = _deny_network  # type: ignore[assignment]
+    public_socket.socket = _DeniedSocket
+    public_socket.SocketType = _DeniedSocket
+    public_socket.create_connection = _deny_network
+    public_socket.create_server = _deny_network
+    public_socket.socketpair = _deny_network
+    public_socket.getaddrinfo = _deny_network
+    public_socket.gethostbyname = _deny_network
+    public_socket.gethostbyname_ex = _deny_network
+    public_socket.gethostbyaddr = _deny_network
+    public_socket.getnameinfo = _deny_network
+    public_socket.getfqdn = _deny_network
+    url_request.urlopen = _deny_network
+    http.client.HTTPConnection.connect = _deny_network
+    http.client.HTTPConnection.request = _deny_network
+    http.client.HTTPSConnection.connect = _deny_network
 
 
 def _restore_network_originals() -> None:

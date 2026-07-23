@@ -17,7 +17,7 @@ from pathlib import Path
 COG_BLOCKSIZE = 512
 
 
-def clip_to_aoi_raster(src: Path, dst: Path, aoi_geom_native, *, nodata=None) -> Path | None:  # type: ignore[no-untyped-def]
+def clip_to_aoi_raster(src: Path, dst: Path, aoi_geom_native, *, nodata=None) -> Path | None:
     """Clip a raster to ``aoi_geom_native`` (a shapely geometry **already in the
     raster's CRS**), writing a plain GeoTIFF. Preserves dtype/band-count/nodata.
 
@@ -59,7 +59,7 @@ def write_cog(
 ) -> Path:
     """Convert a GeoTIFF to a Cloud-Optimized GeoTIFF (tiled + internal overviews +
     compression). ``predictor`` is passed to GDAL as a string ('2' int, '3' float)."""
-    import rasterio.shutil as rio_shutil
+    import rasterio.shutil as rio_shutil  # ty: ignore[unresolved-import]
 
     src = Path(src)
     dst = Path(dst)

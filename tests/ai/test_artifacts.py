@@ -71,7 +71,7 @@ def _build(scenario, *, resolver=None, **overrides: object) -> AIArtifact:
         "evidence_status": "SUPPORT_EVIDENCE",
     }
     values.update(overrides)
-    return build_artifact(**values)  # type: ignore[arg-type]
+    return build_artifact(**values)  # ty: ignore[invalid-argument-type]
 
 
 def _isolated_resolver(

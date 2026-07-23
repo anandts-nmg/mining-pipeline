@@ -13,12 +13,12 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_attempted_guard_mutation_is_confined_to_one_test() -> None:
-    socket.getaddrinfo = lambda *_args, **_kwargs: []  # type: ignore[assignment]
-    _socket.socket = lambda *_args, **_kwargs: object()  # type: ignore[attr-defined]
-    _socket.SocketType = lambda *_args, **_kwargs: object()  # type: ignore[attr-defined]
+    socket.getaddrinfo = lambda *_args, **_kwargs: []  # ty: ignore[invalid-assignment]
+    _socket.socket = lambda *_args, **_kwargs: object()  # ty: ignore[invalid-assignment]
+    _socket.SocketType = lambda *_args, **_kwargs: object()  # ty: ignore[invalid-assignment]
     assert socket.getaddrinfo("example.invalid", 443) == []
     assert _socket.socket() is not None
-    assert _socket.SocketType() is not None  # type: ignore[attr-defined]
+    assert _socket.SocketType() is not None
 
 
 def test_guard_is_active_after_previous_test() -> None:
@@ -27,4 +27,4 @@ def test_guard_is_active_after_previous_test() -> None:
     with pytest.raises(RuntimeError, match="network access is disabled"):
         _socket.socket()
     with pytest.raises(RuntimeError, match="network access is disabled"):
-        _socket.SocketType()  # type: ignore[attr-defined]
+        _socket.SocketType()

@@ -36,7 +36,7 @@ from buduunkhad.core.publish import (
 
 
 def _recompute_publication_id(data: dict[str, object]) -> None:
-    phases = tuple(PublishedPhase.model_validate(value) for value in data["phases"])  # type: ignore[union-attr]
+    phases = tuple(PublishedPhase.model_validate(value) for value in data["phases"])  # ty: ignore[not-iterable]
     project = PublicationProjectReference.model_validate(data["project"])
     compatibility = CompatibilityRunManifest.model_validate(data["compatibility_run_manifest"])
     data["publication_id"] = publication_id_for(
@@ -44,7 +44,7 @@ def _recompute_publication_id(data: dict[str, object]) -> None:
         package_version=str(data["package_version"]),
         git_commit_sha=data["git_commit_sha"] if isinstance(data["git_commit_sha"], str) else None,
         phases=phases,
-        package_status=data["package_status"],  # type: ignore[arg-type]
+        package_status=data["package_status"],  # ty: ignore[invalid-argument-type]
         compatibility_run_manifest=compatibility,
         superseded_publication_id=(
             data["superseded_publication_id"]
@@ -954,7 +954,7 @@ def test_pending_count_tampering_fails_even_with_recomputed_publication_id(tmp_p
     result = publish(out, tmp_path / "staging", "pending-tamper", runs_root=runs)
 
     def mutate(data: dict[str, object]) -> None:
-        data["phases"][0]["pending_human_review_or_qaqc_count"] = 9  # type: ignore[index]
+        data["phases"][0]["pending_human_review_or_qaqc_count"] = 9  # ty: ignore[not-subscriptable]
 
     _tamper_manifest(result.dest, mutate)
     with pytest.raises(PublishError, match="gate provenance mismatch"):
@@ -979,8 +979,8 @@ def test_source_artifact_metadata_tampering_fails_with_recomputed_id(tmp_path):
     changed_hash = hashlib.sha256(changed_bytes).hexdigest()
 
     def mutate(data: dict[str, object]) -> None:
-        data["phases"][0]["source_run_manifest_sha256"] = changed_hash  # type: ignore[index]
-        data["compatibility_run_manifest"]["sha256"] = changed_hash  # type: ignore[index]
+        data["phases"][0]["source_run_manifest_sha256"] = changed_hash  # ty: ignore[not-subscriptable]
+        data["compatibility_run_manifest"]["sha256"] = changed_hash  # ty: ignore[invalid-assignment]
 
     _tamper_manifest(result.dest, mutate)
     with pytest.raises(PublishError, match="source artifact identity mismatch"):
@@ -1177,15 +1177,15 @@ def test_publication_identity_changes_for_every_recorded_identity_group(tmp_path
     ]
     for update in variants:
         changed = publication_id_for(
-            project=update.get("project", manifest.project),
-            package_version=update.get("package_version", manifest.package_version),
-            git_commit_sha=update.get("git_commit_sha", manifest.git_commit_sha),
-            phases=update.get("phases", manifest.phases),
+            project=update.get("project", manifest.project),  # ty: ignore[invalid-argument-type]
+            package_version=update.get("package_version", manifest.package_version),  # ty: ignore[invalid-argument-type]
+            git_commit_sha=update.get("git_commit_sha", manifest.git_commit_sha),  # ty: ignore[invalid-argument-type]
+            phases=update.get("phases", manifest.phases),  # ty: ignore[invalid-argument-type]
             package_status=manifest.package_status,
-            compatibility_run_manifest=update.get(
+            compatibility_run_manifest=update.get(  # ty: ignore[invalid-argument-type]
                 "compatibility_run_manifest", manifest.compatibility_run_manifest
             ),
-            superseded_publication_id=update.get(
+            superseded_publication_id=update.get(  # ty: ignore[invalid-argument-type]
                 "superseded_publication_id", manifest.superseded_publication_id
             ),
         )
@@ -1256,7 +1256,7 @@ def test_exact_run_publication_ignores_mutable_current_view_and_is_idempotent(ra
         config.output_root,
         config.base_dir / "publication-staging",
         "exact-run",
-        **kwargs,
+        **kwargs,  # ty: ignore[invalid-argument-type]
     )
     first_manifest = verify_publication_package(first.dest)
     published = next(
@@ -1270,7 +1270,7 @@ def test_exact_run_publication_ignores_mutable_current_view_and_is_idempotent(ra
         config.output_root,
         config.base_dir / "publication-staging",
         "exact-run",
-        **kwargs,
+        **kwargs,  # ty: ignore[invalid-argument-type]
     )
     assert second.dest == first.dest
     assert load_publication_manifest(second.dest).publication_id == first_manifest.publication_id

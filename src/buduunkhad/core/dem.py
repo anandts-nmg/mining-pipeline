@@ -131,7 +131,7 @@ def curvature(z: np.ndarray, xres: float, yres: float) -> tuple[np.ndarray, np.n
 # --------------------------------------------------------------------------- #
 
 
-def _read_elevation(path: Path):  # type: ignore[no-untyped-def]
+def _read_elevation(path: Path):
     import rasterio
 
     with rasterio.open(path) as ds:

@@ -143,7 +143,7 @@ def write_confidence_ranking_xlsx(rows: Iterable[dict[str, object]], path: Path)
 
 def write_integrity_log_xlsx(records: Sequence[ChecksumRecord], path: Path) -> Path:
     """Write the raw-data integrity log (checksums + size, one row per raw file)."""
-    rows = [
+    rows: list[dict[str, object]] = [
         {
             "filename": r.filename,
             "relative_path": r.relative_path,

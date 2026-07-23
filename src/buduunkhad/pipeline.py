@@ -14,7 +14,7 @@ import shutil
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from buduunkhad import __version__
 from buduunkhad.config import InputRecord, ProjectConfig, load_config, load_register
@@ -497,7 +497,7 @@ def _phase_outcome_from_dict(value: dict[str, Any]) -> PhaseOutcome:
             name=str(value["name"]),
             mode=str(value["mode"]),
             status=str(value["status"]),
-            outputs=list(outputs),
+            outputs=cast(list[str], outputs),
             output_artifacts=[RunOutputArtifact.model_validate(item) for item in artifacts],
             sealed_files=[RunOutputArtifact.model_validate(item) for item in sealed_files],
             qaqc_passed=value.get("qaqc_passed") is True,
@@ -547,7 +547,7 @@ def _load_resume_manifest(layout: RunLayout) -> RunManifest:
         started_at=str(data.get("started_at", "")),
         dry_run=data.get("dry_run") is True,
         override=data.get("override") is True,
-        selected_phases=list(selected),
+        selected_phases=cast(list[str], selected),
         phases=[_phase_outcome_from_dict(value) for value in phases],
         warnings=[str(value) for value in data.get("warnings", [])],
         stopped_at=str(data.get("stopped_at", "")),

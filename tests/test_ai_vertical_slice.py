@@ -418,7 +418,7 @@ def test_legacy_request_package_schema_identity_remains_verifiable(
 
     altered_schema = loaded.output_schema_json.to_python()
     assert isinstance(altered_schema, dict)
-    altered_schema["title"] = "Representational annotation changed after persistence"
+    altered_schema["title"] = "Representational annotation changed after persistence"  # ty: ignore[invalid-assignment]
     tampered = loaded.model_copy(
         update={"output_schema_json": CanonicalJSONValue.from_value(altered_schema)}
     )
@@ -723,19 +723,19 @@ def test_saved_response_nested_source_identity_is_revalidated(
     value = json.loads(response_path.read_text(encoding="utf-8"))
     decoded = SavedProviderResponse.model_validate(value).payload.to_python()
     assert isinstance(decoded, dict)
-    proposals = decoded["proposals"]
+    proposals = decoded["proposals"]  # ty: ignore[invalid-argument-type]
     assert isinstance(proposals, list) and isinstance(proposals[0], dict)
-    references = proposals[0]["source_references"]
+    references = proposals[0]["source_references"]  # ty: ignore[invalid-argument-type]
     assert isinstance(references, list) and isinstance(references[0], dict)
     reference = references[0]
     if mutation == "asset":
-        reference["asset_id"] = "unregistered-source"
+        reference["asset_id"] = "unregistered-source"  # ty: ignore[invalid-assignment]
     elif mutation == "hash":
-        reference["sha256"] = "0" * 64
+        reference["sha256"] = "0" * 64  # ty: ignore[invalid-assignment]
     else:
-        locators = reference["locators"]
+        locators = reference["locators"]  # ty: ignore[invalid-argument-type]
         assert isinstance(locators, list) and isinstance(locators[0], dict)
-        locators[0]["x_offset"] = int(locators[0]["x_offset"]) + 1
+        locators[0]["x_offset"] = int(locators[0]["x_offset"]) + 1  # ty: ignore[invalid-argument-type, invalid-assignment]
     value["payload"] = decoded
     response_path.write_text(json.dumps(value), encoding="utf-8")
     with pytest.raises(ResponseIngestionError, match="source|locator"):
@@ -937,7 +937,7 @@ def test_snapshot_manifest_and_protected_path_policy(
         create_snapshot_manifest(
             ai_roots.workflow_docs_root,
             manifest_path.with_name("workflow-docs.json"),
-            source_root_id="workflow-docs",  # type: ignore[arg-type]
+            source_root_id="workflow-docs",  # ty: ignore[invalid-argument-type]
             roots=ai_roots,
             run_id="snapshot-run",
         )

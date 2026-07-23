@@ -19,7 +19,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Literal
+from typing import Any, Literal, cast
 
 import fiona
 from pydantic import Field, field_validator, model_validator
@@ -718,11 +718,8 @@ def _find_request_package(run_directory: Path, job_id: str) -> Path:
                 value = _load_unique_json(manifest_path)
             except Phase03HandoffError:
                 continue
-            if (
-                isinstance(value, dict)
-                and isinstance(value.get("request"), dict)
-                and value["request"].get("job_id") == job_id
-            ):
+            request = value.get("request") if isinstance(value, dict) else None
+            if isinstance(request, dict) and request.get("job_id") == job_id:
                 candidates.append(manifest_path.parent)
     if len(candidates) != 1:
         raise Phase03HandoffError("processed draft must resolve to exactly one request package")
@@ -1182,7 +1179,7 @@ def _write_review_project(
     )
 
 
-def _style(layer: DraftLayerName, state: str):  # type: ignore[no-untyped-def]
+def _style(layer: DraftLayerName, state: str):
     geometry = _EXPECTED_GEOMETRIES[layer]
     if state == "accepted":
         color = "0,150,70,255"
@@ -1423,6 +1420,12 @@ def _require_reviewer(properties: dict[str, object], manifest: ReviewPackageMani
 
 
 def _promoted_identity(record: _ReviewedRecord, manifest: ReviewPackageManifest) -> PromotedFeature:
+    if record.decision is Phase03ReviewDecision.ACCEPTED:
+        promoted_decision: Literal["accepted", "accepted_with_edits"] = "accepted"
+    elif record.decision is Phase03ReviewDecision.ACCEPTED_WITH_EDITS:
+        promoted_decision = "accepted_with_edits"
+    else:
+        raise Phase03HandoffError("only accepted review decisions can be promoted")
     output_layer, prefix = _OUTPUT_LAYERS[record.layer]
     identity = sha256_value(
         {
@@ -1437,7 +1440,7 @@ def _promoted_identity(record: _ReviewedRecord, manifest: ReviewPackageManifest)
         proposal_id=str(record.properties["proposal_id"]),
         accepted_feature_id=f"{prefix}-{identity[:12].upper()}",
         output_layer=output_layer,
-        decision=record.decision.value,  # type: ignore[arg-type]
+        decision=promoted_decision,
         reviewed_geometry_sha256=record.reviewed_geometry_sha256,
         review_record_sha256=sha256_value(
             {
@@ -1724,7 +1727,7 @@ def _shape_feature_geometry(value: object, label: str) -> BaseGeometry:
     if value is None:
         raise Phase03HandoffError(f"{label} has no geometry")
     try:
-        return shape(value)  # type: ignore[arg-type]
+        return shape(cast(Any, value))
     except (AttributeError, TypeError, ValueError) as exc:
         raise Phase03HandoffError(f"{label} geometry is unreadable") from exc
 
@@ -1816,7 +1819,7 @@ def _validation_findings_digest_from_records(
         if geometry_value is None or not isinstance(properties, dict):
             raise Phase03HandoffError("validation finding record is incomplete")
         geometry = _shape_feature_geometry(geometry_value, "validation finding")
-        digests.append(_record_sha(geometry, properties))
+        digests.append(_record_sha(geometry, cast(dict[str, object], properties)))
     return sha256_value(tuple(sorted(digests)))
 
 

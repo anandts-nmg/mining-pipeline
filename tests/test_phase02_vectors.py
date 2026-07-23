@@ -40,7 +40,7 @@ def _write_raster(path, arr, *, res=12.5, epsg=32647, nodata=None):
 
 def _skimage_missing() -> bool:
     try:
-        import skimage  # noqa: F401  # pyright: ignore[reportMissingImports]
+        import skimage  # noqa: F401  # ty: ignore[unresolved-import]
 
         return False
     except ImportError:

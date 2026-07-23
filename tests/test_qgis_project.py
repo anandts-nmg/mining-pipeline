@@ -64,7 +64,7 @@ def test_qgz_tree_projectlayers_and_order_consistent(tmp_path):
 
     tree_ids = [n.get("id") for n in root.iter("layer-tree-layer")]
     maplayer_ids = [ml.findtext("id") for ml in root.iter("maplayer")]
-    order_ids = [n.get("id") for n in root.find("layerorder").iter("layer")]  # type: ignore[union-attr]
+    order_ids = [n.get("id") for n in root.find("layerorder").iter("layer")]  # ty: ignore[unresolved-attribute]
     assert tree_ids == maplayer_ids == order_ids
 
     # visibility flag round-trips into the tree

@@ -194,8 +194,7 @@ Run focused tests before the full suite. Ordinary acceptance commands are:
 ```text
 ruff check .
 ruff format --check .
-mypy
-pyright
+ty check
 pytest -q
 python -m build --wheel --no-isolation
 git diff --check

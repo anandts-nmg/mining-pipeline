@@ -15,7 +15,7 @@ Installation
 Python 3.11 or 3.12. From the repository root:
 
     pip install -e .            (runtime)
-    pip install -e .[dev]       (development: ruff, mypy, pyright, pytest)
+    pip install -e .[dev]       (development: ruff, ty, pytest)
 
 Optional extras: [dem] (terrain/hydrology tooling), [openai] / [anthropic]
 (live provider adapters; never required for tests or offline work).

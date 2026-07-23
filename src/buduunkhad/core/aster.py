@@ -175,7 +175,7 @@ def extract_bands(
 # --------------------------------------------------------------------------- #
 
 
-def read_aligned(band_files: dict[str, Path], *, ref_band: str = "B04"):  # type: ignore[no-untyped-def]
+def read_aligned(band_files: dict[str, Path], *, ref_band: str = "B04"):
     """Read every band resampled (bilinear) onto the reference band's grid.
 
     Returns ``(arrays, profile)`` — float32 arrays with NaN where nodata, plus a rasterio
@@ -235,7 +235,7 @@ def anomaly_threshold(index: np.ndarray, *, k: float) -> tuple[float, float, flo
     return mean, std, mean + k * std
 
 
-def aoi_mask(aoi_gdf, profile) -> np.ndarray:  # type: ignore[no-untyped-def]
+def aoi_mask(aoi_gdf, profile) -> np.ndarray:
     """Boolean mask (True inside the AOI geometries) on the profile's grid."""
     from rasterio.features import geometry_mask
 
@@ -297,10 +297,10 @@ def score_targets(
 
 def polygonize_targets(
     score: np.ndarray,
-    profile,  # type: ignore[no-untyped-def]
+    profile,
     *,
     params: AsterParams,
-):  # type: ignore[no-untyped-def]
+):
     """Support polygons from score >= the frozen ``params.score_min``.
 
     Returns a GeoDataFrame (possibly empty) with target_score / confidence / area_ha and the
@@ -330,7 +330,7 @@ def polygonize_targets(
             }
         )
         geoms.append(poly)
-    return gpd.GeoDataFrame(records, geometry=geoms, crs=profile["crs"])
+    return gpd.GeoDataFrame(records, geometry=geoms, crs=profile["crs"])  # ty: ignore[no-matching-overload]
 
 
 # --------------------------------------------------------------------------- #
@@ -340,7 +340,7 @@ def polygonize_targets(
 
 def write_index_raster(
     array: np.ndarray,
-    profile,  # type: ignore[no-untyped-def]
+    profile,
     dst: Path,
     *,
     compress: str = "DEFLATE",

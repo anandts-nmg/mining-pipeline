@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import re
 import zipfile
+from collections.abc import MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from buduunkhad.config import GpkgLayer
 
@@ -76,18 +77,16 @@ class PointIngestResult:
 
 
 def _enable_kml_drivers() -> None:
-    from typing import cast
-
     from fiona.drvsupport import supported_drivers
 
-    # fiona's typed stub constrains the keys to a fixed Literal set of driver names
-    # that omits KML/LIBKML (both valid at runtime), so treat it as a plain mapping.
-    drivers = cast(dict[str, str], supported_drivers)
+    # Fiona's stub restricts keys to its built-in Literal list, which omits the
+    # valid runtime KML/LIBKML drivers. Widen only this mutable mapping boundary.
+    drivers = cast(MutableMapping[str, str], supported_drivers)
     for drv in ("KML", "LIBKML"):
         drivers[drv] = "rw"
 
 
-def read_boundary(path: Path, assume_epsg: int = 4326):  # type: ignore[no-untyped-def]
+def read_boundary(path: Path, assume_epsg: int = 4326):
     """Read a KMZ/KML (or any OGR-readable) boundary into a GeoDataFrame.
 
     KMZ is unzipped to a temp dir and the contained KML is read. KML carries no
@@ -114,7 +113,7 @@ def read_boundary(path: Path, assume_epsg: int = 4326):  # type: ignore[no-untyp
     return gdf
 
 
-def _read_vector(path: Path):  # type: ignore[no-untyped-def]
+def _read_vector(path: Path):
     import geopandas as gpd
 
     try:
@@ -184,7 +183,7 @@ def create_evidence_gpkg(
     return path
 
 
-def buffer_rings(boundary_gdf, distances_m: list[int], epsg: int):  # type: ignore[no-untyped-def]
+def buffer_rings(boundary_gdf, distances_m: list[int], epsg: int):
     """Build a multi-ring buffer GeoDataFrame off ``boundary_gdf``.
 
     Returns a GeoDataFrame with one row per distance (ascending), a ``distance_m``
@@ -199,10 +198,10 @@ def buffer_rings(boundary_gdf, distances_m: list[int], epsg: int):  # type: igno
         else boundary_gdf.geometry.unary_union
     )
     rings = [{"distance_m": dist, "geometry": merged.buffer(dist)} for dist in sorted(distances_m)]
-    return gpd.GeoDataFrame(rings, crs=f"EPSG:{epsg}")
+    return gpd.GeoDataFrame(rings, crs=f"EPSG:{epsg}")  # ty: ignore[no-matching-overload]
 
 
-def make_grid(aoi_gdf, cell_m: float, epsg: int):  # type: ignore[no-untyped-def]
+def make_grid(aoi_gdf, cell_m: float, epsg: int):
     """Build a square fishnet of ``cell_m``-sided cells over ``aoi_gdf``'s extent, keeping only
     cells that intersect the (dissolved) AOI. Returns a GeoDataFrame with a ``grid_id`` column
     in ``EPSG:<epsg>`` (used by Phase 04's evidence-scoring grid).
@@ -230,10 +229,10 @@ def make_grid(aoi_gdf, cell_m: float, epsg: int):  # type: ignore[no-untyped-def
             if cell.intersects(merged):
                 cells.append({"grid_id": f"G{gid:05d}", "geometry": cell})
                 gid += 1
-    return gpd.GeoDataFrame(cells, geometry="geometry", crs=f"EPSG:{epsg}")
+    return gpd.GeoDataFrame(cells, geometry="geometry", crs=f"EPSG:{epsg}")  # ty: ignore[no-matching-overload]
 
 
-def dissolve_adjacent(gdf):  # type: ignore[no-untyped-def]
+def dissolve_adjacent(gdf):
     """Merge touching/overlapping geometries into contiguous clusters. Unions everything, then
     explodes into one row per connected part with a ``cluster_id`` column, in the input CRS.
     Returns an empty copy unchanged.
@@ -245,15 +244,15 @@ def dissolve_adjacent(gdf):  # type: ignore[no-untyped-def]
     merged = (
         gdf.geometry.union_all() if hasattr(gdf.geometry, "union_all") else gdf.geometry.unary_union
     )
-    parts = gpd.GeoSeries([merged], crs=gdf.crs).explode(index_parts=False).reset_index(drop=True)
-    return gpd.GeoDataFrame(
+    parts = gpd.GeoSeries([merged], crs=gdf.crs).explode(index_parts=False).reset_index(drop=True)  # ty: ignore[no-matching-overload]
+    return gpd.GeoDataFrame(  # ty: ignore[no-matching-overload]
         {"cluster_id": list(range(len(parts))), "geometry": list(parts)},
         geometry="geometry",
         crs=gdf.crs,
     )
 
 
-def nearest_distance(gdf, target_gdf):  # type: ignore[no-untyped-def]
+def nearest_distance(gdf, target_gdf):
     """Elementwise distance (metres, in ``gdf``'s CRS) from each geometry in ``gdf`` to the
     nearest geometry in ``target_gdf`` (dissolved to one geometry). Returns a pandas Series
     aligned to ``gdf.index``; an empty/None target yields all-NaN.
@@ -279,7 +278,7 @@ _DMS_RE = re.compile(
 )
 
 
-def _to_decimal_degrees(value):  # type: ignore[no-untyped-def]
+def _to_decimal_degrees(value):
     """Coerce a coordinate cell to a float. Numeric values pass through; a DMS string such
     as ``96°41'16"`` (e.g. a Mongolian register's Уртраг/Өргөрөг columns) is parsed to decimal
     degrees, honouring a leading sign or an N/S/E/W hemisphere. Returns ``None`` when unparseable.
@@ -360,7 +359,7 @@ def xlsx_points_with_provenance(
         detected_epsg = projected_epsg
 
     attrs = df.loc[coords.index].reset_index(drop=True)
-    gdf = gpd.GeoDataFrame(
+    gdf = gpd.GeoDataFrame(  # ty: ignore[no-matching-overload]
         attrs,
         geometry=gpd.points_from_xy(
             coords["x"].reset_index(drop=True), coords["y"].reset_index(drop=True)
@@ -390,7 +389,7 @@ def xlsx_points_to_gdf(
     target_epsg: int = 32647,
     *,
     projected_epsg: int | None = None,
-):  # type: ignore[no-untyped-def]
+):
     """Return only the GeoDataFrame; projected coordinates still require explicit CRS input."""
 
     result = xlsx_points_with_provenance(
@@ -409,14 +408,14 @@ def list_gpkg_layers(path: Path) -> list[str]:
     return list(fiona.listlayers(str(path)))
 
 
-def read_layer(path: Path, layer: str):  # type: ignore[no-untyped-def]
+def read_layer(path: Path, layer: str):
     """Read one layer of a GeoPackage into a GeoDataFrame (used to load Phase 1 AOIs)."""
     import geopandas as gpd
 
     return gpd.read_file(Path(path), layer=layer)
 
 
-def write_layer(gdf, path: Path, layer: str, mode: str = "w") -> Path:  # type: ignore[no-untyped-def]
+def write_layer(gdf, path: Path, layer: str, mode: str = "w") -> Path:
     """Write (``mode='w'``) or append (``mode='a'``) a GeoDataFrame as a GPKG layer.
 
     Appending targets an existing layer and leaves the rest of the GeoPackage's

@@ -21,6 +21,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
+from typing import cast
 
 from pydantic import ValidationError
 
@@ -218,11 +219,15 @@ def latest_gate_per_phase(runs_root: Path) -> dict[str, dict[str, object]]:
         if not isinstance(phases, list):
             raise PublishError(f"run manifest lacks a phases list: {man}")
         for p in phases:
-            if not isinstance(p, dict) or not isinstance(p.get("phase_id"), str):
+            if not isinstance(p, dict):
                 raise PublishError(f"run manifest contains a malformed phase record: {man}")
-            gate = p.get("gate", {})
-            phase_id = p["phase_id"]
-            if isinstance(gate, dict) and gate.get("status"):
+            phase_id = p.get("phase_id")
+            if not isinstance(phase_id, str):
+                raise PublishError(f"run manifest contains a malformed phase record: {man}")
+            gate = p.get("gate")
+            gate_status = gate.get("status") if isinstance(gate, dict) else None
+            gate_provisional = gate.get("provisional", False) if isinstance(gate, dict) else False
+            if isinstance(gate_status, str) and gate_status:
                 if phase_times.get(phase_id) == completed_at:
                     raise PublishError(
                         f"latest gate is ambiguous for Phase {phase_id} at {completed_at.isoformat()}"
@@ -230,8 +235,8 @@ def latest_gate_per_phase(runs_root: Path) -> dict[str, dict[str, object]]:
                 if phase_id not in phase_times or completed_at > phase_times[phase_id]:
                     phase_times[phase_id] = completed_at
                     out[phase_id] = {
-                        "status": gate["status"],
-                        "provisional": gate.get("provisional", False),
+                        "status": gate_status,
+                        "provisional": gate_provisional,
                         "run_id": data.get("run_id", ""),
                     }
     return out
@@ -415,6 +420,9 @@ def _load_run_phase_records(
             if phase_id in seen_phases:
                 raise PublishError(f"run manifest repeats Phase {phase_id}: {manifest_path}")
             seen_phases.add(phase_id)
+            recorded_outputs = cast(list[str], output_values)
+            gate_status = gate.get("status")
+            assert isinstance(gate_status, str)
             pending_count = phase.get("pending_human_review_or_qaqc_count")
             if pending_count is not None and (type(pending_count) is not int or pending_count < 0):
                 raise PublishError(f"run manifest has an invalid pending count: {manifest_path}")
@@ -424,7 +432,7 @@ def _load_run_phase_records(
             if not has_artifact_inventory:
                 output_artifacts = None
                 resolved_outputs = tuple(
-                    _resolve_recorded_output(item, output_root) for item in output_values
+                    _resolve_recorded_output(item, output_root) for item in recorded_outputs
                 )
             elif not isinstance(artifact_values, list):
                 raise PublishError(f"run manifest output_artifacts is invalid: {manifest_path}")
@@ -441,7 +449,7 @@ def _load_run_phase_records(
                 if len(set(artifact_paths)) != len(artifact_paths):
                     raise PublishError(f"run manifest repeats an artifact path: {manifest_path}")
                 recorded_paths = _recorded_publishable_paths(
-                    output_values,
+                    recorded_outputs,
                     set(artifact_paths),
                     phase_id,
                 )
@@ -481,7 +489,7 @@ def _load_run_phase_records(
                 execution_status=execution_status,
                 outputs=resolved_outputs,
                 output_artifacts=output_artifacts,
-                gate_state=str(gate["status"]),
+                gate_state=gate_status,
                 gate_provisional=gate.get("provisional") is True,
                 human_review_or_qaqc_pending=phase.get("qaqc_pending") is True,
                 pending_human_review_or_qaqc_count=pending_count,

@@ -87,7 +87,7 @@ def _inject_evidence(config):
     # geology polygon whose contact (boundary) sits within a grid cell of each point
     poly = pts.geometry.union_all().buffer(150)
     geol = poly if poly.geom_type == "MultiPolygon" else MultiPolygon([poly])
-    gg = gpd.GeoDataFrame([_row("BUD-GEO50-0001")], geometry=[geol], crs=f"EPSG:{epsg}")
+    gg = gpd.GeoDataFrame([_row("BUD-GEO50-0001")], geometry=[geol], crs=f"EPSG:{epsg}")  # ty: ignore[no-matching-overload]
     vector_io.write_layer(
         gg.reindex(columns=[*EVIDENCE_FIELDS, "geometry"]),
         gpkg,
@@ -100,7 +100,7 @@ def _inject_evidence(config):
         if len(coords) >= 2
         else LineString([coords[0], (coords[0][0] + 300, coords[0][1])])
     )
-    fg = gpd.GeoDataFrame(
+    fg = gpd.GeoDataFrame(  # ty: ignore[no-matching-overload]
         [_row("BUD-STR-0001")], geometry=[MultiLineString([line])], crs=f"EPSG:{epsg}"
     )
     vector_io.write_layer(
@@ -121,10 +121,10 @@ def _inject_attribute_evidence(config):
     pts = vector_io.read_layer(_evidence_gpkg_03(config), "mineralized_points_point")
     cover = pts.geometry.union_all().buffer(400)
     epsg = config.target_epsg
-    gpd.GeoDataFrame(
+    gpd.GeoDataFrame(  # ty: ignore[no-matching-overload]
         {"alt_type": ["advanced_argillic"], "geometry": [cover]}, crs=f"EPSG:{epsg}"
     ).to_file(p03in / "human_aster_alteration.gpkg", layer="aster_alteration_zones", driver="GPKG")
-    gpd.GeoDataFrame({"main_element": ["Cu,Mo"], "geometry": [cover]}, crs=f"EPSG:{epsg}").to_file(
+    gpd.GeoDataFrame({"main_element": ["Cu,Mo"], "geometry": [cover]}, crs=f"EPSG:{epsg}").to_file(  # ty: ignore[no-matching-overload]
         p03in / "human_geochem_anomaly.gpkg", layer="geochem_anomaly_polygons", driver="GPKG"
     )
 
@@ -165,7 +165,7 @@ def test_make_grid_and_dissolve(project):
     import geopandas as gpd
     from shapely.geometry import box
 
-    aoi = gpd.GeoDataFrame({"geometry": [box(0, 0, 1000, 1000)]}, crs="EPSG:32647")
+    aoi = gpd.GeoDataFrame({"geometry": [box(0, 0, 1000, 1000)]}, crs="EPSG:32647")  # ty: ignore[no-matching-overload]
     cells = vector_io.make_grid(aoi, 250, 32647)
     assert len(cells) == 16  # 4x4
     assert "grid_id" in cells.columns
@@ -404,7 +404,7 @@ def test_phase04_results_ignore_ai_handoff_attribute_evidence_without_authoritat
     p03_input.mkdir(parents=True, exist_ok=True)
     boundary = vector_io.read_layer(_evidence_gpkg_03(config), "license_boundary")
     geometry = boundary.geometry.union_all().buffer(100)
-    gpd.GeoDataFrame(
+    gpd.GeoDataFrame(  # ty: ignore[no-matching-overload]
         {
             "proposal_state": ["AI_DRAFT"],
             "review_state": [review_state],
@@ -445,7 +445,7 @@ def test_phase04_uses_only_the_exact_legacy_evidence_package_identity(raw_archiv
 
     evidence_directory = _evidence_gpkg_03(config).parent
     boundary = vector_io.read_layer(_evidence_gpkg_03(config), "license_boundary")
-    gpd.GeoDataFrame(
+    gpd.GeoDataFrame(  # ty: ignore[no-matching-overload]
         {
             "proposal_state": ["AI_DRAFT"],
             "review_state": ["PENDING"],
@@ -471,7 +471,7 @@ def test_phase04_direct_evidence_loader_fails_closed_for_ai_lifecycle(tmp_path):
     from shapely.geometry import Point
 
     path = tmp_path / "canonical-looking.gpkg"
-    gpd.GeoDataFrame(
+    gpd.GeoDataFrame(  # ty: ignore[no-matching-overload]
         {
             "proposal_state": ["AI_DRAFT"],
             "review_state": ["HUMAN_REVIEWED"],

@@ -144,7 +144,7 @@ class DeterministicTestProvider:
         response_id = test_response_id(request)
         if job.provider_response_id != response_id:
             raise AIProviderError("test response identity differs from authoritative job")
-        response_type = AIResponse[output_model]  # type: ignore[valid-type]
+        response_type = AIResponse[output_model]  # ty: ignore[invalid-type-form]
         return cast(
             AIResponse[OutputT],
             response_type.model_validate(

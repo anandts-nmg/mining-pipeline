@@ -45,7 +45,7 @@ def test_legacy_serialization_shape_excludes_ai_by_default() -> None:
     )
     assert normalized_json_text == exact_snapshot
     ai_v1 = config.model_dump(context={"config_serialization_version": "ai-v1"})
-    assert ai_v1["ai"]["profile"] == "legacy"  # type: ignore[index]
+    assert ai_v1["ai"]["profile"] == "legacy"
 
 
 def test_project_yaml_bytes_remain_at_the_legacy_baseline() -> None:

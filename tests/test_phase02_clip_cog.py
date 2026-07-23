@@ -43,7 +43,7 @@ def _aoi(bounds: tuple[float, float, float, float], epsg: int):
     import geopandas as gpd
     from shapely.geometry import box
 
-    return gpd.GeoDataFrame({"id": [1]}, geometry=[box(*bounds)], crs=f"EPSG:{epsg}")
+    return gpd.GeoDataFrame({"id": [1]}, geometry=[box(*bounds)], crs=f"EPSG:{epsg}")  # ty: ignore[no-matching-overload]
 
 
 def test_predictor_for():
@@ -91,7 +91,7 @@ def test_reproject_clip_cog_applies_nodata_fallback(tmp_path):
     # triangle inside the raster extent; its bbox holds pixels outside the polygon
     x0, y0 = 300000.0 + 2 * 30, 5100000.0 - 18 * 30
     tri = Polygon([(x0, y0), (x0 + 16 * 30, y0), (x0, y0 + 16 * 30)])
-    aoi = gpd.GeoDataFrame({"id": [1]}, geometry=[tri], crs="EPSG:32647")
+    aoi = gpd.GeoDataFrame({"id": [1]}, geometry=[tri], crs="EPSG:32647")  # ty: ignore[no-matching-overload]
     dst = tmp_path / "out.tif"
 
     out, clipped = crs_mod.reproject_clip_cog(

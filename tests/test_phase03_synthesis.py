@@ -428,7 +428,7 @@ def test_phase03_ingest_human_layer(raw_archive):
 
     pdir = paths.phase_dir(config.output_root, "03")
     human = pdir / "04_Regional_Geology_Mineral_1M200K" / "human_faults.gpkg"
-    gdf = gpd.GeoDataFrame(
+    gdf = gpd.GeoDataFrame(  # ty: ignore[no-matching-overload]
         {"note": ["fault A"]},
         geometry=[LineString([(400000, 5000000), (401000, 5001000)])],
         crs=f"EPSG:{config.target_epsg}",
@@ -461,7 +461,7 @@ def test_phase03_keeps_ai_handoff_evidence_out_of_legacy_schema_normalization(ra
     source = paths.phase_dir(config.output_root, "03") / "01_Input_Working_Copy"
     source.mkdir(parents=True, exist_ok=True)
     tagged = source / "accepted-ai-evidence.gpkg"
-    gpd.GeoDataFrame(
+    gpd.GeoDataFrame(  # ty: ignore[no-matching-overload]
         {
             "feature_id": ["BUD-STR-ACCEPTED"],
             "proposal_state": ["AI_DRAFT"],
@@ -538,7 +538,7 @@ def test_phase03_human_layer_reprojected_from_4326(raw_archive):
     phase.prepare(ctx)
     pdir = paths.phase_dir(config.output_root, "03")
     human = pdir / "05_Local_Geology_Occurrence_1M50K" / "human_faults_4326.gpkg"
-    gdf = gpd.GeoDataFrame(
+    gdf = gpd.GeoDataFrame(  # ty: ignore[no-matching-overload]
         {"note": ["fault B"]},
         geometry=[LineString([(96.50, 45.50), (96.52, 45.52)])],
         crs="EPSG:4326",
@@ -563,7 +563,7 @@ def test_phase03_crsless_human_layer_fails_closed(raw_archive):
 
     config, register, _raw = raw_archive
     phase = Phase03GeologySynthesis()
-    gdf = gpd.GeoDataFrame(
+    gdf = gpd.GeoDataFrame(  # ty: ignore[no-matching-overload]
         {"note": ["ambiguous fault"]},
         geometry=[LineString([(400000, 5000000), (401000, 5001000)])],
     )

@@ -193,7 +193,7 @@ def _canonical_node(value: object, active: set[int]) -> CanonicalNode:
             return _canonical_mapping(fields, active)
     if type(value) is dict:
         with _active_container(value, active):
-            return _canonical_mapping(value, active)
+            return _canonical_mapping(cast(Mapping[str, object], value), active)
     if type(value) is tuple:
         with _active_container(value, active):
             return ["tuple", [_canonical_node(item, active) for item in value]]

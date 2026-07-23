@@ -12,7 +12,7 @@ from contextlib import AbstractContextManager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Final
+from typing import Final, cast
 
 from buduunkhad.core import paths
 from buduunkhad.core.run_artifacts import (
@@ -409,8 +409,7 @@ def _record_current_view(
         if not isinstance(loaded, dict) or not isinstance(loaded.get("phases"), dict):
             raise RunStorageError(f"compatibility current-view record is invalid: {path}")
         data = loaded
-    phases = data["phases"]
-    assert isinstance(phases, dict)
+    phases = cast(dict[str, object], data["phases"])
     phases[phase_id] = {
         "run_id": run_id,
         "artifact_inventory_sha256": _artifact_inventory_sha256(artifacts),

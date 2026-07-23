@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from affine import Affine
-from rasterio.crs import CRS
+from rasterio.crs import CRS  # ty: ignore[unresolved-import]
 
 from buduunkhad.core import aster
 from buduunkhad.core.aster import (

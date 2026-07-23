@@ -284,9 +284,9 @@ class Phase04ProspectRanking(Phase):
         )
         return expected if expected.is_file() else None
 
-    def _load_evidence(self, gpkg: Path) -> dict:  # type: ignore[type-arg]
+    def _load_evidence(self, gpkg: Path) -> dict:
         """Load the non-empty layers of the Phase 03 evidence GPKG into {name: GeoDataFrame}."""
-        ev: dict = {}  # type: ignore[type-arg]
+        ev: dict = {}
         for layer in vector_io.list_gpkg_layers(gpkg):
             try:
                 g = vector_io.read_layer(gpkg, layer)
@@ -298,7 +298,7 @@ class Phase04ProspectRanking(Phase):
                     ev[layer] = eligible
         return ev
 
-    def _load_boundary(self, ctx: RunContext, ev: dict):  # type: ignore[no-untyped-def,type-arg]
+    def _load_boundary(self, ctx: RunContext, ev: dict):
         """Licence boundary AOI: prefer the evidence GPKG's license_boundary, else Phase 01's."""
         if "license_boundary" in ev:
             return ev["license_boundary"]
@@ -313,7 +313,7 @@ class Phase04ProspectRanking(Phase):
         path = ctx.phase_dir("01") / "05_KMZ_KML_to_GPKG" / name
         return vector_io.read_layer(path, "license_boundary") if path.exists() else None
 
-    def _load_attribute_evidence(self, ctx: RunContext) -> dict:  # type: ignore[type-arg]
+    def _load_attribute_evidence(self, ctx: RunContext) -> dict:
         """Load attribute-bearing prospectivity evidence dropped under the Phase 03/04 dirs.
 
         Unlike the Phase 03 evidence GPKG (geometry-only shared schema), these keep their source
@@ -324,8 +324,8 @@ class Phase04ProspectRanking(Phase):
         """
         from shapely.ops import unary_union
 
-        alter_geoms: list = []  # type: ignore[type-arg]
-        geochem_gdfs: list = []  # type: ignore[type-arg]
+        alter_geoms: list = []
+        geochem_gdfs: list = []
         seen: set[str] = set()
         for base in (ctx.phase_dir("03"), ctx.phase_dir("04")):
             if not base.exists():
@@ -357,7 +357,7 @@ class Phase04ProspectRanking(Phase):
                     g = g.to_crs(epsg=ctx.config.target_epsg)
                     (geochem_gdfs if is_geochem else alter_geoms).append(g)
 
-        def _union(gdfs):  # type: ignore[no-untyped-def]
+        def _union(gdfs):
             parts = [
                 (
                     h.geometry.union_all()
@@ -375,7 +375,7 @@ class Phase04ProspectRanking(Phase):
         }
 
     @staticmethod
-    def _legacy_evidence_rows(gdf):  # type: ignore[no-untyped-def]
+    def _legacy_evidence_rows(gdf):
         """Exclude every AI-lifecycle row until an authoritative adapter exists.
 
         Untagged layers retain the legacy human-authored behavior. A standalone Phase 03 handoff
@@ -462,7 +462,7 @@ class Phase04ProspectRanking(Phase):
     # scoring + delineation
     # ------------------------------------------------------------------ #
 
-    def _delineate_and_rank(self, ctx: RunContext, pdir: Path, result: PhaseResult) -> list[dict]:  # type: ignore[type-arg]
+    def _delineate_and_rank(self, ctx: RunContext, pdir: Path, result: PhaseResult) -> list[dict]:
         import geopandas as gpd
 
         cfg = ctx.config
@@ -530,7 +530,7 @@ class Phase04ProspectRanking(Phase):
         # A single >=threshold dissolve would merge the whole evidence-rich zone into one blob;
         # banded dissolve yields the discrete, per-priority cores the methodology's A/B/C/D
         # decision gate acts on (A/B -> drone/recon; C retained with data gaps).
-        prospects: list[dict] = []  # type: ignore[type-arg]
+        prospects: list[dict] = []
         for cls in ("A", "B", "C"):
             sub = cells[cells["priority"] == cls].copy()
             if not len(sub):
@@ -564,7 +564,7 @@ class Phase04ProspectRanking(Phase):
             geoms = [
                 p.pop("_geometry") for p in prospects
             ]  # registers reuse the geometry-less rows
-            gdf = gpd.GeoDataFrame(prospects, geometry=geoms, crs=f"EPSG:{epsg}")
+            gdf = gpd.GeoDataFrame(prospects, geometry=geoms, crs=f"EPSG:{epsg}")  # ty: ignore[no-matching-overload]
             gdf = gdf.reindex(columns=[*_PROSPECT_COLUMNS, "geometry"])
             vector_io.write_layer(gdf, prospect_path, layer=_PROSPECT_LAYER)
             result.add_output(prospect_path)
@@ -579,19 +579,17 @@ class Phase04ProspectRanking(Phase):
         self._class_counts = counts
         return prospects
 
-    def _score_cells(self, cells, ev: dict, attr: dict, epsg: int):  # type: ignore[no-untyped-def,type-arg]
+    def _score_cells(self, cells, ev: dict, attr: dict, epsg: int):
         """Add per-criterion score columns + total ``score`` + ``priority`` to the grid cells."""
         import pandas as pd
 
         n = len(cells)
         falses = pd.Series([False] * n, index=cells.index)
 
-        def hit(geom):  # type: ignore[no-untyped-def]
+        def hit(geom):
             return cells.geometry.intersects(geom) if geom is not None else falses
 
-        def present(  # type: ignore[no-untyped-def]
-            layer_names: list[str], buffer_m: float = 0.0, boundary: bool = False
-        ):
+        def present(layer_names: list[str], buffer_m: float = 0.0, boundary: bool = False):
             from shapely.ops import unary_union
 
             geoms = []
@@ -691,14 +689,14 @@ class Phase04ProspectRanking(Phase):
         cells["priority"] = cells["score"].map(classify)
         return cells
 
-    def _build_prospects(self, clusters, joined, ev: dict, attr: dict, epsg: int) -> list[dict]:  # type: ignore[no-untyped-def,type-arg]
+    def _build_prospects(self, clusters, joined, ev: dict, attr: dict, epsg: int) -> list[dict]:
         """Aggregate scored cells per contiguous cluster into ranked prospect records."""
         import geopandas as gpd
         import pandas as pd
 
         geochem_gdfs = attr.get("geochem_gdfs") or []
 
-        def elements_for(geom):  # type: ignore[no-untyped-def]
+        def elements_for(geom):
             """Distinct commodity/element tokens from geochem-anomaly polygons the prospect overlaps."""
             vals: set[str] = set()
             for gg in geochem_gdfs:
@@ -722,7 +720,7 @@ class Phase04ProspectRanking(Phase):
             "dist_min_point_m": ev.get("mineralized_points_point"),
             "dist_road_m": next((ev[k] for k in ev if "road" in k.lower()), None),
         }
-        rows: list[dict] = []  # type: ignore[type-arg]
+        rows: list[dict] = []
         for _, cl in clusters.iterrows():
             cid = cl["cluster_id"]
             members = joined[joined["cluster_id"] == cid]
@@ -733,7 +731,7 @@ class Phase04ProspectRanking(Phase):
             cls = classify(max_score)
             geom = cl.geometry
             rep = geom.representative_point()
-            row: dict = {  # type: ignore[type-arg]
+            row: dict = {
                 "_geometry": geom,
                 "rank": 0,  # filled after sort
                 "prospect_class": cls,
@@ -749,7 +747,7 @@ class Phase04ProspectRanking(Phase):
                 row[f"score_{key}"] = int(members[f"score_{key}"].max())
             # nearest-feature distances (from the cluster geometry)
             one = pd.DataFrame({"geometry": [geom]})
-            one_gdf = gpd.GeoDataFrame(one, geometry="geometry", crs=f"EPSG:{epsg}")
+            one_gdf = gpd.GeoDataFrame(one, geometry="geometry", crs=f"EPSG:{epsg}")  # ty: ignore[no-matching-overload]
             for col, src in dist_src.items():
                 d = vector_io.nearest_distance(one_gdf, src).iloc[0]
                 row[col] = None if pd.isna(d) else round(float(d), 1)
@@ -759,7 +757,7 @@ class Phase04ProspectRanking(Phase):
 
         return rows  # rank + candidate_id are minted by the caller across all class bands
 
-    def _interpret(self, row: dict) -> dict:  # type: ignore[type-arg]
+    def _interpret(self, row: dict) -> dict:
         """Deposit-model wiring + interpretive text for a prospect row (v9 §04 step 5 / guide §6.7)."""
         self._model_wired = True
         present_crit = [k for k, _w, _a in PROSPECT_CRITERIA if row.get(f"score_{k}", 0) > 0]
@@ -811,7 +809,7 @@ class Phase04ProspectRanking(Phase):
         ctx: RunContext,
         pdir: Path,
         result: PhaseResult,
-        prospects: list[dict],  # type: ignore[type-arg]
+        prospects: list[dict],
     ) -> None:
         cfg = ctx.config
         rp = cfg.register_prefix
@@ -853,7 +851,7 @@ class Phase04ProspectRanking(Phase):
             for k, _w, _a in PROSPECT_CRITERIA
         ]
 
-        tables: list[tuple[Path, list[str], list[dict], str]] = [  # type: ignore[type-arg]
+        tables: list[tuple[Path, list[str], list[dict], str]] = [
             (
                 pdir / "03_Scoring_Matrix" / reg("Prospect_Ranking_Table"),
                 _RANKING_TABLE_COLUMNS,

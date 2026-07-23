@@ -130,7 +130,7 @@ def _build_case(
     *,
     run_id: str = "phase03-handoff",
     target_crs: str = "EPSG:32647",
-    mutate_payload=None,  # type: ignore[no-untyped-def]
+    mutate_payload=None,
     repair: bool = False,
 ) -> HandoffCase:
     roots = _roots(tmp_path)
@@ -213,7 +213,7 @@ def handoff_case(tmp_path: Path) -> HandoffCase:
     return _build_case(tmp_path)
 
 
-def _import(case: HandoffCase):  # type: ignore[no-untyped-def]
+def _import(case: HandoffCase):
     return import_ai_draft_review_package(
         case.draft,
         case.review_directory,
@@ -231,7 +231,7 @@ def _review(
     proposal_id: str,
     decision: Phase03ReviewDecision,
     *,
-    geometry=None,  # type: ignore[no-untyped-def]
+    geometry=None,
     reviewer: str = "geologist@example.test",
     note: str = "Synthetic review decision.",
     reviewed_at: str = "2026-07-16T00:04:00+00:00",
@@ -363,7 +363,7 @@ def test_rejects_unexpected_crs(tmp_path: Path) -> None:
 
 
 def test_rejects_layer_geometry_that_vertical_unknown_contract_allowed(tmp_path: Path) -> None:
-    def dyke_polygon(payload):  # type: ignore[no-untyped-def]
+    def dyke_polygon(payload):
         polygon = payload["proposals"][2]
         polygon["layer"] = "dykes_veins"
         polygon["feature_type"] = "dyke-polygon"
@@ -374,7 +374,7 @@ def test_rejects_layer_geometry_that_vertical_unknown_contract_allowed(tmp_path:
 
 
 def test_preserves_deterministic_geometry_repair_record(tmp_path: Path) -> None:
-    def bowtie(payload):  # type: ignore[no-untyped-def]
+    def bowtie(payload):
         payload["proposals"][2]["geometry"]["coordinates"] = [
             [[2.0, 2.0], [6.0, 6.0], [6.0, 2.0], [2.0, 6.0], [2.0, 2.0]]
         ]
@@ -775,7 +775,7 @@ def test_promotion_commit_failure_leaves_no_partial_success(
     audit = output.with_suffix(".promotion-ledger.jsonl")
     original_replace = Path.replace
 
-    def fail_selected(source: Path, target: Path):  # type: ignore[no-untyped-def]
+    def fail_selected(source: Path, target: Path):
         expected = output if failed_target == "output" else audit
         if Path(target) == expected:
             raise OSError(f"synthetic {failed_target} commit failure")
@@ -807,7 +807,7 @@ def test_existing_promotion_lock_fails_safely(handoff_case: HandoffCase) -> None
 
 
 def test_accepted_feature_ids_do_not_depend_on_review_layer_row_order(tmp_path: Path) -> None:
-    def second_point(payload):  # type: ignore[no-untyped-def]
+    def second_point(payload):
         duplicate = copy.deepcopy(payload["proposals"][0])
         duplicate["feature_id"] = "synthetic-point-2"
         duplicate["geometry"]["coordinates"] = [2.0, 1.0]
@@ -847,7 +847,7 @@ def test_accepted_feature_ids_do_not_depend_on_review_layer_row_order(tmp_path: 
 def test_distinct_proposal_provenance_mints_distinct_ids_for_identical_geometry(
     tmp_path: Path,
 ) -> None:
-    def duplicate_point(payload):  # type: ignore[no-untyped-def]
+    def duplicate_point(payload):
         duplicate = copy.deepcopy(payload["proposals"][0])
         duplicate["feature_id"] = "synthetic-point-2"
         payload["proposals"].append(duplicate)

@@ -30,8 +30,9 @@ dependencies:
   # --- dev ---
   - pytest>=8.0
   - python-build>=1.2,<2.0
-  - ruff>=0.5
-  - mypy>=1.10
+  # The editable [dev] install documented above supplies the repository-pinned Ruff version.
+  # ty (type checker) is pip-only; it is installed by the `pip install -e ".[dev]"`
+  # step above rather than from conda-forge.
   - pre-commit>=3.7
   # --- optional, for Phase 02 DEM derivatives ---
   - richdem

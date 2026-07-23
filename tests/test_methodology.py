@@ -392,7 +392,7 @@ def test_supersession_links_are_valid_and_acyclic() -> None:
     assert superseded  # the 25 km buffer re-decision must remain on record
     for item in superseded:
         assert item.superseded_by in by_id
-        replacement = by_id[item.superseded_by]  # type: ignore[index]
+        replacement = by_id[item.superseded_by]  # ty: ignore[invalid-argument-type]
         assert replacement.status in {"resolved", "unresolved"}
     cyclic = {
         "format_version": "1.4.0",
@@ -451,11 +451,11 @@ def test_historical_resolutions_match_their_documented_states() -> None:
     input_count = by_id["METH-DISC-001"]
     assert input_count.status == "resolved"
     assert input_count.effective_version == "v0.1.0"
-    assert "79" in input_count.resolution  # type: ignore[operator]
+    assert "79" in input_count.resolution  # ty: ignore[unsupported-operator]
     scoring = by_id["METH-DISC-006"]
     assert scoring.status == "resolved"
     assert scoring.resolved_on == "2026-07-06"
-    assert "Phase 10" in scoring.resolution  # type: ignore[operator]
+    assert "Phase 10" in scoring.resolution  # ty: ignore[unsupported-operator]
     artefact_call = by_id["METH-DISC-017"]
     assert artefact_call.status == "superseded"
     assert artefact_call.superseded_by == "METH-DISC-018"
@@ -514,8 +514,8 @@ def test_duplicate_inventory_history_is_preserved_without_selecting_a_drive_copy
         item for item in registry.discrepancies if item.discrepancy_id == "METH-DISC-051"
     )
     assert decision.resolves_discrepancy_ids == ("METH-DISC-033",)
-    assert "sole execution inventory contract" in decision.resolution  # type: ignore[operator]
-    assert "designate neither one canonical" in decision.resolution  # type: ignore[operator]
+    assert "sole execution inventory contract" in decision.resolution  # ty: ignore[unsupported-operator]
+    assert "designate neither one canonical" in decision.resolution  # ty: ignore[unsupported-operator]
 
 
 def test_phase00_to_phase05_review_findings_preserve_history_and_current_status() -> None:

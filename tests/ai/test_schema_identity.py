@@ -76,7 +76,7 @@ def _changed(path: tuple[str, ...], value: object) -> dict[str, object]:
     for key in path[:-1]:
         nested = target[key]
         assert isinstance(nested, dict)
-        target = nested
+        target = nested  # ty: ignore[invalid-assignment]
     target[path[-1]] = value
     return schema
 
@@ -165,8 +165,8 @@ def test_discriminator_and_union_identity_is_independent_of_ref_and_branch_order
     }
     right = {
         "$defs": {
-            "Bee": deepcopy(left["$defs"]["B"]),  # type: ignore[index]
-            "Aye": deepcopy(left["$defs"]["A"]),  # type: ignore[index]
+            "Bee": deepcopy(left["$defs"]["B"]),
+            "Aye": deepcopy(left["$defs"]["A"]),
         },
         "discriminator": {
             "mapping": {"b": "#/$defs/Bee", "a": "#/$defs/Aye"},
@@ -176,7 +176,7 @@ def test_discriminator_and_union_identity_is_independent_of_ref_and_branch_order
     }
     assert semantic_schema_sha256(left) == semantic_schema_sha256(right)
     wrong_mapping = deepcopy(right)
-    wrong_mapping["discriminator"]["mapping"]["a"] = "#/$defs/Bee"  # type: ignore[index]
+    wrong_mapping["discriminator"]["mapping"]["a"] = "#/$defs/Bee"  # ty: ignore[invalid-argument-type, invalid-assignment]
     assert semantic_schema_sha256(left) != semantic_schema_sha256(wrong_mapping)
 
 
@@ -192,7 +192,7 @@ def test_discriminator_and_union_identity_is_independent_of_ref_and_branch_order
                 **_contract_schema(),
                 "properties": {
                     key: value
-                    for key, value in _contract_schema()["properties"].items()  # type: ignore[union-attr]
+                    for key, value in _contract_schema()["properties"].items()  # ty: ignore[unresolved-attribute]
                     if key != "name"
                 },
                 "required": ["kind", "nested", "values"],
@@ -250,8 +250,8 @@ def test_annotations_defaults_key_order_and_unordered_arrays_do_not_change_ident
     right["title"] = "Generated title changed"
     right["description"] = "Whitespace and wording changed."
     right["default"] = {"framework": "metadata"}
-    right["required"] = list(reversed(right["required"]))  # type: ignore[arg-type]
-    right["properties"] = dict(reversed(list(right["properties"].items())))  # type: ignore[union-attr]
+    right["required"] = list(reversed(right["required"]))  # ty: ignore[no-matching-overload]
+    right["properties"] = dict(reversed(list(right["properties"].items())))  # ty: ignore[unresolved-attribute]
     assert semantic_schema_sha256(left) == semantic_schema_sha256(right)
     assert len({semantic_schema_sha256(right) for _ in range(20)}) == 1
 

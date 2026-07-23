@@ -15,14 +15,10 @@ METH-DISC-068 resolve the historical METH-DISC-003/041 ambiguity by selecting a 
 human-reviewed prospect-polygon target without changing this comparator.
 
 **Attribute-aware scoring.** Beyond the Phase 03 evidence GPKG (a geometry-only shared schema),
-Phase 04 also reads *attribute-bearing* prospectivity layers dropped anywhere under the Phase 03/04
-dirs (whitelisted by keyword, so pipeline outputs never match): **focused alteration**
-(argillic / porphyry / sericite / silica, or hand-digitized alteration) activates the ``rs``
-criterion, and **geochem-anomaly** polygons drive ``geochem`` and populate each prospect's
-``elements`` from the anomaly's element attribute. Regional chlorite-epidote *propylitic halo* is
-deliberately excluded as context — it blankets the district and would re-saturate the score. Any
-layer carrying the AI handoff lifecycle is also excluded until an authoritative integration adapter
-is adopted; file proximity is never sufficient authority.
+Phase 04 can consume exact attribute-bearing alteration-support and geochemical-anomaly layers
+selected by a hash-bound evidence manifest for ``legacy-comparator`` mode. Roles are explicit;
+filenames, layer-name keywords, and directory proximity have no authority. Phase 03 AI handoff
+evidence remains ineligible until a separately approved authoritative integration adapter exists.
 
 **Honesty (invariant #8).** Criteria whose evidence is absent (``rs`` without fed alteration,
 ``model_fit`` until the human completes the 03A score matrix, ``access`` without a roads layer)
@@ -36,6 +32,7 @@ from datetime import date
 from pathlib import Path
 
 from buduunkhad.core import naming, registers, vector_io
+from buduunkhad.core.evidence_manifest import EvidenceExecutionMode, EvidenceRole
 from buduunkhad.core.qaqc import RECORDED_ACCEPTANCE, Decision, QAQCReport, new_report
 from buduunkhad.phases.base import Phase, PhaseResult, RunContext
 from buduunkhad.phases.phase03_geology_synthesis import DEPOSIT_MODELS
@@ -199,8 +196,6 @@ _RECOMMENDED_FOLLOWUP = (
 # `rs` scores only FOCUSED alteration (argillic/porphyry/sericite/silica + hand-digitized alteration)
 # — the methodology's high-score indicator. Regional chlorite-epidote *propylitic halo* is deliberately
 # excluded: it blankets the district and would re-saturate the score (it's context, not a target).
-_ALTER_KEYS = ("argil", "porphyry", "sericite", "silica", "alter")
-_GEOCHEM_KEYS = ("geochem", "anomaly", "anom")
 _ELEMENT_COLS = ("main_element", "elements", "element", "element_gr", "commodity", "main_eleme")
 
 
@@ -314,48 +309,24 @@ class Phase04ProspectRanking(Phase):
         return vector_io.read_layer(path, "license_boundary") if path.exists() else None
 
     def _load_attribute_evidence(self, ctx: RunContext) -> dict:
-        """Load attribute-bearing prospectivity evidence dropped under the Phase 03/04 dirs.
-
-        Unlike the Phase 03 evidence GPKG (geometry-only shared schema), these keep their source
-        attributes so Phase 04 can score the methodology's real criteria: ASTER/alteration polygons
-        activate ``rs``; geochem-anomaly polygons drive ``geochem`` and populate ``elements``.
-        Whitelisted by filename/layer keyword, so the pipeline's own outputs never match. Returns
-        ``{alteration: geom|None, geochem_union: geom|None, geochem_gdfs: [gdf, ...]}``.
-        """
+        """Load exact role-bound evidence selected for the legacy comparator."""
         from shapely.ops import unary_union
 
         alter_geoms: list = []
         geochem_gdfs: list = []
-        seen: set[str] = set()
-        for base in (ctx.phase_dir("03"), ctx.phase_dir("04")):
-            if not base.exists():
-                continue
-            for src in sorted(base.rglob("*.gpkg")):
-                if "AI_DRAFT" in src.name.upper():
-                    continue
-                try:
-                    layers = vector_io.list_gpkg_layers(src)
-                except Exception:
-                    continue
-                for layer in layers:
-                    low = f"{src.name} {layer}".lower()
-                    is_alter = any(k in low for k in _ALTER_KEYS)
-                    is_geochem = any(k in low for k in _GEOCHEM_KEYS)
-                    key = f"{src}::{layer}"
-                    if not (is_alter or is_geochem) or key in seen:
-                        continue
-                    try:
-                        g = vector_io.read_layer(src, layer)
-                    except Exception:
-                        continue
-                    if g is None or len(g) == 0:
-                        continue
-                    g = self._legacy_evidence_rows(g)
-                    if len(g) == 0:
-                        continue
-                    seen.add(key)
-                    g = g.to_crs(epsg=ctx.config.target_epsg)
-                    (geochem_gdfs if is_geochem else alter_geoms).append(g)
+        roles = frozenset({EvidenceRole.ALTERATION_SUPPORT, EvidenceRole.GEOCHEMICAL_ANOMALY})
+        for resolved in ctx.evidence_for(
+            "04", mode=EvidenceExecutionMode.LEGACY_COMPARATOR, roles=roles
+        ):
+            record = resolved.record
+            resolved.verify_current_artifact()
+            gdf = vector_io.read_layer(resolved.artifact, record.layer_name)
+            resolved.verify_current_artifact()
+            gdf = gdf.to_crs(epsg=ctx.config.target_epsg)
+            if record.evidence_role is EvidenceRole.GEOCHEMICAL_ANOMALY:
+                geochem_gdfs.append(gdf)
+            else:
+                alter_geoms.append(gdf)
 
         def _union(gdfs):
             parts = [

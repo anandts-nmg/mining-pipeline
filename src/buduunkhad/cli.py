@@ -13,10 +13,19 @@ from __future__ import annotations
 import os
 from datetime import datetime
 from pathlib import Path
+from typing import Literal, cast
 
 import typer
 
 from buduunkhad.ai_cli import ai_app
+from buduunkhad.core.evidence_manifest import (
+    EvidenceAuthorityResolver,
+    EvidenceExecutionMode,
+    EvidenceManifestError,
+    EvidenceOrigin,
+    EvidenceRole,
+    register_pipeline_evidence,
+)
 from buduunkhad.core.raw_guard import RawIntegrityError
 from buduunkhad.core.run_storage import RunStorageError
 from buduunkhad.pipeline import (
@@ -36,6 +45,7 @@ _RUN_ERRORS = (
     RawIntegrityError,
     SelectionError,
     RunStorageError,
+    EvidenceManifestError,
 )
 
 app = typer.Typer(
@@ -44,6 +54,11 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(ai_app, name="ai")
+evidence_app = typer.Typer(
+    add_completion=False,
+    help="Verify immutable evidence authority selected by manifest identity.",
+)
+app.add_typer(evidence_app, name="evidence")
 
 _CONFIG_OPT = typer.Option("config/project.yaml", "--config", "-c", help="Path to project.yaml.")
 
@@ -91,6 +106,7 @@ def info(config: Path = _CONFIG_OPT) -> None:
     typer.echo(f"Raw root:       {cfg.raw_root}")
     typer.echo(f"Output root:    {cfg.output_root}")
     typer.echo(f"Runs root:      {cfg.runs_root}")
+    typer.echo(f"Evidence root:  {cfg.evidence_root}")
     typer.echo(f"Register:       {cfg.register_path}  ({len(register)} inputs)")
     typer.echo(f"Buffers (m):    {cfg.boundary.buffers_m}")
     typer.echo(f"Master layers:  {len(cfg.master_gpkg_layers)}")
@@ -299,6 +315,19 @@ def backup_raw(
     typer.echo("Share that folder in Google Drive to give teammates a verified, immutable copy.")
 
 
+def _parse_input_run_selectors(selectors: list[str] | None) -> dict[str, str]:
+    result: dict[str, str] = {}
+    known = {phase.id for phase in PHASE_CLASSES}
+    for selector in selectors or []:
+        phase_id, separator, run_id = selector.partition("=")
+        if separator != "=" or phase_id not in known or not run_id or phase_id in result:
+            raise SelectionError(
+                "Each --input-run must be a unique registered predecessor PHASE=RUN_ID selector."
+            )
+        result[phase_id] = run_id
+    return result
+
+
 @app.command("run")
 def run(
     config: Path = _CONFIG_OPT,
@@ -316,11 +345,22 @@ def run(
         "--resume",
         help="Resume one exact run ID after revalidating all execution identities.",
     ),
+    evidence_manifest: list[str] | None = typer.Option(
+        None,
+        "--evidence-manifest",
+        help="Select one immutable evidence manifest ID (repeatable).",
+    ),
+    input_run: list[str] | None = typer.Option(
+        None,
+        "--input-run",
+        help="Bind an external predecessor phase as PHASE=RUN_ID (repeatable).",
+    ),
 ) -> None:
     """Run the pipeline over the selected phases."""
     cfg, register = load_project(config)
     only_list = [s.strip() for s in only.split(",") if s.strip()] if only else None
     try:
+        input_runs = _parse_input_run_selectors(input_run)
         manifest = run_pipeline(
             cfg,
             register,
@@ -331,6 +371,8 @@ def run(
             override=override,
             run_id=resume,
             resume=resume is not None,
+            evidence_manifest_ids=evidence_manifest,
+            input_phase_runs=input_runs,
         )
     except _RUN_ERRORS as exc:
         typer.secho(str(exc), fg="red")
@@ -347,11 +389,28 @@ def _make_phase_command(phase_id: str, phase_name: str):
         override: bool = typer.Option(
             False, "--override", help="Advance past a blocked gate (logged)."
         ),
+        evidence_manifest: list[str] | None = typer.Option(
+            None,
+            "--evidence-manifest",
+            help="Select one immutable evidence manifest ID (repeatable).",
+        ),
+        input_run: list[str] | None = typer.Option(
+            None,
+            "--input-run",
+            help="Bind an external predecessor phase as PHASE=RUN_ID (repeatable).",
+        ),
     ) -> None:
         cfg, register = load_project(config)
         try:
+            input_runs = _parse_input_run_selectors(input_run)
             manifest = run_pipeline(
-                cfg, register, only=[phase_id], dry_run=dry_run, override=override
+                cfg,
+                register,
+                only=[phase_id],
+                dry_run=dry_run,
+                override=override,
+                evidence_manifest_ids=evidence_manifest,
+                input_phase_runs=input_runs,
             )
         except _RUN_ERRORS as exc:
             typer.secho(str(exc), fg="red")
@@ -360,6 +419,97 @@ def _make_phase_command(phase_id: str, phase_name: str):
 
     _cmd.__doc__ = f"Run phase {phase_id} - {phase_name}."
     return _cmd
+
+
+@evidence_app.command("verify")
+def verify_evidence(
+    manifest_id: list[str] = typer.Option(
+        ...,
+        "--manifest-id",
+        help="Immutable evidence manifest ID to verify (repeatable).",
+    ),
+    config: Path = _CONFIG_OPT,
+) -> None:
+    """Reconcile selected evidence manifests with current source authority and bytes."""
+
+    cfg, _register = load_project(config)
+    try:
+        resolved = EvidenceAuthorityResolver(
+            runs_root=cfg.runs_root,
+            evidence_root=cfg.evidence_root,
+            target_epsg=cfg.target_epsg,
+        ).resolve_selected(manifest_id)
+    except EvidenceManifestError as exc:
+        typer.secho(str(exc), fg="red")
+        raise typer.Exit(2) from exc
+    typer.echo(f"Verified {len(manifest_id)} evidence manifest(s), {len(resolved)} record(s).")
+
+
+@evidence_app.command("register-run-layer")
+def register_run_layer_evidence(
+    source_run: str = typer.Option(..., "--source-run", help="Exact sealed source run ID."),
+    artifact_path: str = typer.Option(
+        ..., "--artifact-path", help="Run-relative sealed GeoPackage path."
+    ),
+    layer_name: str = typer.Option(..., "--layer", help="Exact source GeoPackage layer."),
+    role: str = typer.Option(..., "--role", help="Explicit evidence role."),
+    phase: list[str] = typer.Option(
+        ..., "--phase", help="Eligible phase ID (03 or 04; repeatable)."
+    ),
+    mode: list[str] = typer.Option(..., "--mode", help="Eligible execution mode (repeatable)."),
+    target_layer: str | None = typer.Option(
+        None, "--target-layer", help="Exact Phase 03 legacy-schema target layer, when applicable."
+    ),
+    origin: str = typer.Option(
+        EvidenceOrigin.HUMAN_DIGITIZED.value,
+        "--origin",
+        help="deterministic-pipeline or human-digitized.",
+    ),
+    evidence_id: str | None = typer.Option(None, "--evidence-id"),
+    actor: str = typer.Option(
+        ...,
+        "--actor",
+        help="Identity of the person registering this support-evidence role and eligibility.",
+    ),
+    reason: str = typer.Option(
+        ...,
+        "--reason",
+        help="Auditable reason for registering this exact support-evidence use.",
+    ),
+    limitation: list[str] | None = typer.Option(
+        None, "--limitation", help="Evidence limitation (repeatable)."
+    ),
+    config: Path = _CONFIG_OPT,
+) -> None:
+    """Register one exact sealed run layer as support evidence; never as scientific approval."""
+
+    cfg, _register = load_project(config)
+    try:
+        if not phase or any(value not in {"03", "04"} for value in phase):
+            raise ValueError("eligible phases must contain only 03 or 04")
+        eligible_phases = cast(tuple[Literal["03", "04"], ...], tuple(phase))
+        manifest = register_pipeline_evidence(
+            runs_root=cfg.runs_root,
+            evidence_root=cfg.evidence_root,
+            target_epsg=cfg.target_epsg,
+            source_run_id=source_run,
+            artifact_path=artifact_path,
+            layer_name=layer_name,
+            evidence_role=EvidenceRole(role),
+            origin=EvidenceOrigin(origin),
+            eligible_phases=eligible_phases,
+            eligible_modes=tuple(EvidenceExecutionMode(value) for value in mode),
+            target_layer_name=target_layer,
+            evidence_id=evidence_id,
+            limitations=tuple(limitation or ()),
+            registered_by=actor,
+            registration_reason=reason,
+        )
+    except (EvidenceManifestError, ValueError) as exc:
+        typer.secho(str(exc), fg="red")
+        raise typer.Exit(2) from exc
+    typer.echo(f"Registered sealed support evidence: {manifest.manifest_id}")
+    typer.echo("This record does not claim scientific approval or Phase 04 authority.")
 
 
 # Register one command per phase: phase00, phase01, ... phase99.

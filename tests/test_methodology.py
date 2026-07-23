@@ -723,6 +723,27 @@ def test_automation_boundaries_cover_every_phase_without_maturity_estimates() ->
     assert "frozen ASTER support-evidence chain" in phase02_text
     assert "adopted ASTER SOP chain" not in phase02_text
 
+    phase03 = next(item for item in registry.boundaries if item.phase_id == "03")
+    phase03_text = " ".join((*phase03.deterministic_authority, *phase03.ai_prohibited))
+    assert "exact manifest-resolved support-evidence ingest" in phase03_text
+    assert "directory location" in phase03_text
+
+    phase04 = next(item for item in registry.boundaries if item.phase_id == "04")
+    phase04_text = " ".join(phase04.deterministic_authority)
+    assert "exact artifact, layer, role" in phase04_text
+
+
+def test_phase03_and_phase04_require_explicit_evidence_authority() -> None:
+    phase03 = {item.requirement_id: item for item in load_phase_methodology("03").requirements}
+    phase04 = {item.requirement_id: item for item in load_phase_methodology("04").requirements}
+
+    phase03_authority = phase03["P03-EVIDENCE-AUTHORITY-001"].statement
+    assert "immutable evidence manifest" in phase03_authority
+    assert "directory proximity" in phase03_authority
+    phase04_authority = phase04["P04-EVIDENCE-AUTHORITY-001"].statement
+    assert "exact source artifact, layer, explicit evidence role" in phase04_authority
+    assert "filename keywords" in phase04_authority
+
 
 def test_operational_readiness_preserves_real_evidence_and_human_blockers() -> None:
     registry = load_automation_readiness()

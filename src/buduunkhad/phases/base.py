@@ -10,8 +10,14 @@ from typing import Literal
 
 from buduunkhad.config import InputRecord, ProjectConfig
 from buduunkhad.core import naming, paths
+from buduunkhad.core.evidence_manifest import (
+    EvidenceExecutionMode,
+    EvidenceRole,
+    ResolvedEvidence,
+)
 from buduunkhad.core.gates import GateDecision, evaluate_gate
 from buduunkhad.core.qaqc import QAQCReport
+from buduunkhad.core.run_storage import RunStorageError
 
 Mode = Literal["build", "orchestrate"]
 
@@ -28,6 +34,8 @@ class RunContext:
     logger: logging.Logger = field(default_factory=lambda: logging.getLogger("buduunkhad"))
     run_isolated: bool = False
     active_phase_id: str | None = None
+    resolved_evidence: tuple[ResolvedEvidence, ...] = ()
+    source_phase_dirs: dict[str, Path] = field(default_factory=dict)
 
     # ---- derived paths ---------------------------------------------------- #
 
@@ -50,9 +58,13 @@ class RunContext:
             sealed = self.run_dir / "phases" / phase_id
             if sealed.is_dir():
                 return sealed
-            # A run may deliberately start at a later phase. Its prior-phase inputs come from
-            # the explicitly promoted compatibility view, while every new write remains local.
-            return paths.phase_dir(self.output_root, phase_id)
+            source = self.source_phase_dirs.get(phase_id)
+            if source is not None:
+                return source
+            raise RunStorageError(
+                f"Phase {phase_id} input is not available in this run or through an exact "
+                "predecessor-run binding"
+            )
         return paths.phase_dir(self.output_root, phase_id)
 
     def stable_output_path(self, path: Path) -> Path:
@@ -82,6 +94,23 @@ class RunContext:
     def records_by_numbers(self, numbers: list[int]) -> list[InputRecord]:
         wanted = set(numbers)
         return [r for r in self.register if r.no in wanted]
+
+    def evidence_for(
+        self,
+        phase_id: Literal["03", "04"],
+        *,
+        mode: EvidenceExecutionMode,
+        roles: frozenset[EvidenceRole] | None = None,
+    ) -> tuple[ResolvedEvidence, ...]:
+        """Return only manifest-authorized evidence for one exact phase execution mode."""
+
+        return tuple(
+            item
+            for item in self.resolved_evidence
+            if phase_id in item.record.eligible_phases
+            and mode in item.record.eligible_modes
+            and (roles is None or item.record.evidence_role in roles)
+        )
 
     # ---- naming helpers --------------------------------------------------- #
 

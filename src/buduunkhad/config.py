@@ -367,6 +367,15 @@ class ProjectConfig(BaseModel):
         return self._resolve(self.paths.runs_root)
 
     @property
+    def evidence_root(self) -> Path:
+        """Immutable accepted-evidence manifests, separate from mutable execution paths."""
+
+        work_root = os.environ.get(WORK_ROOT_ENV)
+        if work_root:
+            return Path(work_root).expanduser() / "evidence-authority"
+        return self.runs_root.parent / "evidence-authority"
+
+    @property
     def register_path(self) -> Path:
         return self._resolve(self.input_register.path)
 

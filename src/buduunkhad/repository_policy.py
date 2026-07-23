@@ -28,6 +28,7 @@ FORBIDDEN_DIRECTORIES = frozenset(
         "control",
         "data",
         "dist",
+        "evidence-authority",
         "job_stores",
         "log",
         "logs",

@@ -411,10 +411,21 @@ def test_phase03_method_note_published_location(raw_archive):
     assert note_name in {p.name for p in collect_deliverables(config.output_root)}
 
 
-def test_phase03_ingest_human_layer(raw_archive):
-    """A human-digitized layer dropped into a phase folder is ingested into the evidence GPKG."""
+def test_phase03_ingests_only_manifest_selected_human_layer(raw_archive):
+    """A nearby layer has no authority; its exact resolved record does."""
     import geopandas as gpd
     from shapely.geometry import LineString
+
+    from buduunkhad.core.evidence_manifest import (
+        EvidenceExecutionMode,
+        EvidenceLifecycleState,
+        EvidenceOrigin,
+        EvidenceRecord,
+        EvidenceRole,
+        EvidenceSourceKind,
+        ResolvedEvidence,
+    )
+    from buduunkhad.core.run_artifacts import sha256_file
 
     config, register, _raw = raw_archive
     ctx = _ctx(config, register)
@@ -436,6 +447,40 @@ def test_phase03_ingest_human_layer(raw_archive):
     vector_io.write_layer(gdf, human, layer="faults_structures_line")
 
     phase.run(ctx)
+    assert "faults_structures_line" not in phase._ingested_layers
+    assert len(vector_io.read_layer(_evidence_gpkg(config), "faults_structures_line")) == 0
+
+    # A fresh run context receives evidence only after the authoritative resolver has validated
+    # this binding. The phase consumes the resolved object and never searches the directory.
+    phase = Phase03GeologySynthesis()
+    phase.prepare(ctx)
+    record = EvidenceRecord(
+        evidence_id="EV-human-faults",
+        source_kind=EvidenceSourceKind.PIPELINE_RUN,
+        source_run_id="source-run",
+        source_authority_path="run_manifest.json",
+        source_authority_sha256="a" * 64,
+        artifact_path="phases/03/human_faults.gpkg",
+        artifact_sha256=sha256_file(human),
+        artifact_size_bytes=human.stat().st_size,
+        layer_name="faults_structures_line",
+        target_layer_name="faults_structures_line",
+        evidence_role=EvidenceRole.STRUCTURE,
+        origin=EvidenceOrigin.HUMAN_DIGITIZED,
+        lifecycle_state=EvidenceLifecycleState.SEALED_SUPPORT_EVIDENCE,
+        eligible_phases=("03",),
+        eligible_modes=(EvidenceExecutionMode.SUPPORT_EVIDENCE,),
+    )
+    ctx.resolved_evidence = (
+        ResolvedEvidence(
+            manifest_id="b" * 64,
+            manifest_sha256="c" * 64,
+            catalog_entry_id="d" * 64,
+            record=record,
+            artifact=human,
+        ),
+    )
+    phase.run(ctx)
     assert "faults_structures_line" in phase._ingested_layers
     gpkg = _evidence_gpkg(config)
     ingested = vector_io.read_layer(gpkg, "faults_structures_line")
@@ -444,8 +489,8 @@ def test_phase03_ingest_human_layer(raw_archive):
     assert ingested["validation_status"].iloc[0] == "Historical only"
 
 
-def test_phase03_keeps_ai_handoff_evidence_out_of_legacy_schema_normalization(raw_archive):
-    """Rich AI review lineage must not be stripped by the legacy 14-column normalizer."""
+def test_phase03_never_discovers_nearby_ai_handoff_evidence(raw_archive):
+    """Rich AI review lineage is not discovered or normalized because of file proximity."""
 
     import geopandas as gpd
     from shapely.geometry import LineString, MultiLineString
@@ -476,7 +521,80 @@ def test_phase03_keeps_ai_handoff_evidence_out_of_legacy_schema_normalization(ra
     phase.run(ctx)
     evidence = vector_io.read_layer(_evidence_gpkg(config), "faults_structures_line")
     assert len(evidence) == 0
-    assert any("kept separate from legacy normalization" in note for note in phase._notes)
+    assert not phase._ingested_layers
+
+
+def test_phase03_detects_evidence_mutation_during_layer_read(raw_archive, monkeypatch):
+    """The post-read seal check must catch a deterministic mutation in the consumption window."""
+
+    import geopandas as gpd
+    from shapely.geometry import LineString
+
+    from buduunkhad.core.evidence_manifest import (
+        EvidenceExecutionMode,
+        EvidenceLifecycleState,
+        EvidenceManifestError,
+        EvidenceOrigin,
+        EvidenceRecord,
+        EvidenceRole,
+        EvidenceSourceKind,
+        ResolvedEvidence,
+    )
+    from buduunkhad.core.run_artifacts import sha256_file
+
+    config, register, _raw = raw_archive
+    ctx = _ctx(config, register)
+    Phase00Archive().run(ctx)
+    phase1 = Phase01DataAudit()
+    phase1.prepare(ctx)
+    phase1.run(ctx)
+    phase = Phase03GeologySynthesis()
+    phase.prepare(ctx)
+    human = paths.phase_dir(config.output_root, "03") / "mutation-window.gpkg"
+    gpd.GeoDataFrame(  # ty: ignore[no-matching-overload]
+        {"note": ["fault"]},
+        geometry=[LineString([(400000, 5000000), (401000, 5001000)])],
+        crs=f"EPSG:{config.target_epsg}",
+    ).to_file(human, layer="faults_structures_line", driver="GPKG")
+    record = EvidenceRecord(
+        evidence_id="EV-mutation-window",
+        source_kind=EvidenceSourceKind.PIPELINE_RUN,
+        source_run_id="source-run",
+        source_authority_path="run_manifest.json",
+        source_authority_sha256="a" * 64,
+        artifact_path="phases/03/mutation-window.gpkg",
+        artifact_sha256=sha256_file(human),
+        artifact_size_bytes=human.stat().st_size,
+        layer_name="faults_structures_line",
+        target_layer_name="faults_structures_line",
+        evidence_role=EvidenceRole.STRUCTURE,
+        origin=EvidenceOrigin.HUMAN_DIGITIZED,
+        lifecycle_state=EvidenceLifecycleState.SEALED_SUPPORT_EVIDENCE,
+        eligible_phases=("03",),
+        eligible_modes=(EvidenceExecutionMode.SUPPORT_EVIDENCE,),
+    )
+    ctx.resolved_evidence = (
+        ResolvedEvidence(
+            manifest_id="b" * 64,
+            manifest_sha256="c" * 64,
+            catalog_entry_id="d" * 64,
+            record=record,
+            artifact=human,
+        ),
+    )
+    original_read = vector_io.read_layer
+
+    def read_then_mutate(path, layer):
+        result = original_read(path, layer)
+        if path == human and layer == "faults_structures_line":
+            with human.open("ab") as stream:
+                stream.write(b"mutated-after-read")
+        return result
+
+    monkeypatch.setattr(vector_io, "read_layer", read_then_mutate)
+
+    with pytest.raises(EvidenceManifestError, match="changed while in use"):
+        phase.run(ctx)
 
 
 def test_phase03_pending_human_evidence_blocks_master_handoff(raw_archive):
@@ -527,6 +645,17 @@ def test_phase03_human_layer_reprojected_from_4326(raw_archive):
     import geopandas as gpd
     from shapely.geometry import LineString
 
+    from buduunkhad.core.evidence_manifest import (
+        EvidenceExecutionMode,
+        EvidenceLifecycleState,
+        EvidenceOrigin,
+        EvidenceRecord,
+        EvidenceRole,
+        EvidenceSourceKind,
+        ResolvedEvidence,
+    )
+    from buduunkhad.core.run_artifacts import sha256_file
+
     config, register, _raw = raw_archive
     ctx = _ctx(config, register)
     Phase00Archive().run(ctx)
@@ -544,6 +673,33 @@ def test_phase03_human_layer_reprojected_from_4326(raw_archive):
         crs="EPSG:4326",
     )
     vector_io.write_layer(gdf, human, layer="faults_structures_line")
+
+    record = EvidenceRecord(
+        evidence_id="EV-human-faults-4326",
+        source_kind=EvidenceSourceKind.PIPELINE_RUN,
+        source_run_id="source-run",
+        source_authority_path="run_manifest.json",
+        source_authority_sha256="a" * 64,
+        artifact_path="phases/03/human_faults_4326.gpkg",
+        artifact_sha256=sha256_file(human),
+        artifact_size_bytes=human.stat().st_size,
+        layer_name="faults_structures_line",
+        target_layer_name="faults_structures_line",
+        evidence_role=EvidenceRole.STRUCTURE,
+        origin=EvidenceOrigin.HUMAN_DIGITIZED,
+        lifecycle_state=EvidenceLifecycleState.SEALED_SUPPORT_EVIDENCE,
+        eligible_phases=("03",),
+        eligible_modes=(EvidenceExecutionMode.SUPPORT_EVIDENCE,),
+    )
+    ctx.resolved_evidence = (
+        ResolvedEvidence(
+            manifest_id="b" * 64,
+            manifest_sha256="c" * 64,
+            catalog_entry_id="d" * 64,
+            record=record,
+            artifact=human,
+        ),
+    )
 
     phase.run(ctx)
     gpkg = _evidence_gpkg(config)

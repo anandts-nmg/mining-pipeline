@@ -71,8 +71,17 @@ dirty worktree. Never invent authority, identity, review, approval, dates, evide
 - Optional OpenAI and Anthropic adapters are lazy, keyless until execution, and require explicit
   non-legacy configuration and egress approval.
 - The Phase 03 handoff promotes explicit human decisions only to standalone `ACCEPTED_EVIDENCE`.
-  It does not create `GEOLOGIST_APPROVED`, merge into legacy Phase 03 automatically, or satisfy a
-  scientific gate.
+  Promotion also creates a hash-bound Phase-03-only evidence manifest. It does not create
+  `GEOLOGIST_APPROVED`, merge into legacy Phase 03 automatically, or satisfy a scientific gate.
+- External support layers become executable only through selected immutable evidence manifests
+  and their append-only catalog admission events. Resolution checks the exact source authority,
+  run, bytes, layer, canonical role-to-target ownership, lifecycle, phase/mode eligibility,
+  registration actor, and reason. Filenames, layer-name keywords, and directory proximity are
+  discovery only.
+- A real partial run may read a predecessor phase only from the same isolated run or an explicit
+  `PHASE=RUN_ID` source binding whose run manifest, phase record, gate and complete file seal are
+  revalidated before and after use. The promoted `output_root` tree is compatibility-only and is
+  never an execution input.
 - Phase 04 rejects AI-lifecycle and handoff evidence until a separately approved authoritative
   integration adapter exists.
 

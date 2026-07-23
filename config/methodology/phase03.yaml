@@ -29,3 +29,7 @@ requirements:
     statement: Validated AI draft geometry remains isolated until a named human records an explicit review decision and a separate deterministic operation promotes accepted evidence.
     source_refs: [repository.methodology-contracts, phase03.guide]
     status: adopted
+  - requirement_id: P03-EVIDENCE-AUTHORITY-001
+    statement: Phase 03 may ingest external support layers only through a selected immutable evidence manifest and catalog admission event that resolve the exact source authority, run, artifact bytes, layer, canonical role-to-target ownership, lifecycle and Phase 03 target; directory proximity and filenames are discovery hints only.
+    source_refs: [repository.methodology-contracts, methodology.master-v9]
+    status: adopted

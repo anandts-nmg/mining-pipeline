@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -10,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from buduunkhad.core.gates import GateStatus, evaluate_gate
-from buduunkhad.core.paths import PHASE_DIRS
+from buduunkhad.core.paths import PHASE_DIRS, phase_dir
 from buduunkhad.core.qaqc import Decision, new_report
 from buduunkhad.pipeline import (
     MissingRawDataError,
@@ -19,6 +20,72 @@ from buduunkhad.pipeline import (
     select_phases,
     validate_raw_inputs,
 )
+
+
+def test_later_phase_requires_exact_predecessor_run_binding(raw_archive):
+    config, register, _raw = raw_archive
+
+    with pytest.raises(RuntimeError, match=r"predecessor-run selectors.*missing=\['00'\]"):
+        run_pipeline(config, register, only=["01"], dry_run=False)
+
+
+def test_later_phase_reads_sealed_predecessor_not_compatibility_view(raw_archive):
+    config, register, _raw = raw_archive
+    source = run_pipeline(config, register, only=["00"], dry_run=False)
+    shutil.rmtree(phase_dir(config.output_root, "00"))
+
+    result = run_pipeline(
+        config,
+        register,
+        only=["01"],
+        dry_run=False,
+        input_phase_runs={"00": source.run_id},
+    )
+
+    assert [item.phase_id for item in result.source_phases] == ["00"]
+    assert result.source_phases[0].source_run_id == source.run_id
+    assert result.phases[0].phase_id == "01"
+    assert result.phases[0].status == "ok"
+    resumed = run_pipeline(
+        config,
+        register,
+        only=["01"],
+        dry_run=False,
+        run_id=result.run_id,
+        resume=True,
+        input_phase_runs={"00": source.run_id},
+    )
+    assert resumed.as_dict() == result.as_dict()
+
+
+def test_predecessor_mutation_during_phase_execution_is_detected(raw_archive, monkeypatch):
+    from buduunkhad.pipeline import PHASE_CLASSES
+
+    config, register, _raw = raw_archive
+    source = run_pipeline(config, register, only=["00"], dry_run=False)
+    source_artifact = config.runs_root / source.run_id / source.phases[0].sealed_files[0].path
+    phase_class = next(item for item in PHASE_CLASSES if item.id == "01")
+    original_run = phase_class.run
+
+    def run_then_mutate(self, ctx):
+        result = original_run(self, ctx)
+        with source_artifact.open("ab") as stream:
+            stream.write(b"changed-during-dependent-phase")
+        return result
+
+    monkeypatch.setattr(phase_class, "run", run_then_mutate)
+
+    result = run_pipeline(
+        config,
+        register,
+        only=["01"],
+        dry_run=False,
+        input_phase_runs={"00": source.run_id},
+    )
+
+    assert "sealed run artifact changed" in result.error
+    assert result.phases[0].status == "error"
+    assert not result.phases[0].sealed_files
 
 
 def test_registry_is_ordered_and_complete():
@@ -140,7 +207,8 @@ def test_dry_run_builds_full_tree_and_manifest(project):
     assert man_path.exists()
     data = json.loads(man_path.read_text())
     assert data["dry_run"] is True
-    assert data["manifest_format_version"] == "2.0.0"
+    assert data["manifest_format_version"] == "2.1.0"
+    assert data["evidence_manifests"] == []
     assert data["run_layout_version"] == "run-isolated-v1"
     assert len(data["phases"]) == 13
     assert all(not phase["output_artifacts"] for phase in data["phases"])
@@ -166,6 +234,30 @@ def test_manifest_surfaces_qaqc_pending_alongside_passed(raw_archive):
     assert d00["qaqc_passed"] is True
     assert d00["qaqc_pending"] is True
     assert d00["pending_human_review_or_qaqc_count"] > 0
+
+
+def test_resume_keeps_run_manifest_v2_0_compatibility(raw_archive):
+    config, register, _raw = raw_archive
+    original = run_pipeline(config, register, only=["00"], dry_run=False)
+    path = config.runs_root / original.run_id / "run_manifest.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["manifest_format_version"] = "2.0.0"
+    data.pop("evidence_manifests", None)
+    data.pop("source_phases", None)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    resumed = run_pipeline(
+        config,
+        register,
+        only=["00"],
+        dry_run=False,
+        run_id=original.run_id,
+        resume=True,
+    )
+
+    assert resumed.manifest_format_version == "2.0.0"
+    assert resumed.source_phases == []
+    assert resumed.evidence_manifests == []
 
 
 @pytest.mark.parametrize("override", [False, True])
@@ -199,6 +291,26 @@ def test_runner_stops_phase03_before_phase04_despite_operational_override(
     run_log = (config.runs_root / run_id / "logs" / "run.log").read_text(encoding="utf-8")
     assert "Phase 03 gate blocked advance" in run_log
     assert "use --override" not in run_log
+
+
+def test_phase04_cannot_bind_a_gate_blocked_phase03_source(raw_archive):
+    config, register, _raw = raw_archive
+    source = run_pipeline(
+        config,
+        register,
+        only=["00", "01", "03"],
+        dry_run=False,
+    )
+    assert source.stopped_at == "03"
+
+    with pytest.raises(RuntimeError, match="source Phase 03 gate did not permit advancement"):
+        run_pipeline(
+            config,
+            register,
+            only=["04"],
+            dry_run=False,
+            input_phase_runs={"01": source.run_id, "03": source.run_id},
+        )
 
 
 def test_successful_run_manifest_seals_every_publishable_output_and_runner_qaqc(raw_archive):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -12,7 +13,9 @@ from contextlib import AbstractContextManager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Final, cast
+from typing import Annotated, Final, Self, cast
+
+from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator
 
 from buduunkhad.core import paths
 from buduunkhad.core.run_artifacts import (
@@ -25,10 +28,13 @@ from buduunkhad.core.run_artifacts import (
     sha256_file,
 )
 
-RUN_MANIFEST_FORMAT_VERSION: Final[str] = "2.0.0"
+RUN_MANIFEST_FORMAT_VERSION: Final[str] = "2.1.0"
+SUPPORTED_RUN_MANIFEST_FORMAT_VERSIONS: Final[frozenset[str]] = frozenset({"2.0.0", "2.1.0"})
 RUN_LAYOUT_VERSION: Final[str] = "run-isolated-v1"
 CURRENT_VIEW_FILENAME: Final[str] = ".buduunkhad-current-view.json"
 _RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+_PHASE_SEQUENCE = tuple(f"{value:02d}" for value in range(12)) + ("99",)
+Sha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 
 
 class RunStorageError(RuntimeError):
@@ -37,6 +43,49 @@ class RunStorageError(RuntimeError):
 
 class ExecutionLockError(RunStorageError):
     """Raised when another process owns the project execution lock."""
+
+
+class SourcePhaseBinding(BaseModel):
+    """Stable identity of one sealed predecessor phase consumed by another run."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always")
+
+    phase_id: str
+    source_run_id: str
+    source_manifest_sha256: Sha256
+    source_phase_sha256: Sha256
+
+    @field_validator("phase_id")
+    @classmethod
+    def _valid_phase_id(cls, value: str) -> str:
+        _validate_phase_id(value)
+        return value
+
+    @field_validator("source_run_id")
+    @classmethod
+    def _valid_source_run_id(cls, value: str) -> str:
+        return validate_run_id(value)
+
+    @classmethod
+    def model_construct(
+        cls,
+        _fields_set: set[str] | None = None,
+        **values: object,
+    ) -> Self:
+        del _fields_set, values
+        raise TypeError("model_construct is unsupported; use validated construction")
+
+
+@dataclass(frozen=True)
+class ResolvedSourcePhase:
+    """One strictly validated source phase and its immutable run-local directory."""
+
+    binding: SourcePhaseBinding
+    phase_dir: Path
+    output_artifacts: tuple[RunOutputArtifact, ...]
+    sealed_files: tuple[RunOutputArtifact, ...]
+    gate_status: str
+    gate_provisional: bool
 
 
 def generate_run_id(*, now: datetime | None = None, entropy: str | None = None) -> str:
@@ -334,6 +383,159 @@ def verify_sealed_artifacts(layout: RunLayout, artifacts: Iterable[RunOutputArti
             )
 
 
+def resolve_source_phase(
+    runs_root: Path,
+    phase_id: str,
+    source_run_id: str,
+    *,
+    require_advance: bool,
+    require_qaqc_passed: bool = True,
+) -> ResolvedSourcePhase:
+    """Resolve one exact completed source phase from a strict run-manifest contract.
+
+    This is the shared authority boundary for predecessor-run inputs and evidence records. It
+    validates the top-level run identity and chronology, every phase identity and inventory, and
+    the exact selected phase seal before returning a path. ``require_advance`` additionally
+    rejects a phase whose recorded gate did not permit downstream execution.
+    """
+
+    _validate_phase_id(phase_id)
+    run_id = validate_run_id(source_run_id)
+    layout = RunLayout(Path(runs_root).absolute(), run_id)
+    try:
+        manifest_path = require_regular_file_under(
+            layout.run_dir,
+            layout.manifest_path,
+            description="source run manifest",
+        )
+        data = json.loads(
+            manifest_path.read_text(encoding="utf-8"),
+            object_pairs_hook=_unique_json_object,
+        )
+    except (ArtifactSealError, OSError, UnicodeError, ValueError) as exc:
+        raise RunStorageError("source run manifest is invalid") from exc
+    if not isinstance(data, dict):
+        raise RunStorageError("source run manifest root must be an object")
+    if data.get("manifest_format_version") not in SUPPORTED_RUN_MANIFEST_FORMAT_VERSIONS:
+        raise RunStorageError("source run manifest format is unsupported")
+    if data.get("run_layout_version") != RUN_LAYOUT_VERSION:
+        raise RunStorageError("source run layout is unsupported")
+    if data.get("run_id") != run_id or layout.run_dir.name != run_id:
+        raise RunStorageError("source run manifest identity does not match its directory")
+    started = _aware_datetime(data.get("started_at"), "source run started_at")
+    finished = _aware_datetime(data.get("finished_at"), "source run finished_at")
+    if finished < started:
+        raise RunStorageError("source run timestamps are out of order")
+    if data.get("dry_run") is not False:
+        raise RunStorageError("dry runs cannot provide sealed predecessor evidence")
+    if data.get("error") != "":
+        raise RunStorageError("failed or incomplete runs cannot provide predecessor evidence")
+
+    selected = data.get("selected_phases")
+    raw_phases = data.get("phases")
+    if (
+        not isinstance(selected, list)
+        or not selected
+        or not all(isinstance(item, str) for item in selected)
+        or len(selected) != len(set(selected))
+        or not isinstance(raw_phases, list)
+        or not raw_phases
+    ):
+        raise RunStorageError("source run phase selection is malformed")
+    for selected_id in selected:
+        _validate_phase_id(selected_id)
+    if [*selected] != sorted(selected, key=_PHASE_SEQUENCE.index):
+        raise RunStorageError("source run phase selection is not in workflow order")
+
+    phase_records: dict[str, dict[str, object]] = {}
+    for raw_phase in raw_phases:
+        if not isinstance(raw_phase, dict):
+            raise RunStorageError("source run phase record is malformed")
+        raw_phase_id = raw_phase.get("phase_id")
+        if not isinstance(raw_phase_id, str):
+            raise RunStorageError("source run phase identity is malformed")
+        _validate_phase_id(raw_phase_id)
+        if raw_phase_id in phase_records or raw_phase_id not in selected:
+            raise RunStorageError("source run phase identities are duplicated or unselected")
+        phase_records[raw_phase_id] = cast(dict[str, object], raw_phase)
+    if list(phase_records) != selected[: len(phase_records)]:
+        raise RunStorageError("source run phases are not an ordered prefix of its selection")
+    if phase_id not in phase_records:
+        raise RunStorageError(f"source run does not contain completed Phase {phase_id}")
+
+    phase = phase_records[phase_id]
+    if phase.get("status") != "ok" or phase.get("error") != "":
+        raise RunStorageError(f"source Phase {phase_id} did not complete successfully")
+    if require_qaqc_passed and phase.get("qaqc_passed") is not True:
+        raise RunStorageError(f"source Phase {phase_id} did not pass deterministic QA/QC")
+    if not isinstance(phase.get("qaqc_pending"), bool):
+        raise RunStorageError("source phase QA/QC pending state is malformed")
+    pending_count = phase.get("pending_human_review_or_qaqc_count")
+    if not isinstance(pending_count, int) or isinstance(pending_count, bool) or pending_count < 0:
+        raise RunStorageError("source phase pending count is malformed")
+    if phase.get("qaqc_pending") is not (pending_count > 0):
+        raise RunStorageError("source phase pending count is inconsistent")
+
+    gate = phase.get("gate")
+    if not isinstance(gate, dict):
+        raise RunStorageError("source phase gate record is malformed")
+    gate_data = cast(dict[str, object], gate)
+    gate_status = gate_data.get("status")
+    if gate_status not in {"go", "no-go", "blocked"}:
+        raise RunStorageError("source phase gate status is malformed")
+    if not isinstance(gate_data.get("overridden"), bool) or not isinstance(
+        gate_data.get("provisional"), bool
+    ):
+        raise RunStorageError("source phase gate flags are malformed")
+    if require_advance and gate_status != "go":
+        raise RunStorageError(f"source Phase {phase_id} gate did not permit advancement")
+
+    outputs_raw = phase.get("output_artifacts")
+    sealed_raw = phase.get("sealed_files")
+    outputs_list = phase.get("outputs")
+    if (
+        not isinstance(outputs_raw, list)
+        or not isinstance(sealed_raw, list)
+        or not isinstance(outputs_list, list)
+        or not all(isinstance(item, str) for item in outputs_list)
+    ):
+        raise RunStorageError("source phase artifact inventory is malformed")
+    try:
+        outputs = tuple(RunOutputArtifact.model_validate(item) for item in outputs_raw)
+        sealed = tuple(RunOutputArtifact.model_validate(item) for item in sealed_raw)
+    except ValueError as exc:
+        raise RunStorageError("source phase artifact inventory is malformed") from exc
+    output_map = {item.path: item for item in outputs}
+    sealed_map = {item.path: item for item in sealed}
+    expected_prefix = ("phases", phase_id)
+    if (
+        len(output_map) != len(outputs)
+        or len(sealed_map) != len(sealed)
+        or len(outputs_list) != len(set(outputs_list))
+        or set(outputs_list) != set(output_map)
+        or any(sealed_map.get(path) != artifact for path, artifact in output_map.items())
+        or any(tuple(Path(item.path).parts[:2]) != expected_prefix for item in sealed)
+    ):
+        raise RunStorageError("source phase artifact inventory is inconsistent")
+    verify_sealed_artifacts(layout, sealed)
+
+    source_phase_sha256 = _sha256_json_value(phase)
+    binding = SourcePhaseBinding(
+        phase_id=phase_id,
+        source_run_id=run_id,
+        source_manifest_sha256=sha256_file(manifest_path),
+        source_phase_sha256=source_phase_sha256,
+    )
+    return ResolvedSourcePhase(
+        binding=binding,
+        phase_dir=layout.sealed_phase(phase_id).resolve(),
+        output_artifacts=outputs,
+        sealed_files=sealed,
+        gate_status=cast(str, gate_status),
+        gate_provisional=cast(bool, gate_data["provisional"]),
+    )
+
+
 def promote_phase_to_current(
     layout: RunLayout,
     phase_id: str,
@@ -424,14 +626,38 @@ def _record_current_view(
 
 
 def _artifact_inventory_sha256(artifacts: tuple[RunOutputArtifact, ...]) -> str:
-    import hashlib
-
     payload = json.dumps(
         [artifact.model_dump(mode="json") for artifact in artifacts],
         separators=(",", ":"),
         sort_keys=True,
     ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
+
+
+def _sha256_json_value(value: object) -> str:
+    payload = json.dumps(value, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _aware_datetime(value: object, field: str) -> datetime:
+    if not isinstance(value, str) or not value:
+        raise RunStorageError(f"{field} is missing")
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise RunStorageError(f"{field} is malformed") from exc
+    if parsed.utcoffset() is None:
+        raise RunStorageError(f"{field} must be timezone-aware")
+    return parsed
+
+
+def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
 
 
 def _validate_phase_id(value: str) -> None:

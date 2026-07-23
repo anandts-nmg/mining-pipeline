@@ -21,6 +21,7 @@ boundaries:
     automation_category: desktop-deterministic
     deterministic_authority:
       - Spatial/raster audit, CRS checks, boundary import, buffer rings, master GeoPackage schema, QGIS project generation.
+      - Any prior Phase 00 products are consumed from the same isolated run or an exact sealed predecessor-run binding, never the mutable compatibility view.
     human_review_boundary:
       - Scan-map georeferencing acceptance (GCP residuals, registration QA/QC).
     ai_permitted:
@@ -35,6 +36,7 @@ boundaries:
     automation_category: desktop-deterministic
     deterministic_authority:
       - Reprojection, per-product clipping, COG output, spectral band math, terrain derivatives, the frozen ASTER support-evidence chain, hydrology products, the machine lineament draft.
+      - Prior Phase 00 and Phase 01 products resolve from the same run or exact sealed predecessor-run bindings.
     human_review_boundary:
       - Interpretation of validated imagery; adoption of any new threshold or calculation.
     ai_permitted:
@@ -49,13 +51,15 @@ boundaries:
   - phase_id: "03"
     automation_category: desktop-orchestrated
     deterministic_authority:
-      - Scaffold, registers, evidence-GeoPackage assembly, CMCS buffers, occurrence ingest, human-layer ingest, and the opt-in AI-draft review packaging and promotion.
+      - Scaffold, registers, evidence-GeoPackage assembly, CMCS buffers, occurrence ingest, exact manifest-resolved support-evidence ingest, and the opt-in AI-draft review packaging and promotion.
+      - Evidence roles must own their exact Phase 03 target layers, and catalog admission plus predecessor-run identities remain bound into the consuming run.
     human_review_boundary:
       - Digitizing, georeferencing acceptance, the 03A deposit-model matrix, and every handoff review decision.
     ai_permitted:
       - Draft digitization, occurrence reconciliation, and deposit-model drafting through the review handoff.
     ai_prohibited:
       - Scientific approval; automatic merge into legacy Phase 03 evidence.
+      - Becoming executable merely through a filename, layer name, or directory location.
     blocking_dependencies:
       - Human-digitized layers and the completed 03A score matrix.
       - METH-READY-004, METH-READY-005 and METH-READY-006 block scientific handoff and cannot be bypassed by the ordinary operational override.
@@ -65,6 +69,8 @@ boundaries:
     automation_category: desktop-deterministic
     deterministic_authority:
       - Evidence grid, scoring arithmetic, class banding, prospect dissolution, ranking and go/no-go tables.
+      - Attribute-bearing support evidence only when its exact artifact, layer, role and legacy-comparator eligibility resolve through an immutable evidence manifest.
+      - Phase 01 and Phase 03 inputs come from the same run or exact sealed predecessor-run bindings; a blocked Phase 03 gate cannot supply the comparator.
     human_review_boundary:
       - Scoring-matrix changes; supply of the roads layer and the completed 03A model-fit source.
     ai_prohibited:

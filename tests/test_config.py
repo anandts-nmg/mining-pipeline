@@ -112,6 +112,7 @@ def test_work_root_env_override_places_runs_below_work_root(project, monkeypatch
     monkeypatch.setenv(WORK_ROOT_ENV, str(target))
 
     assert config.runs_root == target / "runs"
+    assert config.evidence_root == target / "evidence-authority"
 
 
 def test_phase_dirs_cover_workflow():

@@ -1218,6 +1218,32 @@ def test_publish_accepts_current_pipeline_run_manifest_contract(raw_archive):
     assert manifest.package_status == "HUMAN_REVIEW_PENDING"
 
 
+def test_publish_keeps_run_manifest_v2_0_compatibility(raw_archive):
+    from buduunkhad.pipeline import run_pipeline
+
+    config, register, _raw = raw_archive
+    source_run = run_pipeline(config, register, only=["00"], dry_run=False)
+    source_manifest = config.runs_root / source_run.run_id / "run_manifest.json"
+    data = json.loads(source_manifest.read_text(encoding="utf-8"))
+    data["manifest_format_version"] = "2.0.0"
+    data.pop("evidence_manifests", None)
+    data.pop("source_phases", None)
+    source_manifest.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    result = publish(
+        config.output_root,
+        config.base_dir / "publication-staging-v20",
+        "phase00-v20",
+        runs_root=config.runs_root,
+        project_config_path=config.base_dir / "config" / "project.yaml",
+        run_id=source_run.run_id,
+    )
+
+    manifest = verify_publication_package(result.dest)
+    assert manifest.included_phase_ids == ("00",)
+    assert manifest.phases[0].source_binding_mode == "SHA256_BOUND"
+
+
 def test_run_isolated_publication_requires_one_exact_run(raw_archive):
     from buduunkhad.pipeline import run_pipeline
 

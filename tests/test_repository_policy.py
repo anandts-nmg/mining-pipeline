@@ -74,6 +74,7 @@ def test_complete_forbidden_artifact_set_is_centralized(path: str) -> None:
         "outputs/result.txt",
         "control/state.json",
         "runs/run.json",
+        "evidence-authority/evidence_manifest.json",
         "ai_jobs/job.json",
         "ai_responses/response.json",
         "private_evaluations/case.json",

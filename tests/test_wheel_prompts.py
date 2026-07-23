@@ -34,6 +34,7 @@ def test_installed_wheel_loads_packaged_prompt_registry(tmp_path: Path) -> None:
     with zipfile.ZipFile(wheel) as archive:
         names = set(archive.namelist())
     expected_resources = {
+        "buduunkhad/core/evidence_manifest.py",
         "buduunkhad/prompt_data/registry.yaml",
         "buduunkhad/prompt_data/prompt-lock.yaml",
         "buduunkhad/prompt_data/fixtures/document_extraction/1.0.0/system.txt",
@@ -87,6 +88,15 @@ def test_installed_wheel_loads_packaged_prompt_registry(tmp_path: Path) -> None:
 from pathlib import Path
 import buduunkhad
 from buduunkhad.ai.prompts import PromptRegistry, default_schema_registry
+from buduunkhad.core.evidence_manifest import (
+    EVIDENCE_CATALOG_FORMAT_VERSION,
+    EVIDENCE_MANIFEST_FORMAT_VERSION,
+)
+from buduunkhad.core.run_storage import (
+    RUN_MANIFEST_FORMAT_VERSION,
+    SUPPORTED_RUN_MANIFEST_FORMAT_VERSIONS,
+    SourcePhaseBinding,
+)
 from buduunkhad.geospatial_ai.methodology import (
     load_authority_registry,
     load_automation_readiness,
@@ -103,6 +113,8 @@ critic = registry.get("fixture.feature-critique", "1.0.0")
 vertical = registry.get("vertical.geological-feature-proposal", "1.0.0")
 authority = load_authority_registry()
 phase05 = load_phase_methodology("05")
+phase03 = load_phase_methodology("03")
+phase04 = load_phase_methodology("04")
 discrepancies = load_discrepancy_registry()
 phase04_migration = load_phase04_migration_contract()
 readiness = load_automation_readiness()
@@ -112,6 +124,19 @@ assert critic.components[0].text
 assert vertical.components[0].text
 assert authority.sources
 assert phase05.phase_id == "05"
+assert EVIDENCE_MANIFEST_FORMAT_VERSION == "1.0.0"
+assert EVIDENCE_CATALOG_FORMAT_VERSION == "1.0.0"
+assert RUN_MANIFEST_FORMAT_VERSION == "2.1.0"
+assert SUPPORTED_RUN_MANIFEST_FORMAT_VERSIONS == {{"2.0.0", "2.1.0"}}
+binding = SourcePhaseBinding(
+    phase_id="00",
+    source_run_id="source-run",
+    source_manifest_sha256="a" * 64,
+    source_phase_sha256="b" * 64,
+)
+assert binding.phase_id == "00"
+assert "P03-EVIDENCE-AUTHORITY-001" in {{item.requirement_id for item in phase03.requirements}}
+assert "P04-EVIDENCE-AUTHORITY-001" in {{item.requirement_id for item in phase04.requirements}}
 assert len(discrepancies.discrepancies) == 69
 assert any(
     item.discrepancy_id == "METH-DISC-033"

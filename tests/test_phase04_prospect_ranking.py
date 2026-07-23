@@ -13,7 +13,17 @@ import openpyxl
 import pytest
 
 from buduunkhad.core import paths, vector_io
+from buduunkhad.core.evidence_manifest import (
+    EvidenceExecutionMode,
+    EvidenceLifecycleState,
+    EvidenceOrigin,
+    EvidenceRecord,
+    EvidenceRole,
+    EvidenceSourceKind,
+    ResolvedEvidence,
+)
 from buduunkhad.core.gates import GateStatus
+from buduunkhad.core.run_artifacts import sha256_file
 from buduunkhad.phases.base import RunContext
 from buduunkhad.phases.phase00_archive import Phase00Archive
 from buduunkhad.phases.phase01_data_audit import Phase01DataAudit
@@ -111,9 +121,8 @@ def _inject_evidence(config):
     )
 
 
-def _inject_attribute_evidence(config):
-    """Drop an ASTER-alteration + a geochem-anomaly (with element attribute) layer covering the
-    points, exercising Phase 04's attribute-evidence path (activates `rs` + populates `elements`)."""
+def _inject_attribute_evidence(ctx, config):
+    """Select exact alteration and geochemistry layers through resolved manifest records."""
     import geopandas as gpd
 
     p03in = _evidence_gpkg_03(config).parent.parent / "01_Input_Working_Copy"
@@ -121,11 +130,53 @@ def _inject_attribute_evidence(config):
     pts = vector_io.read_layer(_evidence_gpkg_03(config), "mineralized_points_point")
     cover = pts.geometry.union_all().buffer(400)
     epsg = config.target_epsg
+    alteration = p03in / "human_aster_alteration.gpkg"
+    geochem = p03in / "human_geochem_anomaly.gpkg"
     gpd.GeoDataFrame(  # ty: ignore[no-matching-overload]
         {"alt_type": ["advanced_argillic"], "geometry": [cover]}, crs=f"EPSG:{epsg}"
-    ).to_file(p03in / "human_aster_alteration.gpkg", layer="aster_alteration_zones", driver="GPKG")
+    ).to_file(alteration, layer="aster_alteration_zones", driver="GPKG")
     gpd.GeoDataFrame({"main_element": ["Cu,Mo"], "geometry": [cover]}, crs=f"EPSG:{epsg}").to_file(  # ty: ignore[no-matching-overload]
-        p03in / "human_geochem_anomaly.gpkg", layer="geochem_anomaly_polygons", driver="GPKG"
+        geochem, layer="geochem_anomaly_polygons", driver="GPKG"
+    )
+
+    def _resolved(path, layer, role, suffix):
+        record = EvidenceRecord(
+            evidence_id=f"EV-attribute-{suffix}",
+            source_kind=EvidenceSourceKind.PIPELINE_RUN,
+            source_run_id="attribute-run",
+            source_authority_path="run_manifest.json",
+            source_authority_sha256="a" * 64,
+            artifact_path=f"phases/03/{path.name}",
+            artifact_sha256=sha256_file(path),
+            artifact_size_bytes=path.stat().st_size,
+            layer_name=layer,
+            evidence_role=role,
+            origin=EvidenceOrigin.HUMAN_DIGITIZED,
+            lifecycle_state=EvidenceLifecycleState.SEALED_SUPPORT_EVIDENCE,
+            eligible_phases=("04",),
+            eligible_modes=(EvidenceExecutionMode.LEGACY_COMPARATOR,),
+        )
+        return ResolvedEvidence(
+            manifest_id=("b" if suffix == "alteration" else "c") * 64,
+            manifest_sha256=("d" if suffix == "alteration" else "e") * 64,
+            catalog_entry_id=("f" if suffix == "alteration" else "0") * 64,
+            record=record,
+            artifact=path,
+        )
+
+    ctx.resolved_evidence = (
+        _resolved(
+            alteration,
+            "aster_alteration_zones",
+            EvidenceRole.ALTERATION_SUPPORT,
+            "alteration",
+        ),
+        _resolved(
+            geochem,
+            "geochem_anomaly_polygons",
+            EvidenceRole.GEOCHEMICAL_ANOMALY,
+            "geochem",
+        ),
     )
 
 
@@ -334,7 +385,7 @@ def test_phase04_attribute_evidence_activates_rs_and_elements(raw_archive):
     _write_68(ctx, config)
     Phase03GeologySynthesis().run(ctx)
     _inject_evidence(config)  # geology contact + fault
-    _inject_attribute_evidence(config)  # alteration + geochem-anomaly (with element attribute)
+    _inject_attribute_evidence(ctx, config)  # exact role-bound alteration + geochemistry
 
     phase = Phase04ProspectRanking()
     phase.prepare(ctx)

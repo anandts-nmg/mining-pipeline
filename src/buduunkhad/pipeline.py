@@ -11,6 +11,7 @@ import hashlib
 import json
 import logging
 import shutil
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -19,6 +20,12 @@ from typing import Any, cast
 from buduunkhad import __version__
 from buduunkhad.config import InputRecord, ProjectConfig, load_config, load_register
 from buduunkhad.core import paths, raw_guard, registers, winpath
+from buduunkhad.core.evidence_manifest import (
+    EvidenceAuthorityResolver,
+    EvidenceManifestBinding,
+    EvidenceManifestError,
+    evidence_bindings,
+)
 from buduunkhad.core.gates import GateDecision, GateStatus
 from buduunkhad.core.qaqc import Decision
 from buduunkhad.core.raw_guard import RawIntegrityError
@@ -26,12 +33,16 @@ from buduunkhad.core.run_artifacts import RunOutputArtifact, has_symlink_compone
 from buduunkhad.core.run_storage import (
     RUN_LAYOUT_VERSION,
     RUN_MANIFEST_FORMAT_VERSION,
+    SUPPORTED_RUN_MANIFEST_FORMAT_VERSIONS,
     ProjectExecutionLock,
+    ResolvedSourcePhase,
     RunLayout,
     RunStorageError,
+    SourcePhaseBinding,
     generate_run_id,
     prepare_staging_phase,
     promote_phase_to_current,
+    resolve_source_phase,
     seal_and_finalize_phase,
     validate_execution_roots,
     validate_run_id,
@@ -70,6 +81,16 @@ PHASE_CLASSES: list[type[Phase]] = [
 ]
 
 PHASE_ORDER: list[str] = [c.id for c in PHASE_CLASSES]
+
+# Exact predecessor phases whose run-local artifacts are read by each implemented real phase.
+# A dependency selected earlier in the same run resolves locally; every other dependency requires
+# an explicit source-run binding. Stubs and dry runs have no external predecessor requirements.
+PHASE_INPUT_DEPENDENCIES: dict[str, frozenset[str]] = {
+    "01": frozenset({"00"}),
+    "02": frozenset({"00", "01"}),
+    "03": frozenset({"00", "01"}),
+    "04": frozenset({"01", "03"}),
+}
 
 
 def build_registry() -> list[Phase]:
@@ -144,9 +165,11 @@ class RunManifest:
     manifest_format_version: str = RUN_MANIFEST_FORMAT_VERSION
     run_layout_version: str = RUN_LAYOUT_VERSION
     execution_identity: dict[str, str] = field(default_factory=dict)
+    evidence_manifests: list[EvidenceManifestBinding] = field(default_factory=list)
+    source_phases: list[SourcePhaseBinding] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, object]:
-        return {
+        value: dict[str, object] = {
             "manifest_format_version": self.manifest_format_version,
             "run_layout_version": self.run_layout_version,
             "run_id": self.run_id,
@@ -161,6 +184,12 @@ class RunManifest:
             "execution_identity": self.execution_identity,
             "phases": [p.as_dict() for p in self.phases],
         }
+        if self.manifest_format_version != "2.0.0":
+            value["evidence_manifests"] = [
+                item.model_dump(mode="json") for item in self.evidence_manifests
+            ]
+            value["source_phases"] = [item.model_dump(mode="json") for item in self.source_phases]
+        return value
 
 
 # --------------------------------------------------------------------------- #
@@ -463,14 +492,22 @@ def _execution_identity(
     selected_phases: list[str],
     dry_run: bool,
     override: bool,
+    selected_evidence: tuple[EvidenceManifestBinding, ...] = (),
+    source_phases: tuple[SourcePhaseBinding, ...] = (),
 ) -> dict[str, str]:
     parameters = {
         "selected_phases": selected_phases,
         "dry_run": dry_run,
         "override": override,
     }
+    if selected_evidence:
+        parameters["evidence_manifests"] = [
+            item.model_dump(mode="json") for item in selected_evidence
+        ]
+    if source_phases:
+        parameters["source_phases"] = [item.model_dump(mode="json") for item in source_phases]
     register_data = [item.model_dump(mode="json") for item in register]
-    return {
+    identity = {
         "source_inventory_sha256": _source_inventory_identity(config, register),
         "input_register_sha256": _sha256_json(register_data),
         "project_configuration_sha256": _project_configuration_identity(config),
@@ -478,6 +515,54 @@ def _execution_identity(
         "code_version": _code_identity(),
         "parameters_sha256": _sha256_json(parameters),
     }
+    if selected_evidence:
+        identity["evidence_manifests_sha256"] = _sha256_json(
+            [item.model_dump(mode="json") for item in selected_evidence]
+        )
+    if source_phases:
+        identity["source_phases_sha256"] = _sha256_json(
+            [item.model_dump(mode="json") for item in source_phases]
+        )
+    return identity
+
+
+def _required_external_phases(selected_ids: list[str], *, dry_run: bool) -> frozenset[str]:
+    if dry_run:
+        return frozenset()
+    available: set[str] = set()
+    required: set[str] = set()
+    for phase_id in selected_ids:
+        for dependency in PHASE_INPUT_DEPENDENCIES.get(phase_id, frozenset()):
+            if dependency not in available:
+                required.add(dependency)
+        available.add(phase_id)
+    return frozenset(required)
+
+
+def _resolve_source_phases(
+    runs_root: Path,
+    required: frozenset[str],
+    selectors: Mapping[str, str],
+) -> tuple[ResolvedSourcePhase, ...]:
+    if set(selectors) != set(required):
+        missing = sorted(set(required) - set(selectors))
+        extra = sorted(set(selectors) - set(required))
+        raise RunStorageError(
+            "predecessor-run selectors must exactly match external phase dependencies "
+            f"(missing={missing}, unexpected={extra})"
+        )
+    resolved: list[ResolvedSourcePhase] = []
+    for phase_id, source_run_id in sorted(selectors.items()):
+        resolved.append(
+            resolve_source_phase(
+                runs_root,
+                phase_id,
+                source_run_id,
+                require_advance=True,
+                require_qaqc_passed=True,
+            )
+        )
+    return tuple(resolved)
 
 
 def _phase_outcome_from_dict(value: dict[str, Any]) -> PhaseOutcome:
@@ -522,7 +607,8 @@ def _load_resume_manifest(layout: RunLayout) -> RunManifest:
         raise ResumeError(f"run manifest is unreadable: {layout.manifest_path}") from exc
     if not isinstance(data, dict):
         raise ResumeError("run manifest root must be an object")
-    if data.get("manifest_format_version") != RUN_MANIFEST_FORMAT_VERSION:
+    format_version = data.get("manifest_format_version")
+    if format_version not in SUPPORTED_RUN_MANIFEST_FORMAT_VERSIONS:
         raise ResumeError("only run-isolated v2 manifests can be resumed")
     if data.get("run_layout_version") != RUN_LAYOUT_VERSION:
         raise ResumeError("run manifest layout is unsupported for resume")
@@ -531,6 +617,8 @@ def _load_resume_manifest(layout: RunLayout) -> RunManifest:
     phases = data.get("phases")
     identity = data.get("execution_identity")
     selected = data.get("selected_phases")
+    raw_evidence = data.get("evidence_manifests", [])
+    raw_source_phases = data.get("source_phases", [])
     if (
         not isinstance(phases, list)
         or not all(isinstance(value, dict) for value in phases)
@@ -540,8 +628,20 @@ def _load_resume_manifest(layout: RunLayout) -> RunManifest:
         )
         or not isinstance(selected, list)
         or not all(isinstance(value, str) for value in selected)
+        or not isinstance(raw_evidence, list)
+        or not isinstance(raw_source_phases, list)
     ):
         raise ResumeError("run manifest execution identity is malformed")
+    try:
+        manifest_evidence = [EvidenceManifestBinding.model_validate(item) for item in raw_evidence]
+        source_phases = [SourcePhaseBinding.model_validate(item) for item in raw_source_phases]
+    except ValueError as exc:
+        raise ResumeError("run manifest source or evidence binding is malformed") from exc
+    source_ids = [item.phase_id for item in source_phases]
+    if source_ids != sorted(set(source_ids)):
+        raise ResumeError("run manifest predecessor phase bindings are duplicated or unordered")
+    if format_version == "2.0.0" and (manifest_evidence or source_phases):
+        raise ResumeError("run manifest v2.0 cannot claim source or accepted-evidence bindings")
     return RunManifest(
         run_id=layout.run_id,
         started_at=str(data.get("started_at", "")),
@@ -553,7 +653,10 @@ def _load_resume_manifest(layout: RunLayout) -> RunManifest:
         stopped_at=str(data.get("stopped_at", "")),
         finished_at=str(data.get("finished_at", "")),
         error=str(data.get("error", "")),
+        manifest_format_version=cast(str, format_version),
         execution_identity=dict(identity),
+        evidence_manifests=manifest_evidence,
+        source_phases=source_phases,
     )
 
 
@@ -622,6 +725,8 @@ def run_pipeline(
     override: bool = False,
     run_id: str | None = None,
     resume: bool = False,
+    evidence_manifest_ids: list[str] | None = None,
+    input_phase_runs: Mapping[str, str] | None = None,
 ) -> RunManifest:
     """Execute selected phases in one isolated run directory.
 
@@ -641,6 +746,41 @@ def run_pipeline(
 
     selected_ids = [phase.id for phase in selected]
     validate_execution_roots(config.raw_root, config.output_root, config.runs_root)
+    required_sources = _required_external_phases(selected_ids, dry_run=dry_run)
+    source_selectors = dict(input_phase_runs or {})
+    if run_id in source_selectors.values():
+        raise RunStorageError("a run cannot use itself as a predecessor source")
+    resolved_source_phases = _resolve_source_phases(
+        config.runs_root,
+        required_sources,
+        source_selectors,
+    )
+    source_phase_bindings = tuple(item.binding for item in resolved_source_phases)
+    selected_manifest_ids = tuple(evidence_manifest_ids or ())
+    evidence_resolver = (
+        EvidenceAuthorityResolver(
+            runs_root=config.runs_root,
+            evidence_root=config.evidence_root,
+            target_epsg=config.target_epsg,
+        )
+        if selected_manifest_ids
+        else None
+    )
+    resolved_evidence = (
+        evidence_resolver.resolve_selected(selected_manifest_ids)
+        if evidence_resolver is not None
+        else ()
+    )
+    irrelevant = [
+        item.record.evidence_id
+        for item in resolved_evidence
+        if not set(item.record.eligible_phases) & set(selected_ids)
+    ]
+    if irrelevant:
+        raise EvidenceManifestError(
+            f"selected evidence is not eligible for the requested phases: {sorted(irrelevant)}"
+        )
+    selected_evidence = evidence_bindings(resolved_evidence)
     layout = RunLayout(config.runs_root, run_id)
     with ProjectExecutionLock(config.runs_root, run_id):
         layout.initialize(resume=resume)
@@ -651,6 +791,8 @@ def run_pipeline(
             selected_phases=selected_ids,
             dry_run=dry_run,
             override=override,
+            selected_evidence=selected_evidence,
+            source_phases=source_phase_bindings,
         )
         completed_ids: set[str] = set()
         if resume:
@@ -660,6 +802,8 @@ def run_pipeline(
                 or manifest.dry_run != dry_run
                 or manifest.override != override
                 or manifest.execution_identity != identity
+                or manifest.evidence_manifests != list(selected_evidence)
+                or manifest.source_phases != list(source_phase_bindings)
             ):
                 raise ResumeError(
                     "resume identity differs from the recorded sources, configuration, "
@@ -752,6 +896,8 @@ def run_pipeline(
                 override=override,
                 selected_phases=selected_ids,
                 execution_identity=identity,
+                evidence_manifests=list(selected_evidence),
+                source_phases=list(source_phase_bindings),
             )
 
         # Persist the immutable run identity before any preflight or phase side effect. A hard
@@ -817,11 +963,34 @@ def run_pipeline(
                 override=override,
                 logger=logger,
                 run_isolated=True,
+                resolved_evidence=resolved_evidence,
+                source_phase_dirs={
+                    item.binding.phase_id: item.phase_dir for item in resolved_source_phases
+                },
             )
 
             for phase in selected:
                 if phase.id in completed_ids:
                     continue
+                refreshed_sources = _resolve_source_phases(
+                    config.runs_root,
+                    required_sources,
+                    source_selectors,
+                )
+                if tuple(item.binding for item in refreshed_sources) != source_phase_bindings:
+                    raise RunStorageError(
+                        "selected predecessor-run identities changed after run initialization"
+                    )
+                ctx.source_phase_dirs = {
+                    item.binding.phase_id: item.phase_dir for item in refreshed_sources
+                }
+                if evidence_resolver is not None:
+                    refreshed = evidence_resolver.resolve_selected(selected_manifest_ids)
+                    if evidence_bindings(refreshed) != selected_evidence:
+                        raise EvidenceManifestError(
+                            "selected evidence manifest bytes changed after run initialization"
+                        )
+                    ctx.resolved_evidence = refreshed
                 outcome = PhaseOutcome(
                     phase_id=phase.id, name=phase.name, mode=phase.mode, status="pending"
                 )
@@ -832,6 +1001,15 @@ def run_pipeline(
                     ctx.active_phase_id = phase.id
                     phase.prepare(ctx)
                     result = phase.run(ctx)
+                    after_sources = _resolve_source_phases(
+                        config.runs_root,
+                        required_sources,
+                        source_selectors,
+                    )
+                    if tuple(item.binding for item in after_sources) != source_phase_bindings:
+                        raise RunStorageError(
+                            "selected predecessor-run bytes changed while the phase was running"
+                        )
                     outcome.status = result.status
                     declared_outputs = list(result.outputs)
                     report = phase.qaqc(ctx)

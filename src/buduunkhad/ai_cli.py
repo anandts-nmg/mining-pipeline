@@ -343,11 +343,20 @@ def phase03_promote_reviewed(
     from buduunkhad.geospatial_ai.phase03_handoff import promote_reviewed_evidence
 
     try:
-        _project, roots = _context(config)
+        project, roots = _context(config)
         result = promote_reviewed_evidence(
             review_package,
             output,
             roots=roots,
+        )
+        from buduunkhad.core.evidence_manifest import register_phase03_promotion_evidence
+
+        evidence_manifest = register_phase03_promotion_evidence(
+            output=result.output,
+            audit_ledger=result.audit_ledger,
+            runs_root=project.runs_root,
+            evidence_root=project.evidence_root,
+            target_epsg=project.target_epsg,
         )
     except (OSError, ValueError, RuntimeError) as exc:
         _abort(exc)
@@ -355,3 +364,4 @@ def phase03_promote_reviewed(
     typer.echo(f"{action} accepted Phase 03 evidence: {result.output}")
     typer.echo(f"Promoted features: {len(result.promoted_feature_ids)}")
     typer.echo(f"Append-only promotion audit: {result.audit_ledger}")
+    typer.echo(f"Accepted-evidence manifest: {evidence_manifest.manifest_id}")

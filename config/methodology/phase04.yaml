@@ -17,6 +17,10 @@ requirements:
     statement: AI_DRAFT, AI_VALIDATED, HUMAN_REVIEWED, ACCEPTED_EVIDENCE and GEOLOGIST_APPROVED handoff records remain outside Phase 04 until an explicit authoritative adapter is adopted.
     source_refs: [repository.methodology-contracts]
     status: adopted
+  - requirement_id: P04-EVIDENCE-AUTHORITY-001
+    statement: Attribute-bearing evidence used by the legacy comparator must resolve through an immutable manifest and catalog admission event with an exact source artifact, layer, explicit evidence role and legacy-comparator eligibility; filename keywords and directory proximity have no authority.
+    source_refs: [repository.methodology-contracts, methodology.master-v9]
+    status: adopted
   - requirement_id: P04-GATE-PROVISIONAL-001
     statement: Automated completion does not imply scientific approval; Phase 03 master-required pending items block its handoff, while other deterministic scaffold gates retain explicit provisional behavior.
     source_refs: [repository.methodology-contracts, METH-DISC-031, METH-DISC-062]

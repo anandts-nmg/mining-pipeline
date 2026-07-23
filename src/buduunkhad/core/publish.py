@@ -53,7 +53,7 @@ from buduunkhad.core.run_artifacts import (
 )
 from buduunkhad.core.run_storage import (
     RUN_LAYOUT_VERSION,
-    RUN_MANIFEST_FORMAT_VERSION,
+    SUPPORTED_RUN_MANIFEST_FORMAT_VERSIONS,
     RunLayout,
     RunStorageError,
     validate_run_id,
@@ -673,7 +673,7 @@ def _select_exact_run_records(
     manifest_path = runs_root / run_id / "run_manifest.json"
     data = _load_json_object(manifest_path)
     if (
-        data.get("manifest_format_version") != RUN_MANIFEST_FORMAT_VERSION
+        data.get("manifest_format_version") not in SUPPORTED_RUN_MANIFEST_FORMAT_VERSIONS
         or data.get("run_layout_version") != RUN_LAYOUT_VERSION
     ):
         raise PublishError("exact-run publication requires a run-isolated source manifest")

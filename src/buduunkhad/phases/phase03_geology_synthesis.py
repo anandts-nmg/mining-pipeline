@@ -21,6 +21,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from buduunkhad.core import naming, registers, vector_io
+from buduunkhad.core.evidence_manifest import (
+    EvidenceExecutionMode,
+    EvidenceOrigin,
+    phase03_target_accepts,
+)
 from buduunkhad.core.gates import GateDecision, evaluate_gate
 from buduunkhad.core.qaqc import RECORDED_ACCEPTANCE, Decision, QAQCReport, new_report
 from buduunkhad.phases.base import Phase, PhaseResult, RunContext
@@ -657,55 +662,51 @@ class Phase03GeologySynthesis(Phase):
         self._coverage_rows = rows
 
     # ------------------------------------------------------------------ #
-    # Step 8 — ingest any human-digitized layers found in the phase folders
+    # Step 8 — ingest only explicitly selected, hash-bound support evidence
     # ------------------------------------------------------------------ #
 
     def _ingest_human_layers(self, ctx: RunContext, evidence_path: Path) -> None:
-        """Ingest human-digitized GPKG layers dropped into the phase subfolders.
+        """Ingest exact manifest-authorized layers; directory proximity has no authority."""
 
-        For each of the 17 evidence layers, look for a source GPKG anywhere under the phase
-        dir that carries a layer of that name (excluding the authoritative evidence GPKG and
-        the CMCS buffer we built), validate its schema, stamp 'Historical only' where blank,
-        and append it into the evidence GPKG.
-        """
-        pdir = ctx.phase_dir(self.id)
         layer_names = {name for name, _geom, _pref in EVIDENCE_LAYERS}
-        for src in sorted(pdir.rglob("*.gpkg")):
-            if src == evidence_path:
+        reserved = {_CMCS_BUFFER_LAYER, _MINERALIZED_LAYER, "license_boundary"}
+        claimed_targets: set[str] = set()
+        selected = ctx.evidence_for("03", mode=EvidenceExecutionMode.SUPPORT_EVIDENCE)
+        for resolved in selected:
+            record = resolved.record
+            if record.origin is EvidenceOrigin.PHASE03_AI_HANDOFF:
+                self._notes.append(
+                    "Accepted AI handoff evidence remains standalone and provenance-preserving: "
+                    f"{record.evidence_id}:{record.layer_name}"
+                )
                 continue
-            try:
-                present = set(vector_io.list_gpkg_layers(src))
-            except Exception:
-                continue
-            for layer in present & layer_names:
-                if layer in {_CMCS_BUFFER_LAYER, _MINERALIZED_LAYER}:
-                    continue  # pipeline-built layers, already populated
-                try:
-                    gdf = vector_io.read_layer(src, layer)
-                except Exception:
-                    continue
-                if len(gdf) == 0:
-                    continue
-                # AI review packages and promoted AI evidence carry a separate, richer
-                # provenance schema.  The legacy common-schema normalizer below intentionally
-                # reindexes to 14 columns, so auto-ingesting those files would discard their
-                # request/response/review lineage.  The opt-in Phase 03 handoff keeps them in a
-                # standalone accepted-evidence package until a provenance-preserving merge is
-                # explicitly implemented.
-                ai_lifecycle_fields = {
-                    "proposal_state",
-                    "review_state",
-                    "evidence_state",
-                    "review_decision",
-                }
-                if ai_lifecycle_fields & set(gdf.columns) or "AI_DRAFT" in src.name.upper():
-                    self._notes.append(
-                        f"AI handoff layer kept separate from legacy normalization: {src.name}:{layer}"
-                    )
-                    continue
-                gdf = self._prepare_evidence_gdf(gdf, layer, target_epsg=ctx.config.target_epsg)
-                vector_io.write_layer(gdf, evidence_path, layer=layer, mode="a")
-                self._ingested_layers.append(layer)
+            target = record.target_layer_name
+            if (
+                target is None
+                or target not in layer_names
+                or target in reserved
+                or not phase03_target_accepts(target, record.evidence_role)
+            ):
+                raise ValueError(
+                    f"evidence {record.evidence_id} has no permitted Phase 03 target layer"
+                )
+            if target in claimed_targets:
+                raise ValueError(f"multiple evidence records claim Phase 03 target layer {target}")
+            claimed_targets.add(target)
+            resolved.verify_current_artifact()
+            gdf = vector_io.read_layer(resolved.artifact, record.layer_name)
+            resolved.verify_current_artifact()
+            gdf = self._prepare_evidence_gdf(
+                gdf,
+                target,
+                target_epsg=ctx.config.target_epsg,
+                evidence_type=record.evidence_role.value,
+                filename=resolved.artifact.name,
+                source_group=f"manifest:{resolved.manifest_id[:48]}",
+                limitation="; ".join(record.limitations) or HISTORICAL_LIMITATION,
+            )
+            vector_io.write_layer(gdf, evidence_path, layer=target, mode="a")
+            self._ingested_layers.append(target)
 
     def _prepare_evidence_gdf(
         self,

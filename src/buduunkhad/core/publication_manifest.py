@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from pathlib import PurePath, PurePosixPath
 from typing import Final, Literal
@@ -33,7 +34,10 @@ TransformationIdentifier = Literal["qgz-flat-datasource-rewrite-v1"]
 def phase_package_tag(relative: PurePath) -> str:
     """Map a canonical output-root path to its portable ``PhaseNN`` package group."""
 
-    top = relative.parts[0] if relative.parts else ""
+    parts = relative.parts
+    if len(parts) >= 2 and parts[0] == "phases" and re.fullmatch(r"(0[0-9]|1[01]|99)", parts[1]):
+        return f"Phase{parts[1]}"
+    top = parts[0] if parts else ""
     if len(top) >= 3 and top[:2].isdigit() and top[2] == "_":
         return f"Phase{top[:2]}"
     return top or "misc"

@@ -26,6 +26,8 @@ class RunContext:
     dry_run: bool = False
     override: bool = False
     logger: logging.Logger = field(default_factory=lambda: logging.getLogger("buduunkhad"))
+    run_isolated: bool = False
+    active_phase_id: str | None = None
 
     # ---- derived paths ---------------------------------------------------- #
 
@@ -42,7 +44,29 @@ class RunContext:
         return self.config.runs_root / self.run_id
 
     def phase_dir(self, phase_id: str) -> Path:
+        if self.run_isolated:
+            if phase_id == self.active_phase_id:
+                return self.run_dir / "staging" / phase_id
+            sealed = self.run_dir / "phases" / phase_id
+            if sealed.is_dir():
+                return sealed
+            # A run may deliberately start at a later phase. Its prior-phase inputs come from
+            # the explicitly promoted compatibility view, while every new write remains local.
+            return paths.phase_dir(self.output_root, phase_id)
         return paths.phase_dir(self.output_root, phase_id)
+
+    def stable_output_path(self, path: Path) -> Path:
+        """Translate an active staging path to its immutable finalized run location."""
+
+        candidate = Path(path)
+        if not self.run_isolated or self.active_phase_id is None:
+            return candidate
+        stage = self.run_dir / "staging" / self.active_phase_id
+        try:
+            relative = candidate.resolve().relative_to(stage.resolve())
+        except ValueError:
+            return candidate
+        return self.run_dir / "phases" / self.active_phase_id / relative
 
     # ---- register helpers ------------------------------------------------- #
 
@@ -132,7 +156,10 @@ class Phase(ABC):
 
     def prepare(self, ctx: RunContext) -> None:
         """Create the phase's folder tree. Safe to call repeatedly."""
-        paths.build_phase_tree(ctx.output_root, self.id, self.subfolders)
+        phase_root = ctx.phase_dir(self.id)
+        phase_root.mkdir(parents=True, exist_ok=True)
+        for subfolder in self.subfolders:
+            (phase_root / subfolder).mkdir(parents=True, exist_ok=True)
 
     @abstractmethod
     def run(self, ctx: RunContext) -> PhaseResult:

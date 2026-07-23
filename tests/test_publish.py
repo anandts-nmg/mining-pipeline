@@ -782,7 +782,7 @@ def test_source_output_changed_during_copy_is_rejected(tmp_path, monkeypatch):
     _bind_publication_outputs(runs, out)
     original_copy2 = shutil.copy2
 
-    def copy_then_mutate(source, target, *args, **kwargs):  # type: ignore[no-untyped-def]
+    def copy_then_mutate(source, target, *args, **kwargs):
         copied = original_copy2(source, target, *args, **kwargs)
         if Path(source).resolve() == output.resolve():
             output.write_bytes(b"changed-during-copy")
@@ -1196,7 +1196,7 @@ def test_publish_accepts_current_pipeline_run_manifest_contract(raw_archive):
     from buduunkhad.pipeline import run_pipeline
 
     config, register, _raw = raw_archive
-    run_pipeline(config, register, only=["00"], dry_run=False)
+    source_run = run_pipeline(config, register, only=["00"], dry_run=False)
 
     result = publish(
         config.output_root,
@@ -1204,6 +1204,7 @@ def test_publish_accepts_current_pipeline_run_manifest_contract(raw_archive):
         "phase00",
         runs_root=config.runs_root,
         project_config_path=config.base_dir / "config" / "project.yaml",
+        run_id=source_run.run_id,
     )
 
     manifest = verify_publication_package(result.dest)
@@ -1215,6 +1216,89 @@ def test_publish_accepts_current_pipeline_run_manifest_contract(raw_archive):
     )
     assert manifest.phases[0].human_review_or_qaqc_pending is True
     assert manifest.package_status == "HUMAN_REVIEW_PENDING"
+
+
+def test_run_isolated_publication_requires_one_exact_run(raw_archive):
+    from buduunkhad.pipeline import run_pipeline
+
+    config, register, _raw = raw_archive
+    run_pipeline(config, register, only=["00"], dry_run=False)
+
+    with pytest.raises(PublishError, match="exact --run-id"):
+        publish(
+            config.output_root,
+            config.base_dir / "publication-staging",
+            "missing-run-id",
+            runs_root=config.runs_root,
+            project_config_path=config.base_dir / "config" / "project.yaml",
+        )
+
+
+def test_exact_run_publication_ignores_mutable_current_view_and_is_idempotent(raw_archive):
+    from buduunkhad.core.paths import phase_dir
+    from buduunkhad.pipeline import run_pipeline
+
+    config, register, _raw = raw_archive
+    source_run = run_pipeline(config, register, only=["00"], dry_run=False)
+    source_artifact = source_run.phases[0].output_artifacts[0]
+    run_file = config.runs_root / source_run.run_id / source_artifact.path
+    relative_in_phase = Path(source_artifact.path).relative_to("phases", "00")
+    current_file = phase_dir(config.output_root, "00") / relative_in_phase
+    original = run_file.read_bytes()
+    current_file.write_bytes(b"mutable compatibility view")
+
+    kwargs = {
+        "runs_root": config.runs_root,
+        "project_config_path": config.base_dir / "config" / "project.yaml",
+        "run_id": source_run.run_id,
+    }
+    first = publish(
+        config.output_root,
+        config.base_dir / "publication-staging",
+        "exact-run",
+        **kwargs,
+    )
+    first_manifest = verify_publication_package(first.dest)
+    published = next(
+        first.dest / output.path
+        for output in first_manifest.phases[0].outputs
+        if output.source_path == source_artifact.path
+    )
+    assert published.read_bytes() == original
+
+    second = publish(
+        config.output_root,
+        config.base_dir / "publication-staging",
+        "exact-run",
+        **kwargs,
+    )
+    assert second.dest == first.dest
+    assert load_publication_manifest(second.dest).publication_id == first_manifest.publication_id
+    assert not list((config.base_dir / "publication-staging").glob(".p-*"))
+
+
+def test_exact_run_publication_mutation_fails_without_partial_package(raw_archive):
+    from buduunkhad.pipeline import run_pipeline
+
+    config, register, _raw = raw_archive
+    source_run = run_pipeline(config, register, only=["00"], dry_run=False)
+    artifact = source_run.phases[0].output_artifacts[0]
+    source = config.runs_root / source_run.run_id / artifact.path
+    source.write_bytes(source.read_bytes() + b"tampered")
+    publish_root = config.base_dir / "publication-staging"
+
+    with pytest.raises(PublishError, match="file seal is invalid"):
+        publish(
+            config.output_root,
+            publish_root,
+            "tampered-run",
+            runs_root=config.runs_root,
+            project_config_path=config.base_dir / "config" / "project.yaml",
+            run_id=source_run.run_id,
+        )
+
+    assert not (publish_root / "Buduunkhad_Deliverables_tampered-run").exists()
+    assert not list(publish_root.glob(".p-*"))
 
 
 def test_package_version_authorities_are_synchronized():
@@ -1239,3 +1323,4 @@ def test_publish_cli_keeps_existing_options_and_adds_repeatable_source_run_selec
     assert "--label" in help_text
     assert "--supersedes" in help_text
     assert "--source-run" in help_text
+    assert "--run-id" in help_text

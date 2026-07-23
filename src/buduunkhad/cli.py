@@ -18,6 +18,7 @@ import typer
 
 from buduunkhad.ai_cli import ai_app
 from buduunkhad.core.raw_guard import RawIntegrityError
+from buduunkhad.core.run_storage import RunStorageError
 from buduunkhad.pipeline import (
     PHASE_CLASSES,
     MissingRawDataError,
@@ -29,7 +30,13 @@ from buduunkhad.pipeline import (
 )
 
 # Run-start failures that should surface as a clean red message + non-zero exit.
-_RUN_ERRORS = (MissingRawDataError, PathTooLongError, RawIntegrityError, SelectionError)
+_RUN_ERRORS = (
+    MissingRawDataError,
+    PathTooLongError,
+    RawIntegrityError,
+    SelectionError,
+    RunStorageError,
+)
 
 app = typer.Typer(
     add_completion=False,
@@ -41,7 +48,7 @@ app.add_typer(ai_app, name="ai")
 _CONFIG_OPT = typer.Option("config/project.yaml", "--config", "-c", help="Path to project.yaml.")
 
 
-def _echo_manifest(manifest) -> None:  # type: ignore[no-untyped-def]
+def _echo_manifest(manifest, runs_root: Path) -> None:
     typer.echo(
         f"\nRun {manifest.run_id}  (dry_run={manifest.dry_run}, override={manifest.override})"
     )
@@ -60,7 +67,8 @@ def _echo_manifest(manifest) -> None:  # type: ignore[no-untyped-def]
         typer.secho(f"  ! warning: {w}", fg="yellow")
     if manifest.stopped_at:
         typer.echo(f"\nStopped at phase {manifest.stopped_at}.")
-    typer.echo(f"\nManifest + log: runs/{manifest.run_id}/")
+    typer.echo(f"\nManifest: {runs_root / manifest.run_id / 'run_manifest.json'}")
+    typer.echo(f"Log:      {runs_root / manifest.run_id / 'logs' / 'run.log'}")
 
 
 @app.command("list")
@@ -176,12 +184,17 @@ def publish_deliverables(
         "--source-run",
         help="Select an exact source run as PHASE=RUN_ID; repeat for multiple phases.",
     ),
+    run_id: str | None = typer.Option(
+        None,
+        "--run-id",
+        help="Publish one exact run-isolated source; required for new v2 run manifests.",
+    ),
 ) -> None:
-    """Copy every built phase's deliverables (not raw working copies) to BUDUUNKHAD_PUBLISH_ROOT.
+    """Copy one exact sealed run's deliverables to BUDUUNKHAD_PUBLISH_ROOT.
 
-    Walks the whole output_root and publishes deliverables under a ``PhaseNN/`` folder each,
-    excluding raw working copies. Point BUDUUNKHAD_PUBLISH_ROOT at a destination folder (e.g. a
-    Google Drive-for-Desktop path); deliverables are copied into a versioned subfolder there.
+    New run-isolated manifests require ``--run-id`` and are read from ``runs/<id>/phases`` rather
+    than the mutable output compatibility view. Legacy path-only manifests retain the existing
+    per-phase selectors for backward compatibility. Raw working copies are always excluded.
     """
     cfg, _register = load_project(config)
     publish_root = os.environ.get("BUDUUNKHAD_PUBLISH_ROOT")
@@ -219,6 +232,7 @@ def publish_deliverables(
             project_config_path=config,
             superseded_publication_id=supersedes,
             source_runs=source_runs,
+            run_id=run_id,
         )
     except PublishError as exc:
         typer.secho(str(exc), fg="red")
@@ -297,21 +311,34 @@ def run(
     override: bool = typer.Option(
         False, "--override", help="Advance past a blocked decision gate (logged)."
     ),
+    resume: str | None = typer.Option(
+        None,
+        "--resume",
+        help="Resume one exact run ID after revalidating all execution identities.",
+    ),
 ) -> None:
     """Run the pipeline over the selected phases."""
     cfg, register = load_project(config)
     only_list = [s.strip() for s in only.split(",") if s.strip()] if only else None
     try:
         manifest = run_pipeline(
-            cfg, register, from_=from_, to=to, only=only_list, dry_run=dry_run, override=override
+            cfg,
+            register,
+            from_=from_,
+            to=to,
+            only=only_list,
+            dry_run=dry_run,
+            override=override,
+            run_id=resume,
+            resume=resume is not None,
         )
     except _RUN_ERRORS as exc:
         typer.secho(str(exc), fg="red")
         raise typer.Exit(2) from exc
-    _echo_manifest(manifest)
+    _echo_manifest(manifest, cfg.runs_root)
 
 
-def _make_phase_command(phase_id: str, phase_name: str):  # type: ignore[no-untyped-def]
+def _make_phase_command(phase_id: str, phase_name: str):
     def _cmd(
         config: Path = _CONFIG_OPT,
         dry_run: bool = typer.Option(
@@ -329,7 +356,7 @@ def _make_phase_command(phase_id: str, phase_name: str):  # type: ignore[no-unty
         except _RUN_ERRORS as exc:
             typer.secho(str(exc), fg="red")
             raise typer.Exit(2) from exc
-        _echo_manifest(manifest)
+        _echo_manifest(manifest, cfg.runs_root)
 
     _cmd.__doc__ = f"Run phase {phase_id} - {phase_name}."
     return _cmd

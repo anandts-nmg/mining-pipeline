@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -123,9 +125,11 @@ def test_dry_run_builds_full_tree_and_manifest(project):
     config, register, _tmp = project
     manifest = run_pipeline(config, register, dry_run=True)
 
-    # every phase folder exists
-    for name in PHASE_DIRS.values():
-        assert (config.output_root / name).is_dir()
+    # every phase folder is finalized inside the run; dry-run never mutates the current view
+    run_dir = config.runs_root / manifest.run_id
+    for phase_id in PHASE_DIRS:
+        assert (run_dir / "phases" / phase_id).is_dir()
+    assert not any((config.output_root / name).exists() for name in PHASE_DIRS.values())
 
     # all 13 phases attempted in dry-run (stubs participate)
     assert len(manifest.phases) == 13
@@ -136,8 +140,11 @@ def test_dry_run_builds_full_tree_and_manifest(project):
     assert man_path.exists()
     data = json.loads(man_path.read_text())
     assert data["dry_run"] is True
+    assert data["manifest_format_version"] == "2.0.0"
+    assert data["run_layout_version"] == "run-isolated-v1"
     assert len(data["phases"]) == 13
     assert all(not phase["output_artifacts"] for phase in data["phases"])
+    assert all(phase["sealed_files"] for phase in data["phases"])
 
 
 def test_manifest_surfaces_qaqc_pending_alongside_passed(raw_archive):
@@ -189,7 +196,7 @@ def test_runner_stops_phase03_before_phase04_despite_operational_override(
     assert len([path for path in phase03.outputs if path.endswith("_Phase03_QAQC_Log.xlsx")]) == 1
     assert len([path for path in phase03.outputs if "Phase3_Technical_Processing_Log" in path]) == 1
 
-    run_log = (config.runs_root / run_id / "run.log").read_text(encoding="utf-8")
+    run_log = (config.runs_root / run_id / "logs" / "run.log").read_text(encoding="utf-8")
     assert "Phase 03 gate blocked advance" in run_log
     assert "use --override" not in run_log
 
@@ -204,11 +211,11 @@ def test_successful_run_manifest_seals_every_publishable_output_and_runner_qaqc(
     qaqc_outputs = [path for path in phase.outputs if path.endswith("_Phase00_QAQC_Log.xlsx")]
     assert len(qaqc_outputs) == 1
     artifacts = {artifact.path: artifact for artifact in phase.output_artifacts}
-    qaqc_relative = Path(qaqc_outputs[0]).resolve().relative_to(config.output_root.resolve())
-    assert qaqc_relative.as_posix() in artifacts
+    assert qaqc_outputs[0] in artifacts
     assert len(artifacts) == len(phase.output_artifacts)
+    run_dir = config.runs_root / manifest.run_id
     for relative, artifact in artifacts.items():
-        output = config.output_root / Path(relative)
+        output = run_dir / Path(relative)
         assert artifact.sha256 == sha256_file(output)
         assert artifact.sha256 == artifact.sha256.lower()
         assert artifact.size_bytes == output.stat().st_size
@@ -220,6 +227,20 @@ def test_successful_run_manifest_seals_every_publishable_output_and_runner_qaqc(
     assert written["output_artifacts"] == [
         artifact.model_dump(mode="json") for artifact in phase.output_artifacts
     ]
+    assert written["sealed_files"] == [
+        artifact.model_dump(mode="json") for artifact in phase.sealed_files
+    ]
+    assert set(artifacts) <= {artifact.path for artifact in phase.sealed_files}
+    assert (config.output_root / PHASE_DIRS["00"]).is_dir()
+    assert (config.output_root / ".buduunkhad-current-view.json").is_file()
+    assert set(manifest.execution_identity) == {
+        "source_inventory_sha256",
+        "input_register_sha256",
+        "project_configuration_sha256",
+        "methodology_contract_sha256",
+        "code_version",
+        "parameters_sha256",
+    }
 
 
 def test_run_artifact_sealing_rejects_duplicate_portable_paths(tmp_path):
@@ -288,6 +309,317 @@ def test_stub_phase_real_run_records_not_implemented(raw_archive):
     assert manifest.phases[0].status == "not-implemented"
     assert manifest.phases[0].output_artifacts == []
     assert "build pending" in manifest.phases[0].error
+    run_dir = config.runs_root / manifest.run_id
+    assert (run_dir / "staging" / "05").is_dir()
+    assert not (run_dir / "phases" / "05").exists()
+
+
+def test_default_run_ids_are_uuidv7_and_distinct_in_the_same_second():
+    from buduunkhad.core.run_storage import generate_run_id
+
+    instant = datetime(2026, 7, 22, 8, 0, tzinfo=UTC)
+    first = generate_run_id(now=instant, entropy="0" * 32)
+    second = generate_run_id(now=instant, entropy="0" * 31 + "1")
+
+    assert first != second
+    assert uuid.UUID(first).version == 7
+    assert uuid.UUID(second).version == 7
+
+
+def test_project_execution_lock_rejects_a_second_writer(project):
+    from buduunkhad.core.run_storage import ExecutionLockError, ProjectExecutionLock
+
+    config, register, _tmp = project
+    with (
+        ProjectExecutionLock(config.runs_root, "first-run"),
+        pytest.raises(ExecutionLockError, match="execution lock"),
+    ):
+        run_pipeline(config, register, only=["00"], dry_run=True, run_id="second-run")
+    assert not (config.runs_root / "second-run").exists()
+
+
+def test_pipeline_rejects_overlapping_execution_and_compatibility_roots(project):
+    from buduunkhad.core.run_storage import RunStorageError
+
+    config, register, _tmp = project
+    unsafe_paths = config.paths.model_copy(update={"runs_root": config.paths.output_root})
+    unsafe = config.model_copy(update={"paths": unsafe_paths})
+
+    with pytest.raises(RunStorageError, match="must not overlap"):
+        run_pipeline(unsafe, register, only=["00"], dry_run=True)
+
+
+def test_resume_of_completed_run_verifies_and_does_not_repeat_outputs(raw_archive):
+    config, register, _raw = raw_archive
+    original = run_pipeline(config, register, only=["00"], dry_run=False)
+    run_dir = config.runs_root / original.run_id
+    artifact = run_dir / original.phases[0].output_artifacts[0].path
+    before_bytes = artifact.read_bytes()
+    before_manifest = (run_dir / "run_manifest.json").read_bytes()
+
+    resumed = run_pipeline(
+        config,
+        register,
+        only=["00"],
+        dry_run=False,
+        run_id=original.run_id,
+        resume=True,
+    )
+
+    assert resumed.as_dict() == original.as_dict()
+    assert artifact.read_bytes() == before_bytes
+    assert (run_dir / "run_manifest.json").read_bytes() == before_manifest
+
+
+def test_resume_rejects_mutation_after_sealing(raw_archive):
+    from buduunkhad.pipeline import ResumeError
+
+    config, register, _raw = raw_archive
+    original = run_pipeline(config, register, only=["00"], dry_run=False)
+    artifact = config.runs_root / original.run_id / original.phases[0].output_artifacts[0].path
+    artifact.write_bytes(artifact.read_bytes() + b"tampered")
+
+    with pytest.raises(ResumeError, match="sealed run artifact changed"):
+        run_pipeline(
+            config,
+            register,
+            only=["00"],
+            dry_run=False,
+            run_id=original.run_id,
+            resume=True,
+        )
+
+
+def test_resume_detects_mutated_run_local_working_copy(raw_archive):
+    from buduunkhad.pipeline import ResumeError
+
+    config, register, _raw = raw_archive
+    original = run_pipeline(config, register, only=["00"], dry_run=False)
+    working_copy = next(
+        artifact
+        for artifact in original.phases[0].sealed_files
+        if "01_Tectonic_Terrane_KMZ" in Path(artifact.path).parts
+    )
+    path = config.runs_root / original.run_id / working_copy.path
+    path.write_bytes(path.read_bytes() + b"tampered")
+
+    with pytest.raises(ResumeError, match="sealed run artifact changed"):
+        run_pipeline(
+            config,
+            register,
+            only=["00"],
+            dry_run=False,
+            run_id=original.run_id,
+            resume=True,
+        )
+
+
+def test_resume_rejects_file_added_after_phase_sealing(raw_archive):
+    from buduunkhad.pipeline import ResumeError
+
+    config, register, _raw = raw_archive
+    original = run_pipeline(config, register, only=["00"], dry_run=False)
+    phase_dir = config.runs_root / original.run_id / "phases" / "00"
+    (phase_dir / "unexpected.bin").write_bytes(b"not sealed")
+
+    with pytest.raises(ResumeError, match="file inventory changed"):
+        run_pipeline(
+            config,
+            register,
+            only=["00"],
+            dry_run=False,
+            run_id=original.run_id,
+            resume=True,
+        )
+
+
+def test_resume_discards_partial_stage_and_restarts_only_incomplete_phase(project, monkeypatch):
+    from buduunkhad.phases.base import Phase, PhaseResult
+
+    class InterruptedPhase(Phase):
+        id = "00"
+        name = "Interrupted synthetic phase"
+        mode = "build"
+        attempts = 0
+
+        def run(self, ctx):
+            type(self).attempts += 1
+            output = ctx.phase_dir("00") / "result.csv"
+            output.write_text(
+                "partial" if type(self).attempts == 1 else "complete", encoding="utf-8"
+            )
+            if type(self).attempts == 1:
+                raise RuntimeError("interrupted")
+            return PhaseResult("00", status="dry-run", outputs=[output])
+
+        def qaqc(self, ctx):
+            del ctx
+            report = new_report("00", self.name)
+            report.add("complete", "fresh output", decision=Decision.PASS)
+            return report
+
+    monkeypatch.setattr("buduunkhad.pipeline.build_registry", lambda: [InterruptedPhase()])
+    config, register, _tmp = project
+    first = run_pipeline(config, register, only=["00"], dry_run=True, run_id="interrupted-run")
+    run_dir = config.runs_root / first.run_id
+    assert first.phases[0].status == "error"
+    assert not first.phases[0].output_artifacts
+    assert not (run_dir / "phases" / "00").exists()
+    assert (run_dir / "staging" / "00" / "result.csv").read_text() == "partial"
+
+    resumed = run_pipeline(
+        config,
+        register,
+        only=["00"],
+        dry_run=True,
+        run_id=first.run_id,
+        resume=True,
+    )
+
+    assert InterruptedPhase.attempts == 2
+    assert len(resumed.phases) == 1
+    assert resumed.phases[0].status == "dry-run"
+    assert (run_dir / "phases" / "00" / "result.csv").read_text() == "complete"
+    assert not (run_dir / "staging" / "00").exists()
+
+
+def test_resume_rejects_methodology_contract_drift(project):
+    from buduunkhad.pipeline import ResumeError
+
+    config, register, _tmp = project
+    original = run_pipeline(config, register, only=["00"], dry_run=True)
+    methodology = config.base_dir / "config" / "methodology"
+    methodology.mkdir()
+    (methodology / "contract.yaml").write_text("version: 1\n", encoding="utf-8")
+
+    with pytest.raises(ResumeError, match="resume identity differs"):
+        run_pipeline(
+            config,
+            register,
+            only=["00"],
+            dry_run=True,
+            run_id=original.run_id,
+            resume=True,
+        )
+
+
+def test_resume_rejects_methodology_mirror_byte_drift(project):
+    from buduunkhad.pipeline import ResumeError
+
+    config, register, _tmp = project
+    methodology = config.base_dir / "docs" / "methodology"
+    methodology.mkdir(parents=True)
+    mirror = methodology / "master.pdf"
+    mirror.write_bytes(b"byte-bound methodology")
+    original = run_pipeline(config, register, only=["00"], dry_run=True)
+    mirror.write_bytes(b"changed methodology")
+
+    with pytest.raises(ResumeError, match="resume identity differs"):
+        run_pipeline(
+            config,
+            register,
+            only=["00"],
+            dry_run=True,
+            run_id=original.run_id,
+            resume=True,
+        )
+
+
+def test_initial_manifest_exists_before_first_phase_side_effect(project, monkeypatch):
+    from buduunkhad.phases.base import Phase, PhaseResult
+
+    class ManifestObservingPhase(Phase):
+        id = "00"
+        name = "Manifest observing phase"
+        mode = "build"
+
+        def run(self, ctx):
+            data = json.loads((ctx.run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+            assert data["run_id"] == ctx.run_id
+            assert data["phases"] == []
+            output = ctx.phase_dir("00") / "result.csv"
+            output.write_text("complete", encoding="utf-8")
+            return PhaseResult("00", status="dry-run", outputs=[output])
+
+        def qaqc(self, ctx):
+            del ctx
+            report = new_report("00", self.name)
+            report.add("complete", "fresh output", decision=Decision.PASS)
+            return report
+
+    monkeypatch.setattr("buduunkhad.pipeline.build_registry", lambda: [ManifestObservingPhase()])
+    config, register, _tmp = project
+
+    result = run_pipeline(config, register, only=["00"], dry_run=True)
+
+    assert result.phases[0].status == "dry-run"
+
+
+def test_compatibility_promotion_is_idempotent_for_one_sealed_phase(raw_archive):
+    from buduunkhad.core.run_storage import RunLayout, promote_phase_to_current
+
+    config, register, _raw = raw_archive
+    manifest = run_pipeline(config, register, only=["00"], dry_run=False)
+    phase = manifest.phases[0]
+    layout = RunLayout(config.runs_root, manifest.run_id)
+    current_record = config.output_root / ".buduunkhad-current-view.json"
+    before = current_record.read_bytes()
+
+    promoted = promote_phase_to_current(
+        layout,
+        "00",
+        config.output_root,
+        phase.sealed_files,
+    )
+
+    assert promoted == config.output_root / PHASE_DIRS["00"]
+    assert current_record.read_bytes() == before
+    for artifact in phase.output_artifacts:
+        relative = Path(artifact.path).relative_to("phases", "00")
+        assert (promoted / relative).is_file()
+
+
+def test_compatibility_promotion_restores_previous_view_on_metadata_failure(
+    raw_archive, monkeypatch
+):
+    from buduunkhad.core import run_storage
+    from buduunkhad.core.run_storage import RunLayout, promote_phase_to_current
+
+    config, register, _raw = raw_archive
+    manifest = run_pipeline(config, register, only=["00"], dry_run=False)
+    phase = manifest.phases[0]
+    layout = RunLayout(config.runs_root, manifest.run_id)
+    destination = config.output_root / PHASE_DIRS["00"]
+    current_record = config.output_root / ".buduunkhad-current-view.json"
+    previous_files = {
+        path.relative_to(destination).as_posix(): path.read_bytes()
+        for path in destination.rglob("*")
+        if path.is_file()
+    }
+    previous_record = current_record.read_bytes()
+
+    def fail_current_view(*_args, **_kwargs):
+        raise OSError("injected metadata failure")
+
+    monkeypatch.setattr(run_storage, "_record_current_view", fail_current_view)
+
+    with pytest.raises(OSError, match="injected metadata failure"):
+        promote_phase_to_current(
+            layout,
+            "00",
+            config.output_root,
+            phase.sealed_files,
+        )
+
+    restored_files = {
+        path.relative_to(destination).as_posix(): path.read_bytes()
+        for path in destination.rglob("*")
+        if path.is_file()
+    }
+    assert restored_files == previous_files
+    assert current_record.read_bytes() == previous_record
+    assert not list(config.output_root.glob(".promote-*"))
+    assert not list(config.output_root.glob(".previous-*"))
 
 
 def test_gate_blocks_then_override():

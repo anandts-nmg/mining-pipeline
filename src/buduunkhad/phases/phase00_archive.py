@@ -154,7 +154,7 @@ class Phase00Archive(Phase):
     def _inventory_row(
         self,
         ctx: RunContext,
-        rec,  # type: ignore[no-untyped-def]
+        rec,
         src: Path | None,
         working_copy: Path,
         size_by_name: dict[str, int],
@@ -174,7 +174,7 @@ class Phase00Archive(Phase):
             "is_sidecar": rec.is_sidecar,
             "parent_file": rec.parent_file,
             "raw_path": str(src) if src else "",
-            "working_copy_path": str(working_copy),
+            "working_copy_path": str(ctx.stable_output_path(working_copy)),
             "file_size_mb": size_mb,
             "checksum_sha256": checksum,
             "read_status": "read-only",

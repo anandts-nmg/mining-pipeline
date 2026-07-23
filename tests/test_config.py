@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from buduunkhad.config import RAW_ROOT_ENV
+from buduunkhad.config import RAW_ROOT_ENV, WORK_ROOT_ENV
 from buduunkhad.core.paths import PHASE_DIRS
 
 
@@ -104,6 +104,14 @@ def test_raw_root_env_override(project, monkeypatch):
     target = Path.home() / "drive_stub" / "0. Raw Data"
     monkeypatch.setenv(RAW_ROOT_ENV, str(target))
     assert config.raw_root == target
+
+
+def test_work_root_env_override_places_runs_below_work_root(project, monkeypatch):
+    config, _register, tmp_path = project
+    target = tmp_path / "protected-work"
+    monkeypatch.setenv(WORK_ROOT_ENV, str(target))
+
+    assert config.runs_root == target / "runs"
 
 
 def test_phase_dirs_cover_workflow():

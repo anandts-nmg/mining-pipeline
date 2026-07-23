@@ -16,6 +16,7 @@ import os
 import re
 import shutil
 import subprocess
+import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -48,6 +49,14 @@ from buduunkhad.core.run_artifacts import (
     is_working_copy,
     require_regular_file_under,
     sha256_file,
+)
+from buduunkhad.core.run_storage import (
+    RUN_LAYOUT_VERSION,
+    RUN_MANIFEST_FORMAT_VERSION,
+    RunLayout,
+    RunStorageError,
+    validate_run_id,
+    verify_sealed_artifacts,
 )
 
 
@@ -323,11 +332,18 @@ def _manifest_timestamp(data: dict[str, object], field_name: str, path: Path) ->
     return value
 
 
-def _load_run_phase_records(runs_root: Path, output_root: Path) -> dict[str, list[_RunPhaseRecord]]:
+def _load_run_phase_records(
+    runs_root: Path, output_root: Path, *, selected_run_id: str | None = None
+) -> dict[str, list[_RunPhaseRecord]]:
     records: dict[str, list[_RunPhaseRecord]] = {}
     if not runs_root.exists():
         raise PublishError(f"runs root does not exist: {runs_root}")
-    manifests = list(runs_root.glob("*/run_manifest.json"))
+    manifests = (
+        [runs_root / validate_run_id(selected_run_id) / "run_manifest.json"]
+        if selected_run_id is not None
+        else list(runs_root.glob("*/run_manifest.json"))
+    )
+    manifests = [path for path in manifests if path.exists()]
     if not manifests:
         raise PublishError(f"no source run manifests found under: {runs_root}")
     seen_runs: set[str] = set()
@@ -370,6 +386,7 @@ def _load_run_phase_records(runs_root: Path, output_root: Path) -> dict[str, lis
             ) from exc
         if data.get("dry_run") is True:
             continue
+        run_isolated = data.get("run_layout_version") == RUN_LAYOUT_VERSION
         seen_phases: set[str] = set()
         for phase in phases:
             if not isinstance(phase, dict):
@@ -424,7 +441,9 @@ def _load_run_phase_records(runs_root: Path, output_root: Path) -> dict[str, lis
                 if len(set(artifact_paths)) != len(artifact_paths):
                     raise PublishError(f"run manifest repeats an artifact path: {manifest_path}")
                 recorded_paths = _recorded_publishable_paths(
-                    output_values, set(artifact_paths), phase_id
+                    output_values,
+                    set(artifact_paths),
+                    phase_id,
                 )
                 if set(artifact_paths) != recorded_paths:
                     raise PublishError(
@@ -433,17 +452,18 @@ def _load_run_phase_records(runs_root: Path, output_root: Path) -> dict[str, lis
                     )
                 resolved_outputs_list: list[Path] = []
                 for artifact_path in artifact_paths:
-                    candidate = (output_root / Path(artifact_path)).absolute()
+                    artifact_root = manifest_path.parent if run_isolated else output_root
+                    candidate = (artifact_root / Path(artifact_path)).absolute()
                     if has_symlink_component(candidate):
                         raise PublishError(
                             f"recorded phase artifact must not use a symlink: {artifact_path}"
                         )
                     resolved = candidate.resolve()
                     try:
-                        resolved.relative_to(output_root.resolve())
+                        resolved.relative_to(artifact_root.resolve())
                     except ValueError as exc:
                         raise PublishError(
-                            f"recorded phase artifact escapes output_root: {artifact_path}"
+                            f"recorded phase artifact escapes its declared root: {artifact_path}"
                         ) from exc
                     resolved_outputs_list.append(resolved)
                 resolved_outputs = tuple(resolved_outputs_list)
@@ -509,7 +529,7 @@ def _record_matches_observed(
 
 
 def _recorded_publishable_paths(
-    output_values: list[object], expected_paths: set[str], phase_id: str
+    output_values: Sequence[object], expected_paths: set[str], phase_id: str
 ) -> set[str]:
     matched: list[str] = []
     for value in output_values:
@@ -635,6 +655,71 @@ def _select_publication_records(
     return selected
 
 
+def _select_exact_run_records(
+    runs_root: Path,
+    run_id: str,
+    records: dict[str, list[_RunPhaseRecord]],
+) -> tuple[dict[str, _RunPhaseRecord], dict[Path, Path]]:
+    """Select every complete strongly sealed phase from one run-isolated manifest."""
+
+    manifest_path = runs_root / run_id / "run_manifest.json"
+    data = _load_json_object(manifest_path)
+    if (
+        data.get("manifest_format_version") != RUN_MANIFEST_FORMAT_VERSION
+        or data.get("run_layout_version") != RUN_LAYOUT_VERSION
+    ):
+        raise PublishError("exact-run publication requires a run-isolated source manifest")
+    if not isinstance(data.get("finished_at"), str) or not data.get("finished_at"):
+        raise PublishError("source run is incomplete and cannot be published")
+    if data.get("error"):
+        raise PublishError("source run ended with an error and cannot be published")
+    raw_phases = data.get("phases")
+    if not isinstance(raw_phases, list):
+        raise PublishError("source run phase records are invalid")
+    sealed_files: list[RunOutputArtifact] = []
+    try:
+        for raw_phase in raw_phases:
+            if isinstance(raw_phase, dict) and raw_phase.get("status") == "ok":
+                values = raw_phase.get("sealed_files")
+                if not isinstance(values, list):
+                    raise PublishError("run-isolated phase lacks a complete file seal")
+                sealed_files.extend(RunOutputArtifact.model_validate(value) for value in values)
+        verify_sealed_artifacts(RunLayout(runs_root, run_id), sealed_files)
+    except (RunStorageError, ValidationError) as exc:
+        raise PublishError(f"source run file seal is invalid: {exc}") from exc
+    selected: dict[str, _RunPhaseRecord] = {}
+    targets: dict[Path, Path] = {}
+    for phase_id, candidates in sorted(records.items()):
+        matching = [candidate for candidate in candidates if candidate.run_id == run_id]
+        if len(matching) != 1:
+            raise PublishError(f"exact run has ambiguous Phase {phase_id} provenance")
+        record = matching[0]
+        if record.execution_status != "ok":
+            continue
+        if record.output_artifacts is None:
+            raise PublishError("run-isolated publication cannot use legacy path-only binding")
+        if not record.output_artifacts:
+            continue
+        selected[phase_id] = record
+        for artifact, source in zip(record.output_artifacts, record.outputs, strict=True):
+            if phase_package_tag(PurePosixPath(artifact.path)) != f"Phase{phase_id}":
+                raise PublishError(
+                    f"run artifact path does not belong to Phase {phase_id}: {artifact.path}"
+                )
+            target_relative = Path(f"Phase{phase_id}") / source.name
+            if target_relative in targets.values():
+                previous = next(
+                    path for path, target in targets.items() if target == target_relative
+                )
+                raise PublishError(
+                    f"Publish name collision: {previous} and {source} both map to {target_relative}"
+                )
+            targets[source] = target_relative
+    if not selected:
+        raise PublishError("exact source run contains no complete sealed phase deliverables")
+    return selected, targets
+
+
 def _portable_project_reference(config_path: Path) -> str:
     resolved = config_path.resolve()
     try:
@@ -663,7 +748,7 @@ def _git_commit_sha(repository_root: Path) -> str | None:
     return value
 
 
-def publish(
+def _assemble_publication(
     output_root: Path,
     publish_root: Path,
     label: str,
@@ -674,6 +759,7 @@ def publish(
     superseded_publication_id: str | None = None,
     published_at: datetime | None = None,
     source_runs: Mapping[str, str] | None = None,
+    run_id: str | None = None,
 ) -> PublishResult:
     """Copy provenance-bound deliverables into a local publication staging package.
 
@@ -696,6 +782,13 @@ def publish(
     if runs_root is None:
         raise PublishError("runs_root is required to bind published phases to source runs")
     runs_root = _require_root(Path(runs_root), "runs root")
+    if run_id is not None and source_runs:
+        raise PublishError("exact --run-id publication cannot use per-phase source selectors")
+    if run_id is not None:
+        try:
+            run_id = validate_run_id(run_id)
+        except RuntimeError as exc:
+            raise PublishError(str(exc)) from exc
     publish_root_candidate = _require_link_free_path(Path(publish_root), "publication root")
     _reject_overlapping_roots(
         ("output root", output_root),
@@ -722,24 +815,41 @@ def publish(
             "Choose a new --label or remove that folder first."
         )
 
-    # Map each source to its flattened PhaseNN/<filename> target, failing on any collision (two
-    # distinct sources -> same published path) rather than silently overwriting.
-    targets: dict[Path, Path] = {}
-    for src in collect_deliverables(output_root):
-        target_relative = Path(_phase_tag(src.relative_to(output_root))) / src.name
-        if target_relative in targets.values():
-            previous = next(
-                source for source, target in targets.items() if target == target_relative
-            )
+    source_root = output_root
+    if run_id is not None:
+        source_data = _load_json_object(runs_root / run_id / "run_manifest.json")
+        if source_data.get("error"):
+            raise PublishError("source run ended with an error and cannot be published")
+        records = _load_run_phase_records(runs_root, output_root, selected_run_id=run_id)
+        selected, targets = _select_exact_run_records(runs_root, run_id, records)
+        source_root = (runs_root / run_id).resolve()
+    else:
+        v2_manifests = [
+            path
+            for path in runs_root.glob("*/run_manifest.json")
+            if _load_json_object(path).get("run_layout_version") == RUN_LAYOUT_VERSION
+        ]
+        if v2_manifests:
             raise PublishError(
-                f"Publish name collision: {previous} and {src} both map to {target_relative}"
+                "run-isolated outputs require one exact --run-id; the mutable current view "
+                "cannot be used as publication provenance"
             )
-        targets[src.resolve()] = target_relative
-
-    records = _load_run_phase_records(runs_root, output_root)
-    selected = _select_publication_records(
-        output_root, tuple(targets), records, source_runs=source_runs
-    )
+        # Legacy compatibility: map current-view sources to flattened PhaseNN/<filename> targets.
+        targets = {}
+        for src in collect_deliverables(output_root):
+            target_relative = Path(_phase_tag(src.relative_to(output_root))) / src.name
+            if target_relative in targets.values():
+                previous = next(
+                    source for source, target in targets.items() if target == target_relative
+                )
+                raise PublishError(
+                    f"Publish name collision: {previous} and {src} both map to {target_relative}"
+                )
+            targets[src.resolve()] = target_relative
+        records = _load_run_phase_records(runs_root, output_root)
+        selected = _select_publication_records(
+            output_root, tuple(targets), records, source_runs=source_runs
+        )
 
     if dest.exists() and overwrite:
         if any(entry.is_symlink() for entry in dest.rglob("*")):
@@ -749,8 +859,8 @@ def publish(
 
     skipped = sum(
         1
-        for p in output_root.rglob("*")
-        if p.is_file() and _is_working_copy(p.relative_to(output_root))
+        for p in source_root.rglob("*")
+        if p.is_file() and _is_working_copy(p.relative_to(source_root))
     )
 
     copied: list[Path] = []
@@ -772,12 +882,12 @@ def publish(
             (
                 source
                 for source in targets
-                if _phase_id_from_relative(source.relative_to(output_root)) == phase_id
+                if _phase_id_from_relative(source.relative_to(source_root)) == phase_id
             ),
             key=lambda source: targets[source].as_posix(),
         )
         for source in phase_sources:
-            source_relative = source.relative_to(output_root).as_posix()
+            source_relative = source.relative_to(source_root).as_posix()
             before_sha256 = _sha256(source)
             before_size = source.stat().st_size
             sealed = sealed_by_path.get(source_relative)
@@ -884,6 +994,113 @@ def publish(
     return PublishResult(dest=dest, files=copied, skipped_working_copies=skipped)
 
 
+def publish(
+    output_root: Path,
+    publish_root: Path,
+    label: str,
+    *,
+    runs_root: Path | None = None,
+    overwrite: bool = False,
+    project_config_path: Path | None = None,
+    superseded_publication_id: str | None = None,
+    published_at: datetime | None = None,
+    source_runs: Mapping[str, str] | None = None,
+    run_id: str | None = None,
+) -> PublishResult:
+    """Atomically assemble and install one verified publication package.
+
+    Repeating an exact-run publication with the same label and identity returns the already
+    verified package. A changed identity still fails unless explicit overwrite is requested.
+    """
+
+    _require_safe_component(label, "publish label")
+    root = _require_root(Path(publish_root), "publication root", create=True)
+    checked_output_root = _require_root(Path(output_root), "output root")
+    if runs_root is None:
+        raise PublishError("runs_root is required to bind published phases to source runs")
+    checked_runs_root = _require_root(Path(runs_root), "runs root")
+    _reject_overlapping_roots(
+        ("output root", checked_output_root),
+        ("runs root", checked_runs_root),
+        ("publication root", root),
+    )
+    final = root / f"Buduunkhad_Deliverables_{label}"
+    if final.is_symlink() or has_symlink_component(final):
+        raise PublishError(f"publication destination must not use a symlink: {final}")
+    if final.exists() and any(final.iterdir()) and not overwrite:
+        if run_id is not None and runs_root is not None:
+            existing = verify_publication_package(final)
+            source_manifest = Path(runs_root) / run_id / "run_manifest.json"
+            config_path = Path(project_config_path or "config/project.yaml")
+            current_source_sha256 = _sha256(source_manifest) if source_manifest.is_file() else ""
+            current_config_sha256 = _sha256(config_path) if config_path.is_file() else ""
+            if (
+                existing.phases
+                and all(phase.source_run_id == run_id for phase in existing.phases)
+                and all(
+                    phase.source_run_manifest_sha256 == current_source_sha256
+                    for phase in existing.phases
+                )
+                and existing.project.configuration_sha256 == current_config_sha256
+                and existing.package_version == __version__
+                and existing.git_commit_sha == _git_commit_sha(Path.cwd())
+                and existing.superseded_publication_id == superseded_publication_id
+            ):
+                files = sorted(path for path in final.rglob("*") if path.is_file())
+                return PublishResult(dest=final, files=files)
+        raise PublishError(
+            f"Publish destination already exists and is not empty: {final}. "
+            "Choose a new --label or remove that folder first."
+        )
+
+    transaction_root = root / f".p-{uuid.uuid4().hex[:8]}"
+    backup = root / f".b-{uuid.uuid4().hex[:8]}"
+    transaction_root.mkdir()
+    staged_result: PublishResult | None = None
+    installed = False
+    moved_existing = False
+    try:
+        staged_result = _assemble_publication(
+            output_root,
+            transaction_root,
+            label,
+            runs_root=runs_root,
+            overwrite=False,
+            project_config_path=project_config_path,
+            superseded_publication_id=superseded_publication_id,
+            published_at=published_at,
+            source_runs=source_runs,
+            run_id=run_id,
+        )
+        verify_publication_package(staged_result.dest)
+        if final.exists():
+            if any(entry.is_symlink() for entry in final.rglob("*")):
+                raise PublishError("existing publication destination contains a symlink")
+            os.replace(final, backup)
+            moved_existing = True
+        try:
+            os.replace(staged_result.dest, final)
+            installed = True
+        except Exception:
+            if moved_existing and backup.exists() and not final.exists():
+                os.replace(backup, final)
+            raise
+        if backup.exists():
+            shutil.rmtree(backup)
+        remapped = [final / path.relative_to(staged_result.dest) for path in staged_result.files]
+        verify_publication_package(final)
+        return PublishResult(
+            dest=final,
+            files=remapped,
+            skipped_working_copies=staged_result.skipped_working_copies,
+        )
+    finally:
+        if transaction_root.exists():
+            shutil.rmtree(transaction_root)
+        if backup.exists() and installed:
+            shutil.rmtree(backup)
+
+
 def load_publication_manifest(package_root: Path) -> PublicationManifest:
     root = _require_root(Path(package_root), "publication package")
     path = _require_package_file(root, "publication_manifest.json", "publication manifest")
@@ -985,7 +1202,9 @@ def verify_publication_package(package_root: Path) -> PublicationManifest:
         if not isinstance(output_values, list):
             raise PublishError(f"source outputs are invalid for Phase {phase.phase_id}")
         recorded_paths = _recorded_publishable_paths(
-            output_values, set(source_output_map), phase.phase_id
+            output_values,
+            set(source_output_map),
+            phase.phase_id,
         )
         if not has_artifact_inventory:
             source_binding_mode = "LEGACY_PATH_ONLY"

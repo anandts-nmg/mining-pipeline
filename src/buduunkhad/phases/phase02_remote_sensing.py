@@ -200,7 +200,8 @@ class Phase02RemoteSensing(Phase):
             registers.write_table_xlsx(
                 [], _RS_LOG_COLUMNS, rs_log, sheet_title="RemoteSensing QAQC"
             )
-            self._write_method_notes(ctx, pdir)
+            for note in self._write_method_notes(ctx, pdir):
+                result.add_output(note)
             self._write_handover(ctx, pdir, [], result)
             result.add_output(rs_log)
             result.log("dry-run: per-sensor RS folders + method notes + empty QA/QC log + report")
@@ -296,7 +297,8 @@ class Phase02RemoteSensing(Phase):
         registers.write_table_xlsx(
             self._rows, _RS_LOG_COLUMNS, rs_log, sheet_title="RemoteSensing QAQC"
         )
-        self._write_method_notes(ctx, pdir)
+        for note in self._write_method_notes(ctx, pdir):
+            result.add_output(note)
         self._write_handover(ctx, pdir, self._terrain_rows, result)
         result.add_output(rs_log)
         for p in self._outputs:
@@ -324,7 +326,7 @@ class Phase02RemoteSensing(Phase):
     def _phase01_gpkg_dir(self, ctx: RunContext) -> Path:
         return ctx.phase_dir("01") / "05_KMZ_KML_to_GPKG"
 
-    def _load_buffer_aoi(self, ctx: RunContext, distance_m: int):  # type: ignore[no-untyped-def]
+    def _load_buffer_aoi(self, ctx: RunContext, distance_m: int):
         cfg = ctx.config
         name = naming.data_name(
             cfg.data_prefix,
@@ -341,7 +343,7 @@ class Phase02RemoteSensing(Phase):
         sub = gdf[gdf["distance_m"] == distance_m]
         return sub if len(sub) else None
 
-    def _load_boundary_aoi(self, ctx: RunContext):  # type: ignore[no-untyped-def]
+    def _load_boundary_aoi(self, ctx: RunContext):
         cfg = ctx.config
         name = naming.data_name(
             cfg.data_prefix,
@@ -362,9 +364,9 @@ class Phase02RemoteSensing(Phase):
     def _do_passthrough(
         self,
         ctx: RunContext,
-        rec,  # type: ignore[no-untyped-def]
+        rec,
         *,
-        aoi,  # type: ignore[no-untyped-def]
+        aoi,
         dest_dir: Path,
         epsg: int,
         clip_label: str,
@@ -432,7 +434,7 @@ class Phase02RemoteSensing(Phase):
 
     def _do_dem_elev(
         self, ctx: RunContext, rec, aoi, reproj_dir: Path, deriv_dir: Path, epsg: int
-    ) -> dict[str, object]:  # type: ignore[no-untyped-def]
+    ) -> dict[str, object]:
         row = self._do_passthrough(
             ctx,
             rec,
@@ -523,7 +525,7 @@ class Phase02RemoteSensing(Phase):
         result.add_output(index_path)
         result.add_output(report_path)
 
-    def _base_row(self, rec, *, action: str, clip_label: str, compress: str) -> dict[str, object]:  # type: ignore[no-untyped-def]
+    def _base_row(self, rec, *, action: str, clip_label: str, compress: str) -> dict[str, object]:
         return {
             "no": rec.no,
             "filename": rec.filename,
@@ -545,7 +547,7 @@ class Phase02RemoteSensing(Phase):
     # ASTER frozen support chain (#73): extract → project → indices → score → targets
     # ------------------------------------------------------------------ #
 
-    def _do_aster(self, ctx: RunContext, rec, pdir: Path, stats_aoi) -> dict[str, object]:  # type: ignore[no-untyped-def]
+    def _do_aster(self, ctx: RunContext, rec, pdir: Path, stats_aoi) -> dict[str, object]:
         """Run the frozen ASTER support chain, degrading to the method note on any obstacle.
 
         ``stats_aoi`` (the 5 km buffer GeoDataFrame, or None) is the frozen METH-DISC-021
@@ -594,7 +596,7 @@ class Phase02RemoteSensing(Phase):
         row.update(
             native_epsg="(swath GCPs)",
             output_crs=f"EPSG:{ctx.config.target_epsg}",
-            output=str(score_file) if score_file else "",
+            output=score_file.name if score_file else "",
             derivative=f"{len(res.index_files)} indices + {len(res.score_files) - 1} binaries "
             f"+ score + {res.n_targets} target polygon(s)",
             decision="Pass",
@@ -609,7 +611,7 @@ class Phase02RemoteSensing(Phase):
         hdf_wc: Path,
         aster_dir: Path,
         gdalwarp: Path,
-        stats_aoi,  # type: ignore[no-untyped-def]
+        stats_aoi,
     ) -> aster.AsterResult:
         cfg = ctx.config
         epsg = cfg.target_epsg
@@ -778,7 +780,7 @@ class Phase02RemoteSensing(Phase):
             "(machine draft — geologist review required)"
         )
 
-    def _note_row(self, rec, action: str) -> dict[str, object]:  # type: ignore[no-untyped-def]
+    def _note_row(self, rec, action: str) -> dict[str, object]:
         row = self._base_row(rec, action=action, clip_label="(external)", compress="(n/a)")
         row.update(output_crs="EPSG:32647 (target)", decision="Method-note")
         row["note"] = "External tool step — see method note in the sensor subfolder."
@@ -788,7 +790,7 @@ class Phase02RemoteSensing(Phase):
     # method notes (formula-complete, for the external operator)
     # ------------------------------------------------------------------ #
 
-    def _write_method_notes(self, ctx: RunContext, pdir: Path) -> None:
+    def _write_method_notes(self, ctx: RunContext, pdir: Path) -> tuple[Path, ...]:
         prefix = f"{ctx.config.project.project_code}_{ctx.config.project.name}"
         notes = {
             pdir
@@ -815,6 +817,7 @@ class Phase02RemoteSensing(Phase):
         for path, text in notes.items():
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text, encoding="utf-8")
+        return tuple(sorted(notes))
 
     # ------------------------------------------------------------------ #
 

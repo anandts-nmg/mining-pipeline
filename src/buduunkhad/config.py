@@ -30,6 +30,7 @@ from pydantic import (
 #: Per-machine path overrides (so a local Drive/synced path is never committed).
 RAW_ROOT_ENV = "BUDUUNKHAD_RAW_ROOT"
 OUTPUT_ROOT_ENV = "BUDUUNKHAD_OUTPUT_ROOT"
+WORK_ROOT_ENV = "BUDUUNKHAD_WORK_ROOT"
 
 # --------------------------------------------------------------------------- #
 # Register model
@@ -360,6 +361,9 @@ class ProjectConfig(BaseModel):
 
     @property
     def runs_root(self) -> Path:
+        work_root = os.environ.get(WORK_ROOT_ENV)
+        if work_root:
+            return Path(work_root).expanduser() / "runs"
         return self._resolve(self.paths.runs_root)
 
     @property

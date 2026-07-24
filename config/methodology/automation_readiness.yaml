@@ -75,7 +75,8 @@ obligations:
       - Parse, coordinate, CRS, topology, area/perimeter and buffer validation results.
       - Exact derivative identities and named qualified review.
     deterministic_next_steps:
-      - Extend Phase 01 QA/QC to seal and report every deterministic check without inventing reviewer acceptance.
+      - Run Phase 01 to emit and seal the exact-source boundary validation record with CRS, coordinate, topology, area/perimeter, buffer and derivative-byte findings.
+      - Obtain separately authorized acceptance from both required reviewer roles; deterministic completion alone does not resolve this obligation.
     required_human_authority:
       - geospatial data custodian
       - qualified geospatial reviewer

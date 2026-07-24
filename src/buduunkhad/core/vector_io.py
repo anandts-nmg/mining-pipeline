@@ -10,7 +10,7 @@ import re
 import zipfile
 from collections.abc import MutableMapping
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
 from typing import Any, Literal, cast
 
@@ -76,6 +76,17 @@ class PointIngestResult:
         )
 
 
+@dataclass(frozen=True)
+class BoundaryReadResult:
+    """Boundary data plus truthful container and CRS-discovery provenance."""
+
+    gdf: Any
+    container_format: str
+    selected_member: str | None
+    source_epsg: int | None
+    crs_evidence: Literal["reader-reported", "configured-assumption"]
+
+
 def _enable_kml_drivers() -> None:
     from fiona.drvsupport import supported_drivers
 
@@ -93,24 +104,65 @@ def read_boundary(path: Path, assume_epsg: int = 4326):
     CRS, so we assume ``assume_epsg`` (WGS84) when none is present. Returns a
     GeoDataFrame with a defined CRS.
     """
+    return read_boundary_with_provenance(path, assume_epsg=assume_epsg).gdf
+
+
+def read_boundary_with_provenance(path: Path, assume_epsg: int = 4326) -> BoundaryReadResult:
+    """Read a boundary and retain how its CRS and KMZ member were selected.
+
+    KMZ members are copied by bytes to a fixed temporary filename instead of being
+    extracted by their archive path. This keeps archive traversal and ambiguous
+    multi-KML selection outside the boundary ingest path.
+    """
+
     _enable_kml_drivers()
     path = Path(path)
+    selected_member: str | None = None
+    container_format = path.suffix.lower().lstrip(".") or "vector"
 
     if path.suffix.lower() == ".kmz":
         with TemporaryDirectory() as tmp, zipfile.ZipFile(path) as zf:
-            kmls = [n for n in zf.namelist() if n.lower().endswith(".kml")]
+            kmls = sorted(
+                name
+                for name in zf.namelist()
+                if not name.endswith("/") and name.lower().endswith(".kml")
+            )
             if not kmls:
                 raise ValueError(f"No .kml found inside KMZ: {path}")
-            # Prefer doc.kml if present.
-            target = next((n for n in kmls if n.lower().endswith("doc.kml")), kmls[0])
-            zf.extract(target, tmp)
-            gdf = _read_vector(Path(tmp) / target)
+            if any(
+                "\\" in name
+                or PurePosixPath(name).is_absolute()
+                or any(part in {"", ".", ".."} for part in PurePosixPath(name).parts)
+                for name in kmls
+            ):
+                raise ValueError(f"KMZ contains an unsafe KML member path: {path}")
+            doc_members = [
+                name for name in kmls if PurePosixPath(name).name.casefold() == "doc.kml"
+            ]
+            if len(doc_members) == 1:
+                selected_member = doc_members[0]
+            elif len(kmls) == 1:
+                selected_member = kmls[0]
+            else:
+                raise ValueError(f"KMZ contains ambiguous KML members: {path}")
+            target = Path(tmp) / "boundary.kml"
+            target.write_bytes(zf.read(selected_member))
+            gdf = _read_vector(target)
     else:
         gdf = _read_vector(path)
 
+    crs_evidence: Literal["reader-reported", "configured-assumption"] = "reader-reported"
     if gdf.crs is None:
         gdf = gdf.set_crs(epsg=assume_epsg)
-    return gdf
+        crs_evidence = "configured-assumption"
+    source_epsg = gdf.crs.to_epsg() if gdf.crs is not None else None
+    return BoundaryReadResult(
+        gdf=gdf,
+        container_format=container_format,
+        selected_member=selected_member,
+        source_epsg=source_epsg,
+        crs_evidence=crs_evidence,
+    )
 
 
 def _read_vector(path: Path):

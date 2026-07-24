@@ -755,6 +755,9 @@ def test_operational_readiness_preserves_real_evidence_and_human_blockers() -> N
     assert by_id["METH-READY-004"].blocks_phase_completion
     assert by_id["METH-READY-005"].blocks_phase_completion
     assert "qualified geospatial reviewer" in by_id["METH-READY-005"].required_human_authority
+    boundary_steps = " ".join(by_id["METH-READY-005"].deterministic_next_steps)
+    assert "emit and seal" in boundary_steps
+    assert "deterministic completion alone does not resolve" in boundary_steps
     combined = " ".join(
         text
         for item in registry.obligations

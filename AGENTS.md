@@ -86,6 +86,9 @@ dirty worktree. Never invent authority, identity, review, approval, dates, evide
   run, bytes, layer, canonical role-to-target ownership, lifecycle, phase/mode eligibility,
   registration actor, and reason. Filenames, layer-name keywords, and directory proximity are
   discovery only.
+- Phase 01 emits a sealed, exact-source licence-boundary validation record with deterministic CRS,
+  coordinate, topology, area/perimeter, buffer and derivative-byte findings. It remains separate
+  from the data-custodian and qualified-reviewer attestations required to resolve METH-READY-005.
 - A real partial run may read a predecessor phase only from the same isolated run or an explicit
   `PHASE=RUN_ID` source binding whose run manifest, phase record, gate and complete file seal are
   revalidated before and after use. The promoted `output_root` tree is compatibility-only and is

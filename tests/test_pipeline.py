@@ -64,6 +64,16 @@ def test_later_phase_reads_sealed_predecessor_not_compatibility_view(raw_archive
     assert result.source_phases[0].source_run_id == source.run_id
     assert result.phases[0].phase_id == "01"
     assert result.phases[0].status == "ok"
+    from buduunkhad.core.boundary_validation import load_boundary_validation_record
+
+    validation_path = next(
+        config.runs_root / result.run_id / artifact.path
+        for artifact in result.phases[0].output_artifacts
+        if artifact.path.endswith("_Licence_Boundary_Validation_Record.json")
+    )
+    validation = load_boundary_validation_record(validation_path)
+    assert validation.processing_run_id == result.run_id
+    assert validation.source_run_id == source.run_id
     resumed = run_pipeline(
         config,
         register,

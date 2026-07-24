@@ -1,5 +1,43 @@
 format_version: 1.0.0
 items:
+  - item_id: ENG-BACKLOG-005
+    title: Seal deterministic licence-boundary validation evidence
+    status: implemented-awaiting-human-acceptance
+    priority: deterministic-readiness
+    depends_on:
+      - Run-isolated outputs and immutable phase sealing.
+      - Centralized execution modes that keep METH-READY-005 blocking authoritative use.
+    objective: >-
+      Bind the exact registered boundary source and Phase 01 derivatives to truthful,
+      reproducible CRS, coordinate, topology, area, perimeter and buffer measurements without
+      treating deterministic validation as administrative or scientific acceptance.
+    implemented_work:
+      - Preserve whether the source CRS was reader-reported or supplied by the configured
+        WGS84 assumption, and reject unsafe or ambiguous KMZ member selection.
+      - Emit a self-consistent format-1.0.0 validation record bound to the source run, stable
+        external source ID, exact source and sidecar bytes, boundary and buffer derivatives,
+        software versions and deterministic limitations.
+      - Measure finite coordinate domains, CRS transformation, geometry types, empties,
+        invalid features, overlaps, projected area/perimeter and every configured buffer.
+      - Revalidate every recorded file identity before reuse and keep qualified human review in
+        a separate complete, named, UTC, authorization-bound attestation contract.
+      - Add a canonical Phase 01 QA/QC pass for deterministic completion and a distinct pending
+        item for the two required human reviewer roles.
+    remaining_human_work:
+      - A geospatial data custodian must inspect and attest the exact sealed validation record.
+      - A qualified geospatial reviewer must independently accept or reject the same record.
+      - A future trusted resolver must bind those attestations before METH-READY-005 may close.
+    acceptance:
+      - Source or derivative mutation is detected before review or reuse.
+      - Missing, invalid, non-polygon, overlapping, wrong-CRS or incoherent buffer findings fail
+        deterministic completion without inventing a tolerance.
+      - No machine-generated record contains a reviewer, review time or approval decision.
+      - Phase 01 remains scaffold-only and authoritative downstream use stays blocked while the
+        human obligation is unresolved.
+    non_goals:
+      - Define scientific acceptance thresholds or approve the licence boundary.
+      - Resolve METH-READY-005 without both qualified human authorities.
+      - Change raw identities, buffer distances, geological calculations or downstream scoring.
   - item_id: ENG-BACKLOG-004
     title: Centralize execution policy and replace the generic override
     status: implemented

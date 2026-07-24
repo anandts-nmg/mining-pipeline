@@ -37,6 +37,7 @@ class RunContext:
     active_phase_id: str | None = None
     resolved_evidence: tuple[ResolvedEvidence, ...] = ()
     source_phase_dirs: dict[str, Path] = field(default_factory=dict)
+    source_phase_run_ids: dict[str, str] = field(default_factory=dict)
     execution_modes: dict[str, ExecutionMode] = field(default_factory=dict)
 
     # ---- derived paths ---------------------------------------------------- #
@@ -81,6 +82,18 @@ class RunContext:
         except ValueError:
             return candidate
         return self.run_dir / "phases" / self.active_phase_id / relative
+
+    def source_run_id_for(self, phase_id: str) -> str:
+        """Return the exact run that owns a phase directory selected as input."""
+
+        if not self.run_isolated:
+            return self.run_id
+        if (self.run_dir / "phases" / phase_id).is_dir():
+            return self.run_id
+        try:
+            return self.source_phase_run_ids[phase_id]
+        except KeyError as exc:
+            raise RunStorageError(f"Phase {phase_id} has no exact source-run identity") from exc
 
     # ---- register helpers ------------------------------------------------- #
 

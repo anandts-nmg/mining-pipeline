@@ -34,6 +34,7 @@ def test_installed_wheel_loads_packaged_prompt_registry(tmp_path: Path) -> None:
     with zipfile.ZipFile(wheel) as archive:
         names = set(archive.namelist())
     expected_resources = {
+        "buduunkhad/core/boundary_validation.py",
         "buduunkhad/core/evidence_manifest.py",
         "buduunkhad/prompt_data/registry.yaml",
         "buduunkhad/prompt_data/prompt-lock.yaml",
@@ -89,6 +90,10 @@ def test_installed_wheel_loads_packaged_prompt_registry(tmp_path: Path) -> None:
 from pathlib import Path
 import buduunkhad
 from buduunkhad.ai.prompts import PromptRegistry, default_schema_registry
+from buduunkhad.core.boundary_validation import (
+    BOUNDARY_REVIEW_FORMAT_VERSION,
+    BOUNDARY_VALIDATION_FORMAT_VERSION,
+)
 from buduunkhad.core.evidence_manifest import (
     EVIDENCE_CATALOG_FORMAT_VERSION,
     EVIDENCE_MANIFEST_FORMAT_VERSION,
@@ -129,6 +134,8 @@ assert vertical.components[0].text
 assert authority.sources
 assert phase05.phase_id == "05"
 assert buduunkhad.__version__ == "0.8.1"
+assert BOUNDARY_VALIDATION_FORMAT_VERSION == "1.0.0"
+assert BOUNDARY_REVIEW_FORMAT_VERSION == "1.0.0"
 assert EVIDENCE_MANIFEST_FORMAT_VERSION == "1.0.0"
 assert EVIDENCE_CATALOG_FORMAT_VERSION == "1.0.0"
 assert RUN_MANIFEST_FORMAT_VERSION == "2.2.0"

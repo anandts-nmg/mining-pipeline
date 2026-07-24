@@ -1172,6 +1172,10 @@ def run_pipeline(
                 source_phase_dirs={
                     item.binding.phase_id: item.phase_dir for item in resolved_source_phases
                 },
+                source_phase_run_ids={
+                    item.binding.phase_id: item.binding.source_run_id
+                    for item in resolved_source_phases
+                },
             )
             operational_exception_controls = load_execution_policy().operational_exception_controls
 
@@ -1189,6 +1193,9 @@ def run_pipeline(
                     )
                 ctx.source_phase_dirs = {
                     item.binding.phase_id: item.phase_dir for item in refreshed_sources
+                }
+                ctx.source_phase_run_ids = {
+                    item.binding.phase_id: item.binding.source_run_id for item in refreshed_sources
                 }
                 if evidence_resolver is not None:
                     refreshed = evidence_resolver.resolve_selected(selected_manifest_ids)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from buduunkhad.core import paths, vector_io
 from buduunkhad.core.gates import GateStatus
+from buduunkhad.core.qaqc import Decision
 from buduunkhad.phases.base import RunContext
 from buduunkhad.phases.phase00_archive import Phase00Archive
 from buduunkhad.phases.phase01_data_audit import Phase01DataAudit
@@ -95,6 +96,27 @@ def test_phase01_real_run(raw_archive):
     assert bgdf.iloc[0]["validation_status"] == "Historical only"
     assert bufgdf.iloc[0]["output_filename"] == buffer_files[0].name
 
+    from buduunkhad.core.boundary_validation import load_boundary_validation_record
+
+    validation_path = pdir / "03_CRS_Check" / f"{prefix}_Licence_Boundary_Validation_Record.json"
+    validation = load_boundary_validation_record(validation_path)
+    assert validation.deterministic_status == "complete"
+    assert validation.processing_run_id == ctx.run_id
+    assert validation.source_run_id == ctx.run_id
+    assert validation.source.external_file_id == "1WA4jpRS2ng3pvtzpE_9M7iBV97S397VD"
+    assert validation.source_artifact.sha256
+    assert validation.crs.source_epsg == config.crs.source_geographic_epsg
+    assert validation.crs.derivative_epsg == config.target_epsg
+    assert validation.topology.total_area_square_metres > 0
+    assert validation.topology.total_perimeter_metres > 0
+    assert tuple(item.distance_metres for item in validation.buffers) == tuple(
+        config.boundary.buffers_m
+    )
+    assert all(item.contains_boundary for item in validation.buffers)
+    serialized = validation.model_dump(mode="json")
+    assert "reviewer" not in serialized
+    assert "reviewed_at" not in serialized
+
     # CRS/Georef QAQC log + confidence ranking + qgz
     crs_log = pdir / "03_CRS_Check" / f"{prefix}_CRS_Georeference_QAQC_Log.xlsx"
     assert crs_log.exists()
@@ -127,6 +149,11 @@ def test_phase01_real_run(raw_archive):
     _assert_phase1_deliverables(pdir)
 
     report = phase.qaqc(ctx)
+    deterministic = next(item for item in report.items if "deterministic validation" in item.item)
+    acceptance = next(item for item in report.items if "qualified acceptance" in item.item)
+    assert deterministic.decision is Decision.PASS
+    assert acceptance.decision is Decision.PENDING
+    assert "No human acceptance is claimed" in deterministic.note
     georef = next(item for item in report.items if "Scan georeference" in item.item)
     assert "Phase 3 human sub-workflow" in georef.note
     assert "performed in QGIS (Phase 1 sub-workflow)" not in georef.note

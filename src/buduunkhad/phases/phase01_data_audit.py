@@ -17,8 +17,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from buduunkhad.config import InputRecord
+from buduunkhad.core import boundary_validation, naming, qgis_project, registers, vector_io
 from buduunkhad.core import crs as crs_mod
-from buduunkhad.core import naming, qgis_project, registers, vector_io
+from buduunkhad.core.ingest import load_manifest
 from buduunkhad.core.qaqc import RECORDED_ACCEPTANCE, Decision, QAQCReport, new_report
 from buduunkhad.phases.base import Phase, PhaseResult, RunContext
 
@@ -38,6 +39,8 @@ class Phase01DataAudit(Phase):
     _boundary_path: Path | None
     _buffer_path: Path | None
     _n_buffers: int
+    _boundary_validation: boundary_validation.BoundaryValidationRecord | None
+    _boundary_validation_path: Path | None
     _raster_audits: list[crs_mod.RasterAudit]
     _master_layers: list[str]
     _handoff_paths: list[Path]
@@ -48,6 +51,8 @@ class Phase01DataAudit(Phase):
         self._boundary_path = None
         self._buffer_path = None
         self._n_buffers = 0
+        self._boundary_validation = None
+        self._boundary_validation_path = None
         self._raster_audits = []
         self._master_layers = []
         self._handoff_paths = []
@@ -113,7 +118,9 @@ class Phase01DataAudit(Phase):
         boundary_rec = ctx.record_by_no(cfg.boundary.input_no)
         boundary_src = self._working_copy_path(ctx, boundary_rec)
         if boundary_src.exists():
-            self._import_boundary_and_buffers(ctx, boundary_src, gpkg_dir, master_path, result)
+            self._import_boundary_and_buffers(
+                ctx, boundary_src, gpkg_dir, crs_dir, master_path, result
+            )
         else:
             result.log(f"boundary working copy missing: {boundary_src}")
 
@@ -161,12 +168,35 @@ class Phase01DataAudit(Phase):
         ctx: RunContext,
         boundary_src: Path,
         gpkg_dir: Path,
+        validation_dir: Path,
         master_path: Path,
         result: PhaseResult,
     ) -> None:
         cfg = ctx.config
         epsg = cfg.target_epsg
-        gdf = vector_io.read_boundary(boundary_src, assume_epsg=cfg.crs.source_geographic_epsg)
+        boundary_rec = ctx.record_by_no(cfg.boundary.input_no)
+        sidecars = tuple(
+            boundary_src.parent / item.filename
+            for item in ctx.register
+            if item.is_sidecar and item.parent_file == boundary_rec.filename
+        )
+        source_phase_root = ctx.phase_dir("00")
+        source_artifact_before = boundary_validation.capture_bound_file_identity(
+            source_phase_root, boundary_src
+        )
+        source_sidecars_before = tuple(
+            sorted(
+                (
+                    boundary_validation.capture_bound_file_identity(source_phase_root, path)
+                    for path in sidecars
+                ),
+                key=lambda item: item.path,
+            )
+        )
+        read_result = vector_io.read_boundary_with_provenance(
+            boundary_src, assume_epsg=cfg.crs.source_geographic_epsg
+        )
+        gdf = read_result.gdf
         self._boundary_epsg = gdf.crs.to_epsg() if gdf.crs else None
         gdf32 = crs_mod.reproject_gdf(gdf, epsg)
         # Drop source (KML) attribute columns - they collide case-insensitively with
@@ -239,9 +269,57 @@ class Phase01DataAudit(Phase):
         )
         vector_io.write_layer(buffers_gdf, buffer_path, layer="project_buffers")
         result.add_output(buffer_path)
+
+        manifest_path = cfg.manifest_path
+        if manifest_path is None:
+            raise boundary_validation.BoundaryValidationError(
+                "boundary validation requires the registered raw manifest"
+            )
+        manifest_entry = load_manifest(manifest_path).get(boundary_src.name)
+        if manifest_entry is None or not manifest_entry.drive_file_id:
+            raise boundary_validation.BoundaryValidationError(
+                "boundary validation requires the registered external source identity"
+            )
+        record = boundary_validation.create_boundary_validation_record(
+            processing_run_id=ctx.run_id,
+            source_run_id=ctx.source_run_id_for("00"),
+            source=boundary_validation.RegisteredBoundarySource(
+                input_no=boundary_rec.no,
+                evidence_group=boundary_rec.evidence_group,
+                filename=boundary_rec.filename,
+                external_file_id=manifest_entry.drive_file_id,
+                registered_external_size_bytes=manifest_entry.size_bytes,
+            ),
+            source_phase_root=source_phase_root,
+            source_artifact=boundary_src,
+            source_artifact_before=source_artifact_before,
+            source_sidecars=sidecars,
+            source_sidecars_before=source_sidecars_before,
+            phase_root=ctx.phase_dir(self.id),
+            boundary_derivative=boundary_path,
+            buffer_derivative=buffer_path,
+            read_result=read_result,
+            derivative_gdf=gdf32,
+            buffers_gdf=buffers_gdf,
+            configured_source_epsg=cfg.crs.source_geographic_epsg,
+            target_epsg=epsg,
+            requested_buffer_distances_metres=tuple(sorted(cfg.boundary.buffers_m)),
+        )
+        validation_path = (
+            validation_dir / f"{cfg.register_prefix}_Licence_Boundary_Validation_Record.json"
+        )
+        boundary_validation.write_boundary_validation_record(record, validation_path)
+        boundary_validation.verify_boundary_validation_files(
+            record,
+            source_phase_root=source_phase_root,
+            phase_root=ctx.phase_dir(self.id),
+        )
+        result.add_output(validation_path)
         self._boundary_path = boundary_path
         self._buffer_path = buffer_path
-        self._boundary_ok = True
+        self._boundary_validation = record
+        self._boundary_validation_path = validation_path
+        self._boundary_ok = record.deterministic_status == "complete"
 
     def _write_master_project(self, ctx: RunContext, qgz_path: Path, master_path: Path) -> int:
         """Write the layered Master QGIS project (methodology §01: the master project
@@ -556,6 +634,17 @@ class Phase01DataAudit(Phase):
 
         expected = {layer.name for layer in ctx.config.master_gpkg_layers}
         layers_ok = expected.issubset(set(self._master_layers))
+        validation = self._boundary_validation
+        boundary_validation_complete = self._boundary_ok and validation is not None
+        if boundary_validation_complete and validation is not None:
+            try:
+                boundary_validation.verify_boundary_validation_files(
+                    validation,
+                    source_phase_root=ctx.phase_dir("00"),
+                    phase_root=ctx.phase_dir(self.id),
+                )
+            except boundary_validation.BoundaryValidationError:
+                boundary_validation_complete = False
         report.add(
             "EPSG:32647 project CRS",
             RECORDED_ACCEPTANCE,
@@ -563,12 +652,25 @@ class Phase01DataAudit(Phase):
             note=f"Project CRS = {ctx.config.crs.target_name}, {ctx.config.crs.target_authority}.",
         )
         report.add(
-            "KMZ boundary topology valid",
+            "Licence boundary deterministic validation complete",
             RECORDED_ACCEPTANCE,
-            decision=Decision.PASS if self._boundary_ok else Decision.FAIL,
-            note=f"Boundary imported (native EPSG {self._boundary_epsg}); {self._n_buffers} buffers."
-            if self._boundary_ok
-            else "Boundary working copy not found / not imported.",
+            decision=Decision.PASS if boundary_validation_complete else Decision.FAIL,
+            note=(
+                f"Exact source and derivative bytes measured; native EPSG "
+                f"{self._boundary_epsg}; {self._n_buffers} buffers; validation ID "
+                f"{validation.validation_id}. No human acceptance is claimed."
+            )
+            if boundary_validation_complete and validation is not None
+            else "Boundary working copy missing or deterministic validation failed.",
+        )
+        report.add(
+            "Licence boundary qualified acceptance recorded",
+            RECORDED_ACCEPTANCE,
+            decision=Decision.PENDING,
+            note=(
+                "METH-READY-005 still requires separately resolved acceptance from a "
+                "geospatial data custodian and a qualified geospatial reviewer."
+            ),
         )
         report.add(
             "Raster CRS/resolution/extent/nodata/band count checked",

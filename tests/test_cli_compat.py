@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from click import unstyle
 from typer.testing import CliRunner
 
 from buduunkhad.cli import app
@@ -84,15 +85,17 @@ def test_run_dry_run_uses_legacy_defaults(project) -> None:
 def test_run_and_single_phase_help_expose_policy_and_exact_bindings() -> None:
     run_help = runner.invoke(app, ["run", "--help"])
     phase_help = runner.invoke(app, ["phase04", "--help"])
+    run_help_text = unstyle(run_help.stdout)
+    phase_help_text = unstyle(phase_help.stdout)
 
     assert run_help.exit_code == phase_help.exit_code == 0
-    assert "--input-run" in run_help.stdout
-    assert "--input-run" in phase_help.stdout
-    assert "--phase-mode" in run_help.stdout
-    assert "--execution-mode" in phase_help.stdout
-    assert "--authorization" in run_help.stdout
-    assert "--authorization" in phase_help.stdout
-    assert "Retired" in run_help.stdout
+    assert "--input-run" in run_help_text
+    assert "--input-run" in phase_help_text
+    assert "--phase-mode" in run_help_text
+    assert "--execution-mode" in phase_help_text
+    assert "--authorization" in run_help_text
+    assert "--authorization" in phase_help_text
+    assert "Retired" in run_help_text
 
 
 def test_cli_generic_override_fails_closed_without_creating_run(project) -> None:
@@ -110,10 +113,11 @@ def test_cli_generic_override_fails_closed_without_creating_run(project) -> None
 
 def test_manual_evidence_registration_requires_actor_and_reason() -> None:
     help_result = runner.invoke(app, ["evidence", "register-run-layer", "--help"])
+    help_text = unstyle(help_result.stdout)
 
     assert help_result.exit_code == 0
-    assert "--actor" in help_result.stdout
-    assert "--reason" in help_result.stdout
+    assert "--actor" in help_text
+    assert "--reason" in help_text
 
 
 def test_info_honors_existing_environment_path_overrides(project, monkeypatch) -> None:

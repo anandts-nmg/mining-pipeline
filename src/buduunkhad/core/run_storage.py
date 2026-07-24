@@ -18,6 +18,13 @@ from typing import Annotated, Final, Self, cast
 from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator
 
 from buduunkhad.core import paths
+from buduunkhad.core.execution_policy import (
+    ExecutionAuthorization,
+    ExecutionMode,
+    ExecutionPolicyBinding,
+    legacy_execution_mode,
+    validate_execution_policy_binding,
+)
 from buduunkhad.core.run_artifacts import (
     ArtifactSealError,
     RunOutputArtifact,
@@ -28,8 +35,10 @@ from buduunkhad.core.run_artifacts import (
     sha256_file,
 )
 
-RUN_MANIFEST_FORMAT_VERSION: Final[str] = "2.1.0"
-SUPPORTED_RUN_MANIFEST_FORMAT_VERSIONS: Final[frozenset[str]] = frozenset({"2.0.0", "2.1.0"})
+RUN_MANIFEST_FORMAT_VERSION: Final[str] = "2.2.0"
+SUPPORTED_RUN_MANIFEST_FORMAT_VERSIONS: Final[frozenset[str]] = frozenset(
+    {"2.0.0", "2.1.0", "2.2.0"}
+)
 RUN_LAYOUT_VERSION: Final[str] = "run-isolated-v1"
 CURRENT_VIEW_FILENAME: Final[str] = ".buduunkhad-current-view.json"
 _RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -86,6 +95,7 @@ class ResolvedSourcePhase:
     sealed_files: tuple[RunOutputArtifact, ...]
     gate_status: str
     gate_provisional: bool
+    execution_mode: ExecutionMode
 
 
 def generate_run_id(*, now: datetime | None = None, entropy: str | None = None) -> str:
@@ -416,7 +426,8 @@ def resolve_source_phase(
         raise RunStorageError("source run manifest is invalid") from exc
     if not isinstance(data, dict):
         raise RunStorageError("source run manifest root must be an object")
-    if data.get("manifest_format_version") not in SUPPORTED_RUN_MANIFEST_FORMAT_VERSIONS:
+    manifest_version = data.get("manifest_format_version")
+    if manifest_version not in SUPPORTED_RUN_MANIFEST_FORMAT_VERSIONS:
         raise RunStorageError("source run manifest format is unsupported")
     if data.get("run_layout_version") != RUN_LAYOUT_VERSION:
         raise RunStorageError("source run layout is unsupported")
@@ -447,6 +458,47 @@ def resolve_source_phase(
     if [*selected] != sorted(selected, key=_PHASE_SEQUENCE.index):
         raise RunStorageError("source run phase selection is not in workflow order")
 
+    policy_modes: dict[str, ExecutionMode] = {}
+    authorization_map: dict[str, ExecutionAuthorization] = {}
+    used_authorization_ids: set[str] = set()
+    if manifest_version == "2.2.0":
+        try:
+            policy_binding = ExecutionPolicyBinding.model_validate(data.get("execution_policy"))
+            raw_authorizations = data.get("authorizations")
+            if not isinstance(raw_authorizations, list):
+                raise ValueError("authorization inventory is not a list")
+            authorizations = tuple(
+                ExecutionAuthorization.model_validate(item) for item in raw_authorizations
+            )
+        except ValueError as exc:
+            raise RunStorageError("source run execution-policy binding is malformed") from exc
+        if tuple(item.phase_id for item in policy_binding.phase_modes) != tuple(selected):
+            raise RunStorageError("source run execution-policy phases do not match selection")
+        try:
+            validate_execution_policy_binding(
+                policy_binding,
+                cast(list[str], selected),
+                dry_run=False,
+            )
+        except RuntimeError as exc:
+            raise RunStorageError("source run execution-policy binding is unauthorized") from exc
+        policy_modes = {item.phase_id: item.execution_mode for item in policy_binding.phase_modes}
+        authorization_map = {item.authorization_id: item for item in authorizations}
+        raw_used = data.get("used_authorization_ids")
+        if (
+            len(authorization_map) != len(authorizations)
+            or not isinstance(raw_used, list)
+            or not all(isinstance(item, str) for item in raw_used)
+            or len(set(raw_used)) != len(raw_used)
+            or set(raw_used) != set(authorization_map)
+        ):
+            raise RunStorageError("source run authorization inventory is inconsistent")
+        used_authorization_ids = set(cast(list[str], raw_used))
+    elif any(
+        key in data for key in ("execution_policy", "authorizations", "used_authorization_ids")
+    ):
+        raise RunStorageError("legacy source run cannot claim execution-policy authorization")
+
     phase_records: dict[str, dict[str, object]] = {}
     for raw_phase in raw_phases:
         if not isinstance(raw_phase, dict):
@@ -466,6 +518,33 @@ def resolve_source_phase(
     phase = phase_records[phase_id]
     if phase.get("status") != "ok" or phase.get("error") != "":
         raise RunStorageError(f"source Phase {phase_id} did not complete successfully")
+    recorded_mode = phase.get("execution_mode")
+    if manifest_version == "2.2.0":
+        try:
+            execution_mode = ExecutionMode(recorded_mode)
+        except (TypeError, ValueError) as exc:
+            raise RunStorageError("source phase execution mode is malformed") from exc
+        if execution_mode is not policy_modes[phase_id]:
+            raise RunStorageError("source phase execution mode contradicts run policy")
+        raw_phase_authorizations = phase.get("authorization_ids")
+        if not isinstance(raw_phase_authorizations, list) or not all(
+            isinstance(item, str) for item in raw_phase_authorizations
+        ):
+            raise RunStorageError("source phase authorization inventory is malformed")
+        phase_authorization_ids = tuple(cast(list[str], raw_phase_authorizations))
+        if (
+            tuple(sorted(set(phase_authorization_ids))) != phase_authorization_ids
+            or not set(phase_authorization_ids) <= used_authorization_ids
+            or any(
+                phase_id not in authorization_map[identity].scope_phase_ids
+                for identity in phase_authorization_ids
+            )
+        ):
+            raise RunStorageError("source phase authorization inventory is inconsistent")
+    else:
+        if "execution_mode" in phase or "authorization_ids" in phase:
+            raise RunStorageError("legacy source phase cannot claim execution-policy authorization")
+        execution_mode = legacy_execution_mode(phase_id)
     if require_qaqc_passed and phase.get("qaqc_passed") is not True:
         raise RunStorageError(f"source Phase {phase_id} did not pass deterministic QA/QC")
     if not isinstance(phase.get("qaqc_pending"), bool):
@@ -533,6 +612,7 @@ def resolve_source_phase(
         sealed_files=sealed,
         gate_status=cast(str, gate_status),
         gate_provisional=cast(bool, gate_data["provisional"]),
+        execution_mode=execution_mode,
     )
 
 

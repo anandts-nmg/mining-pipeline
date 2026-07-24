@@ -15,6 +15,7 @@ from buduunkhad.core.evidence_manifest import (
     EvidenceRole,
     ResolvedEvidence,
 )
+from buduunkhad.core.execution_policy import ExecutionMode
 from buduunkhad.core.gates import GateDecision, evaluate_gate
 from buduunkhad.core.qaqc import QAQCReport
 from buduunkhad.core.run_storage import RunStorageError
@@ -36,6 +37,7 @@ class RunContext:
     active_phase_id: str | None = None
     resolved_evidence: tuple[ResolvedEvidence, ...] = ()
     source_phase_dirs: dict[str, Path] = field(default_factory=dict)
+    execution_modes: dict[str, ExecutionMode] = field(default_factory=dict)
 
     # ---- derived paths ---------------------------------------------------- #
 
@@ -111,6 +113,14 @@ class RunContext:
             and mode in item.record.eligible_modes
             and (roles is None or item.record.evidence_role in roles)
         )
+
+    def execution_mode_for(self, phase_id: str) -> ExecutionMode:
+        """Return the policy-resolved execution purpose for one selected phase."""
+
+        try:
+            return self.execution_modes[phase_id]
+        except KeyError:
+            return ExecutionMode.SCAFFOLD if self.dry_run else ExecutionMode.SUPPORT_EVIDENCE
 
     # ---- naming helpers --------------------------------------------------- #
 

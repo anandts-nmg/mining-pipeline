@@ -26,6 +26,10 @@ from buduunkhad.core.evidence_manifest import (
     EvidenceRole,
     register_pipeline_evidence,
 )
+from buduunkhad.core.execution_policy import (
+    ExecutionMode,
+    ExecutionPolicyError,
+)
 from buduunkhad.core.raw_guard import RawIntegrityError
 from buduunkhad.core.run_storage import RunStorageError
 from buduunkhad.pipeline import (
@@ -46,7 +50,9 @@ _RUN_ERRORS = (
     SelectionError,
     RunStorageError,
     EvidenceManifestError,
+    ExecutionPolicyError,
 )
+_PHASE_COMMAND_ERRORS = (ValueError,) + _RUN_ERRORS
 
 app = typer.Typer(
     add_completion=False,
@@ -64,15 +70,16 @@ _CONFIG_OPT = typer.Option("config/project.yaml", "--config", "-c", help="Path t
 
 
 def _echo_manifest(manifest, runs_root: Path) -> None:
-    typer.echo(
-        f"\nRun {manifest.run_id}  (dry_run={manifest.dry_run}, override={manifest.override})"
-    )
+    typer.echo(f"\nRun {manifest.run_id}  (dry_run={manifest.dry_run})")
     typer.echo("-" * 72)
     for p in manifest.phases:
         gate = p.gate_status or "-"
         if p.gate_provisional:
             gate = f"{gate} (provisional)"
-        line = f"  {p.phase_id}  {p.status:<16} gate={gate:<20} {p.name}"
+        line = (
+            f"  {p.phase_id}  {p.status:<16} mode={p.execution_mode.value:<18} "
+            f"gate={gate:<20} {p.name}"
+        )
         typer.echo(line)
         if p.gate_provisional and p.gate_reason:
             typer.echo(f"        · {p.gate_reason}")
@@ -328,6 +335,20 @@ def _parse_input_run_selectors(selectors: list[str] | None) -> dict[str, str]:
     return result
 
 
+def _parse_phase_mode_selectors(selectors: list[str] | None) -> dict[str, ExecutionMode]:
+    result: dict[str, ExecutionMode] = {}
+    known = {phase.id for phase in PHASE_CLASSES}
+    for selector in selectors or []:
+        phase_id, separator, raw_mode = selector.partition("=")
+        if separator != "=" or phase_id not in known or not raw_mode or phase_id in result:
+            raise SelectionError("Each --phase-mode must be a unique selected PHASE=MODE selector.")
+        try:
+            result[phase_id] = ExecutionMode(raw_mode)
+        except ValueError as exc:
+            raise SelectionError(f"Unknown execution mode: {raw_mode}") from exc
+    return result
+
+
 @app.command("run")
 def run(
     config: Path = _CONFIG_OPT,
@@ -338,7 +359,9 @@ def run(
         False, "--dry-run", help="Build tree + scaffolding; no raw data needed."
     ),
     override: bool = typer.Option(
-        False, "--override", help="Advance past a blocked decision gate (logged)."
+        False,
+        "--override",
+        help="Retired: using this flag fails; supply an exact scoped authorization instead.",
     ),
     resume: str | None = typer.Option(
         None,
@@ -355,12 +378,23 @@ def run(
         "--input-run",
         help="Bind an external predecessor phase as PHASE=RUN_ID (repeatable).",
     ),
+    phase_mode: list[str] | None = typer.Option(
+        None,
+        "--phase-mode",
+        help="Request a phase purpose as PHASE=MODE (repeatable); defaults are conservative.",
+    ),
+    authorization: list[Path] | None = typer.Option(
+        None,
+        "--authorization",
+        help="Load one immutable scoped execution-authorization JSON file (repeatable).",
+    ),
 ) -> None:
     """Run the pipeline over the selected phases."""
     cfg, register = load_project(config)
     only_list = [s.strip() for s in only.split(",") if s.strip()] if only else None
     try:
         input_runs = _parse_input_run_selectors(input_run)
+        phase_modes = _parse_phase_mode_selectors(phase_mode)
         manifest = run_pipeline(
             cfg,
             register,
@@ -373,6 +407,8 @@ def run(
             resume=resume is not None,
             evidence_manifest_ids=evidence_manifest,
             input_phase_runs=input_runs,
+            phase_modes=phase_modes,
+            authorization_paths=authorization,
         )
     except _RUN_ERRORS as exc:
         typer.secho(str(exc), fg="red")
@@ -387,7 +423,9 @@ def _make_phase_command(phase_id: str, phase_name: str):
             False, "--dry-run", help="Build scaffolding; no raw data needed."
         ),
         override: bool = typer.Option(
-            False, "--override", help="Advance past a blocked gate (logged)."
+            False,
+            "--override",
+            help="Retired: using this flag fails; supply an exact scoped authorization instead.",
         ),
         evidence_manifest: list[str] | None = typer.Option(
             None,
@@ -399,10 +437,23 @@ def _make_phase_command(phase_id: str, phase_name: str):
             "--input-run",
             help="Bind an external predecessor phase as PHASE=RUN_ID (repeatable).",
         ),
+        execution_mode: str | None = typer.Option(
+            None,
+            "--execution-mode",
+            help="Request the phase execution purpose; otherwise use the conservative default.",
+        ),
+        authorization: list[Path] | None = typer.Option(
+            None,
+            "--authorization",
+            help="Load one immutable scoped execution-authorization JSON file (repeatable).",
+        ),
     ) -> None:
         cfg, register = load_project(config)
         try:
             input_runs = _parse_input_run_selectors(input_run)
+            requested_mode = (
+                {phase_id: ExecutionMode(execution_mode)} if execution_mode is not None else None
+            )
             manifest = run_pipeline(
                 cfg,
                 register,
@@ -411,8 +462,10 @@ def _make_phase_command(phase_id: str, phase_name: str):
                 override=override,
                 evidence_manifest_ids=evidence_manifest,
                 input_phase_runs=input_runs,
+                phase_modes=requested_mode,
+                authorization_paths=authorization,
             )
-        except _RUN_ERRORS as exc:
+        except _PHASE_COMMAND_ERRORS as exc:
             typer.secho(str(exc), fg="red")
             raise typer.Exit(2) from exc
         _echo_manifest(manifest, cfg.runs_root)

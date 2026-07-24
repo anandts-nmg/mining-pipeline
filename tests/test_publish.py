@@ -9,9 +9,11 @@ import shutil
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 import pytest
 
+from buduunkhad.core.execution_policy import ExecutionMode
 from buduunkhad.core.publication_manifest import (
     AGGREGATION_NOTICE,
     PUBLICATION_MANIFEST_FORMAT_VERSION,
@@ -51,6 +53,7 @@ def _recompute_publication_id(data: dict[str, object]) -> None:
             if isinstance(data["superseded_publication_id"], str)
             else None
         ),
+        manifest_format_version=str(data["manifest_format_version"]),
     )
 
 
@@ -92,6 +95,10 @@ def _contract_phase(
         gate_provisional=False,
         human_review_or_qaqc_pending=False,
         pending_human_review_or_qaqc_count=0,
+        execution_mode=(
+            ExecutionMode.LEGACY_COMPARATOR if phase_id == "04" else ExecutionMode.AUTHORITATIVE
+        ),
+        authorization_ids=(),
         source_binding_mode="LEGACY_PATH_ONLY" if legacy else "SHA256_BOUND",
         outputs=(
             PublishedOutput(
@@ -140,6 +147,68 @@ def test_published_phase_accepts_all_registered_phase_path_conventions(phase_id:
     phase = _contract_phase(phase_id)
     assert phase.outputs[0].path == f"Phase{phase_id}/shared.csv"
     assert phase.outputs[0].source_path == f"{phase_id}_Anything/shared.csv"
+
+
+def test_non_authoritative_execution_modes_cannot_produce_approved_package_status() -> None:
+    for mode in (
+        ExecutionMode.SCAFFOLD,
+        ExecutionMode.SUPPORT_EVIDENCE,
+        ExecutionMode.LEGACY_COMPARATOR,
+    ):
+        phase = _contract_phase("04").model_copy(
+            update={"execution_mode": mode, "gate_state": "APPROVED"}
+        )
+        assert publication_status_for((phase,)) == "PROVISIONAL"
+
+    authoritative = _contract_phase("00").model_copy(
+        update={"execution_mode": ExecutionMode.AUTHORITATIVE, "gate_state": "APPROVED"}
+    )
+    assert publication_status_for((authoritative,)) == "APPROVED"
+
+
+def test_publication_manifest_v1_1_remains_readable_with_historical_status_semantics() -> None:
+    phase = _contract_phase("04").model_copy(update={"gate_state": "APPROVED"})
+    project = PublicationProjectReference(
+        configuration_reference="config/project.yaml",
+        configuration_sha256="f" * 64,
+    )
+    compatibility = CompatibilityRunManifest(
+        run_id=phase.source_run_id,
+        path="run_manifest.json",
+        sha256=phase.source_run_manifest_sha256,
+    )
+    historical_status = publication_status_for((phase,), enforce_execution_modes=False)
+    identity = publication_id_for(
+        project=project,
+        package_version="0.8.1",
+        git_commit_sha=None,
+        phases=(phase,),
+        package_status=historical_status,
+        compatibility_run_manifest=compatibility,
+        superseded_publication_id=None,
+        manifest_format_version="1.1.0",
+    )
+    phase_data = phase.model_dump(mode="json", exclude={"execution_mode", "authorization_ids"})
+    manifest = PublicationManifest.model_validate(
+        {
+            "manifest_format_version": "1.1.0",
+            "project": project.model_dump(mode="json"),
+            "package_version": "0.8.1",
+            "git_commit_sha": None,
+            "published_at": "2026-01-01T00:00:00+00:00",
+            "publication_id": identity,
+            "included_phase_ids": ["04"],
+            "phases": [phase_data],
+            "package_status": historical_status,
+            "compatibility_run_manifest": compatibility.model_dump(mode="json"),
+            "aggregation_notice": AGGREGATION_NOTICE,
+            "superseded_publication_id": None,
+        }
+    )
+
+    assert manifest.manifest_format_version == "1.1.0"
+    assert manifest.phases[0].execution_mode is ExecutionMode.LEGACY_COMPARATOR
+    assert manifest.package_status == "APPROVED"
 
 
 def test_manifest_rejects_identical_bytes_claimed_at_one_path_by_two_phases() -> None:
@@ -1218,6 +1287,31 @@ def test_publish_accepts_current_pipeline_run_manifest_contract(raw_archive):
     assert manifest.package_status == "HUMAN_REVIEW_PENDING"
 
 
+def test_recomputed_publication_id_cannot_change_source_execution_mode(raw_archive):
+    from buduunkhad.pipeline import run_pipeline
+
+    config, register, _raw = raw_archive
+    source_run = run_pipeline(config, register, only=["00"], dry_run=False)
+    result = publish(
+        config.output_root,
+        config.base_dir / "publication-mode-tamper",
+        "phase00-mode-tamper",
+        runs_root=config.runs_root,
+        project_config_path=config.base_dir / "config" / "project.yaml",
+        run_id=source_run.run_id,
+    )
+
+    def mutate(data: dict[str, object]) -> None:
+        phases = data["phases"]
+        assert isinstance(phases, list)
+        assert isinstance(phases[0], dict)
+        cast(dict[str, object], phases[0])["execution_mode"] = "support-evidence"
+
+    _tamper_manifest(result.dest, mutate)
+    with pytest.raises(PublishError, match="execution-policy provenance mismatch"):
+        verify_publication_package(result.dest)
+
+
 def test_publish_keeps_run_manifest_v2_0_compatibility(raw_archive):
     from buduunkhad.pipeline import run_pipeline
 
@@ -1228,6 +1322,12 @@ def test_publish_keeps_run_manifest_v2_0_compatibility(raw_archive):
     data["manifest_format_version"] = "2.0.0"
     data.pop("evidence_manifests", None)
     data.pop("source_phases", None)
+    data.pop("execution_policy")
+    data.pop("authorizations")
+    data.pop("used_authorization_ids")
+    for phase in data["phases"]:
+        phase.pop("execution_mode")
+        phase.pop("authorization_ids")
     source_manifest.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
     result = publish(

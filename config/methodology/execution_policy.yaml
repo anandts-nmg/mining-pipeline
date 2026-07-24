@@ -1,0 +1,74 @@
+format_version: 1.0.0
+interpretation: Runtime execution permissions derived from implementation state and open readiness obligations; not scientific approval or evidence that an obligation is resolved.
+phase_policies:
+  - phase_id: "00"
+    default_real_mode: authoritative
+    permitted_real_modes: [authoritative]
+    blocked_modes: []
+  - phase_id: "01"
+    default_real_mode: scaffold
+    permitted_real_modes: [scaffold]
+    blocked_modes:
+      - mode: authoritative
+        readiness_ids: [METH-READY-005]
+  - phase_id: "02"
+    default_real_mode: support-evidence
+    permitted_real_modes: [support-evidence]
+    blocked_modes:
+      - mode: authoritative
+        readiness_ids: [METH-READY-003, METH-READY-005]
+  - phase_id: "03"
+    default_real_mode: support-evidence
+    permitted_real_modes: [support-evidence]
+    blocked_modes:
+      - mode: authoritative
+        readiness_ids: [METH-READY-004, METH-READY-005, METH-READY-006]
+  - phase_id: "04"
+    default_real_mode: legacy-comparator
+    permitted_real_modes: [legacy-comparator]
+    blocked_modes:
+      - mode: authoritative
+        readiness_ids: [METH-READY-004, METH-READY-005, METH-READY-006, METH-READY-007]
+  - phase_id: "05"
+    default_real_mode: null
+    permitted_real_modes: []
+    blocked_modes:
+      - mode: authoritative
+        readiness_ids: [METH-READY-001]
+  - phase_id: "06"
+    default_real_mode: null
+    permitted_real_modes: []
+    blocked_modes: []
+  - phase_id: "07"
+    default_real_mode: null
+    permitted_real_modes: []
+    blocked_modes: []
+  - phase_id: "08"
+    default_real_mode: null
+    permitted_real_modes: []
+    blocked_modes: []
+  - phase_id: "09"
+    default_real_mode: null
+    permitted_real_modes: []
+    blocked_modes: []
+  - phase_id: "10"
+    default_real_mode: null
+    permitted_real_modes: []
+    blocked_modes: []
+  - phase_id: "11"
+    default_real_mode: null
+    permitted_real_modes: []
+    blocked_modes: []
+  - phase_id: "99"
+    default_real_mode: null
+    permitted_real_modes: []
+    blocked_modes: []
+operational_exception_controls:
+  - control_id: OPERATIONAL-EXCEPTION-01-HANDOFF-PACKAGE
+    phase_id: "01"
+    qaqc_items:
+      - Phase 1 handoff package complete
+    permitted_modes: [scaffold]
+publication_policy:
+  approved_source_modes: [authoritative]
+  provisional_source_modes: [scaffold, support-evidence, legacy-comparator]

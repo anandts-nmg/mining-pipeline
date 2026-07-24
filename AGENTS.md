@@ -54,8 +54,16 @@ dirty worktree. Never invent authority, identity, review, approval, dates, evide
 - Phase 03 has a substantial deterministic scaffold and an opt-in AI review handoff, but remains
   scientifically incomplete and dependent on qualified human georeferencing, digitizing,
   interpretation, and deposit-model work.
-- Pending master-required Phase 03 human/scientific handoff items block advancement; the ordinary
-  operational override does not turn them into completed evidence.
+- Pending master-required Phase 03 human/scientific handoff items block advancement; no
+  operational exception turns them into completed evidence.
+- Runtime execution purposes are resolved before run-side effects through the byte-bound
+  `execution_policy.yaml` contract. Current real defaults are Phase 00 `authoritative`, Phase 01
+  `scaffold`, Phases 02–03 `support-evidence`, and Phase 04 `legacy-comparator`; Phase 05 and later
+  stubs have no real execution mode.
+- The generic runtime `--override` is retired and fails closed. Raw-identity transitions,
+  acknowledged unexpected data gaps, and explicitly classified non-scientific operational
+  exceptions use immutable, hash-bound scoped records. No scoped record can approve scientific
+  handoff, the authoritative Phase 04 target, or flight/HSE work.
 - Phase 04 is a deterministic fixed-grid legacy comparator. It is not the hand-drawn prospect
   workflow described by the Phase 04 guide and is not a replacement for Phase 10 final ranking.
 - The master-aligned Phase 04 prospect-polygon target is specified separately in
@@ -84,6 +92,10 @@ dirty worktree. Never invent authority, identity, review, approval, dates, evide
   never an execution input.
 - Phase 04 rejects AI-lifecycle and handoff evidence until a separately approved authoritative
   integration adapter exists.
+- Run manifest v2.2 binds policy, per-phase execution mode, and every used scoped authorization.
+  Publication manifest v1.2 preserves those identities and forces scaffold, support-evidence, and
+  legacy-comparator packages to remain provisional; v2.0/v2.1 runs and v1.1 packages remain
+  readable and verifiable.
 
 The operating principle is: AI proposes; deterministic code transforms, measures, validates, and
 packages; qualified humans approve high-impact geological outputs.

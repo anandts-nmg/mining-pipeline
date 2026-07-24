@@ -26,6 +26,13 @@ from typing import cast
 from pydantic import ValidationError
 
 from buduunkhad import __version__
+from buduunkhad.core.execution_policy import (
+    ExecutionAuthorization,
+    ExecutionMode,
+    ExecutionPolicyBinding,
+    legacy_execution_mode,
+    validate_execution_policy_binding,
+)
 from buduunkhad.core.publication_manifest import (
     AGGREGATION_NOTICE,
     PUBLICATION_MANIFEST_FORMAT_VERSION,
@@ -87,6 +94,8 @@ class _RunPhaseRecord:
     gate_provisional: bool
     human_review_or_qaqc_pending: bool
     pending_human_review_or_qaqc_count: int | None
+    execution_mode: ExecutionMode
+    authorization_ids: tuple[str, ...]
 
     @property
     def binding_mode(self) -> SourceBindingMode:
@@ -426,6 +435,11 @@ def _load_run_phase_records(
             pending_count = phase.get("pending_human_review_or_qaqc_count")
             if pending_count is not None and (type(pending_count) is not int or pending_count < 0):
                 raise PublishError(f"run manifest has an invalid pending count: {manifest_path}")
+            execution_mode, authorization_ids = _source_phase_execution_provenance(
+                data,
+                cast(dict[str, object], phase),
+                phase_id,
+            )
             has_artifact_inventory = "output_artifacts" in phase
             artifact_values = phase.get("output_artifacts")
             output_artifacts: tuple[RunOutputArtifact, ...] | None
@@ -493,6 +507,8 @@ def _load_run_phase_records(
                 gate_provisional=gate.get("provisional") is True,
                 human_review_or_qaqc_pending=phase.get("qaqc_pending") is True,
                 pending_human_review_or_qaqc_count=pending_count,
+                execution_mode=execution_mode,
+                authorization_ids=authorization_ids,
             )
             records.setdefault(phase_id, []).append(record)
     return records
@@ -950,6 +966,8 @@ def _assemble_publication(
                 gate_provisional=record.gate_provisional,
                 human_review_or_qaqc_pending=record.human_review_or_qaqc_pending,
                 pending_human_review_or_qaqc_count=record.pending_human_review_or_qaqc_count,
+                execution_mode=record.execution_mode,
+                authorization_ids=record.authorization_ids,
                 source_binding_mode=record.binding_mode,
                 outputs=phase_outputs,
             )
@@ -1155,6 +1173,70 @@ def _package_file_claims(manifest: PublicationManifest) -> tuple[str, ...]:
     return tuple(claims)
 
 
+def _source_phase_execution_provenance(
+    source_data: dict[str, object],
+    source_phase: dict[str, object],
+    phase_id: str,
+) -> tuple[ExecutionMode, tuple[str, ...]]:
+    """Resolve and validate execution-purpose provenance from a copied run manifest."""
+
+    if source_data.get("manifest_format_version") != "2.2.0":
+        forbidden = {"execution_policy", "authorizations", "used_authorization_ids"}
+        if forbidden & set(source_data) or {
+            "execution_mode",
+            "authorization_ids",
+        } & set(source_phase):
+            raise PublishError("legacy source run cannot claim execution-policy authorization")
+        return legacy_execution_mode(phase_id), ()
+    try:
+        policy = ExecutionPolicyBinding.model_validate(source_data.get("execution_policy"))
+        raw_authorizations = source_data.get("authorizations")
+        if not isinstance(raw_authorizations, list):
+            raise ValueError("authorization inventory is not a list")
+        parsed = tuple(ExecutionAuthorization.model_validate(value) for value in raw_authorizations)
+        mode = ExecutionMode(source_phase.get("execution_mode"))
+    except (TypeError, ValidationError, ValueError) as exc:
+        raise PublishError("source run execution-policy provenance is invalid") from exc
+    policy_modes = {item.phase_id: item.execution_mode for item in policy.phase_modes}
+    selected = source_data.get("selected_phases")
+    if not isinstance(selected, list) or tuple(policy_modes) != tuple(selected):
+        raise PublishError("source run execution-policy phase selection is inconsistent")
+    try:
+        validate_execution_policy_binding(
+            policy,
+            cast(list[str], selected),
+            dry_run=False,
+        )
+    except RuntimeError as exc:
+        raise PublishError("source run execution-policy binding is unauthorized") from exc
+    if policy_modes.get(phase_id) is not mode:
+        raise PublishError(f"source run execution mode mismatch for Phase {phase_id}")
+    authorization_map = {item.authorization_id: item for item in parsed}
+    raw_used = source_data.get("used_authorization_ids")
+    raw_phase_ids = source_phase.get("authorization_ids")
+    if (
+        len(authorization_map) != len(parsed)
+        or not isinstance(raw_used, list)
+        or not all(isinstance(item, str) for item in raw_used)
+        or len(set(raw_used)) != len(raw_used)
+        or set(raw_used) != set(authorization_map)
+        or not isinstance(raw_phase_ids, list)
+        or not all(isinstance(item, str) for item in raw_phase_ids)
+    ):
+        raise PublishError("source run authorization inventory is inconsistent")
+    authorization_ids = tuple(cast(list[str], raw_phase_ids))
+    if (
+        tuple(sorted(set(authorization_ids))) != authorization_ids
+        or not set(authorization_ids) <= set(raw_used)
+        or any(
+            phase_id not in authorization_map[identity].scope_phase_ids
+            for identity in authorization_ids
+        )
+    ):
+        raise PublishError(f"source run authorization mismatch for Phase {phase_id}")
+    return mode, authorization_ids
+
+
 def verify_publication_package(package_root: Path) -> PublicationManifest:
     """Verify source provenance, published bytes, deterministic metadata, and package contents."""
 
@@ -1189,7 +1271,17 @@ def verify_publication_package(package_root: Path) -> PublicationManifest:
         ]
         if len(matching) != 1:
             raise PublishError(f"source run phase identity is ambiguous for Phase {phase.phase_id}")
-        source_phase = matching[0]
+        source_phase = cast(dict[str, object], matching[0])
+        source_execution_mode, source_authorization_ids = _source_phase_execution_provenance(
+            source_data, source_phase, phase.phase_id
+        )
+        if (
+            source_execution_mode is not phase.execution_mode
+            or source_authorization_ids != phase.authorization_ids
+        ):
+            raise PublishError(
+                f"source run execution-policy provenance mismatch for Phase {phase.phase_id}"
+            )
         source_gate = source_phase.get("gate")
         if (
             source_phase.get("status") != phase.execution_status
@@ -1375,12 +1467,22 @@ def render_publication_index(manifest: PublicationManifest) -> bytes:
             f"{phase.phase_id}={phase.gate_state} from run {phase.source_run_id} "
             f"[{phase.source_binding_mode}]"
         )
+        if manifest.manifest_format_version != "1.1.0":
+            tag += f" [mode={phase.execution_mode.value}]"
         if phase.gate_provisional:
             tag += " (provisional)"
         if phase.human_review_or_qaqc_pending:
             tag += " (human review / QA/QC pending)"
         parts.append(tag)
     lines.append(f"**Source phase gates:** {', '.join(parts)}")
+    if manifest.manifest_format_version != "1.1.0":
+        lines.extend(
+            [
+                "",
+                "Only `authoritative` source phases can support APPROVED package status;",
+                "scaffold, support-evidence, and legacy-comparator outputs remain provisional.",
+            ]
+        )
     lines.append("")
     lines.append("## Files")
     lines.append("")

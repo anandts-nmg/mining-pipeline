@@ -53,6 +53,7 @@ def test_installed_wheel_loads_packaged_prompt_registry(tmp_path: Path) -> None:
         "buduunkhad/methodology_data/authority.yaml",
         "buduunkhad/methodology_data/automation_boundaries.yaml",
         "buduunkhad/methodology_data/automation_readiness.yaml",
+        "buduunkhad/methodology_data/execution_policy.yaml",
         "buduunkhad/methodology_data/discrepancies.yaml",
         "buduunkhad/methodology_data/phase00.yaml",
         "buduunkhad/methodology_data/phase01.yaml",
@@ -92,6 +93,8 @@ from buduunkhad.core.evidence_manifest import (
     EVIDENCE_CATALOG_FORMAT_VERSION,
     EVIDENCE_MANIFEST_FORMAT_VERSION,
 )
+from buduunkhad.core.execution_policy import ExecutionMode, load_execution_policy
+from buduunkhad.core.publication_manifest import PUBLICATION_MANIFEST_FORMAT_VERSION
 from buduunkhad.core.run_storage import (
     RUN_MANIFEST_FORMAT_VERSION,
     SUPPORTED_RUN_MANIFEST_FORMAT_VERSIONS,
@@ -118,16 +121,20 @@ phase04 = load_phase_methodology("04")
 discrepancies = load_discrepancy_registry()
 phase04_migration = load_phase04_migration_contract()
 readiness = load_automation_readiness()
+execution_policy = load_execution_policy()
 phase02_processing = load_phase02_processing_contract()
 assert prompt.components[0].text
 assert critic.components[0].text
 assert vertical.components[0].text
 assert authority.sources
 assert phase05.phase_id == "05"
+assert buduunkhad.__version__ == "0.8.1"
 assert EVIDENCE_MANIFEST_FORMAT_VERSION == "1.0.0"
 assert EVIDENCE_CATALOG_FORMAT_VERSION == "1.0.0"
-assert RUN_MANIFEST_FORMAT_VERSION == "2.1.0"
-assert SUPPORTED_RUN_MANIFEST_FORMAT_VERSIONS == {{"2.0.0", "2.1.0"}}
+assert RUN_MANIFEST_FORMAT_VERSION == "2.2.0"
+assert SUPPORTED_RUN_MANIFEST_FORMAT_VERSIONS == {{"2.0.0", "2.1.0", "2.2.0"}}
+assert PUBLICATION_MANIFEST_FORMAT_VERSION == "1.2.0"
+assert execution_policy.phase_policies[4].default_real_mode is ExecutionMode.LEGACY_COMPARATOR
 binding = SourcePhaseBinding(
     phase_id="00",
     source_run_id="source-run",

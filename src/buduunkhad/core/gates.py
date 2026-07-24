@@ -1,8 +1,8 @@
 """Decision-gate evaluation and go/no-go logging.
 
 Invariant #6 (second half): each phase ends at a decision gate. A failing QA/QC
-check blocks advance; the runner will not proceed past a blocked gate unless an
-explicit ``--override`` is given, which is recorded on the decision.
+check blocks advance. The runtime runner supplies ``override=False`` and handles only exact,
+policy-permitted operational-exception records; the Boolean remains for direct legacy callers.
 """
 
 from __future__ import annotations
@@ -61,8 +61,8 @@ def evaluate_gate(
                                           ``pending_blocks`` requires completed human evidence
     - no items recorded                -> BLOCKED (nothing was checked)
 
-    ``pending_override_allowed`` applies only to pending-item blocks. A phase with a
-    non-overridable scientific handoff can also call this function with ``override=False``.
+    ``pending_override_allowed`` applies only to pending-item blocks. Runtime code never maps the
+    retired generic CLI flag to this Boolean; scientific handoff remains non-overridable.
     """
     if qaqc.has_failures:
         failed = [i.item for i in qaqc.items if i.decision.value == "Fail"]

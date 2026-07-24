@@ -1,0 +1,59 @@
+format_version: 1.0.0
+items:
+  - item_id: ENG-BACKLOG-004
+    title: Centralize execution policy and replace the generic override
+    status: implemented
+    priority: completed-foundation
+    depends_on:
+      - Truthful phase provenance and legacy-comparator language.
+      - Run-isolated outputs, immutable sealing and exact predecessor-run binding.
+      - Manifest-authorized accepted evidence and append-only catalog admission.
+    objective: >-
+      Make runtime permissions agree with the repository's methodology-readiness obligations,
+      distinguish execution purposes honestly, and prevent one generic operator flag from
+      waiving unrelated raw-integrity, operational, scientific or publication controls.
+    execution_modes:
+      - scaffold
+      - support-evidence
+      - legacy-comparator
+      - authoritative
+      - publication
+    implemented_work:
+      - Add a versioned execution-policy contract that references readiness obligations without
+        turning the readiness report itself into a gate or approval record.
+      - Resolve and record the permitted mode for every selected phase before creating run-side
+        effects; keep Phase 05 and other real stub execution unavailable.
+      - Add immutable RawIdentityTransition, OperationalException and DataGapAcknowledgement
+        records with actor, authorization, reason, exact subject, time, scope, expiry or
+        supersession and resulting permitted mode.
+      - Retire new uses of the generic --override flag without silently mapping it to a scoped
+        authorization; preserve read and verification compatibility for historical manifests.
+      - Give exception-eligible QA/QC checks stable identities and explicit control classes;
+        unknown or unclassified checks remain non-overridable.
+      - Bind execution-policy identity, phase modes, readiness obligations and authorization
+        identities into run creation, resume validation and publication identity.
+      - Keep support-evidence and legacy-comparator packages publishable only with truthful
+        provisional limitations; they can never produce an authoritative APPROVED package.
+    non_overridable_controls:
+      - Phase 03 scientific handoff and qualified geological approval.
+      - Phase 04 authoritative-workflow activation and methodology-owner approval.
+      - Flight, HSE and mission approval.
+      - Unknown, unclassified or scientific QA/QC failures.
+    compatibility:
+      - Preserve ordinary non-overridden CLI use while providing a clear migration error for
+        attempts to use the retired generic override.
+      - Keep historical run and publication manifests readable and verifiable.
+      - Use additive manifest versions when newly serialized identity fields require them.
+    acceptance:
+      - Runtime decisions and readiness obligations cannot disagree.
+      - Raw drift cannot be waived by an ordinary operational exception.
+      - An operational exception or data-gap acknowledgement cannot create scientific evidence
+        or approval.
+      - Phase 03 scientific blockers remain non-overridable.
+      - Phase 04 comparator outputs cannot enter authoritative publication.
+      - Resume fails if policy, mode, obligation or authorization identity changes.
+    non_goals:
+      - Resolve any existing METH-READY obligation or fabricate its required evidence.
+      - Change geological scoring, thresholds, geometry, raw identities or gate approvals.
+      - Enable a provider, external egress, Phase 05 implementation or unattended scientific
+        approval.

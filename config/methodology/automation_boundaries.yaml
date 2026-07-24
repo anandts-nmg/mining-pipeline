@@ -62,7 +62,7 @@ boundaries:
       - Becoming executable merely through a filename, layer name, or directory location.
     blocking_dependencies:
       - Human-digitized layers and the completed 03A score matrix.
-      - METH-READY-004, METH-READY-005 and METH-READY-006 block scientific handoff and cannot be bypassed by the ordinary operational override.
+      - METH-READY-004, METH-READY-005 and METH-READY-006 block scientific handoff and cannot be bypassed by a scoped operational exception; the generic runtime override is retired.
     status: partially-implemented
     migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
   - phase_id: "04"

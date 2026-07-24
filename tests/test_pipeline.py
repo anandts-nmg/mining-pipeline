@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -27,6 +27,24 @@ def test_later_phase_requires_exact_predecessor_run_binding(raw_archive):
 
     with pytest.raises(RuntimeError, match=r"predecessor-run selectors.*missing=\['00'\]"):
         run_pipeline(config, register, only=["01"], dry_run=False)
+
+
+def test_predecessor_rejects_forged_execution_policy_binding(raw_archive):
+    config, register, _raw = raw_archive
+    source = run_pipeline(config, register, only=["00"], dry_run=False)
+    path = config.runs_root / source.run_id / "run_manifest.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["execution_policy"]["policy_sha256"] = "f" * 64
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="execution-policy binding is unauthorized"):
+        run_pipeline(
+            config,
+            register,
+            only=["01"],
+            dry_run=False,
+            input_phase_runs={"00": source.run_id},
+        )
 
 
 def test_later_phase_reads_sealed_predecessor_not_compatibility_view(raw_archive):
@@ -207,7 +225,11 @@ def test_dry_run_builds_full_tree_and_manifest(project):
     assert man_path.exists()
     data = json.loads(man_path.read_text())
     assert data["dry_run"] is True
-    assert data["manifest_format_version"] == "2.1.0"
+    assert data["manifest_format_version"] == "2.2.0"
+    assert [item["execution_mode"] for item in data["execution_policy"]["phase_modes"]] == [
+        "scaffold"
+    ] * 13
+    assert all(phase["execution_mode"] == "scaffold" for phase in data["phases"])
     assert data["evidence_manifests"] == []
     assert data["run_layout_version"] == "run-isolated-v1"
     assert len(data["phases"]) == 13
@@ -244,6 +266,12 @@ def test_resume_keeps_run_manifest_v2_0_compatibility(raw_archive):
     data["manifest_format_version"] = "2.0.0"
     data.pop("evidence_manifests", None)
     data.pop("source_phases", None)
+    data.pop("execution_policy")
+    data.pop("authorizations")
+    data.pop("used_authorization_ids")
+    for phase in data["phases"]:
+        phase.pop("execution_mode")
+        phase.pop("authorization_ids")
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
     resumed = run_pipeline(
@@ -260,20 +288,16 @@ def test_resume_keeps_run_manifest_v2_0_compatibility(raw_archive):
     assert resumed.evidence_manifests == []
 
 
-@pytest.mark.parametrize("override", [False, True])
-def test_runner_stops_phase03_before_phase04_despite_operational_override(
-    raw_archive, override: bool
-):
+def test_runner_stops_phase03_before_phase04(raw_archive):
     """The real runner must enforce Phase 03's non-overridable scientific handoff gate."""
 
     config, register, _raw = raw_archive
-    run_id = f"strict-phase03-override-{str(override).lower()}"
+    run_id = "strict-phase03-scientific-gate"
     manifest = run_pipeline(
         config,
         register,
         only=["00", "01", "03", "04"],
         dry_run=False,
-        override=override,
         run_id=run_id,
     )
 
@@ -291,6 +315,71 @@ def test_runner_stops_phase03_before_phase04_despite_operational_override(
     run_log = (config.runs_root / run_id / "logs" / "run.log").read_text(encoding="utf-8")
     assert "Phase 03 gate blocked advance" in run_log
     assert "use --override" not in run_log
+
+
+def test_retired_override_fails_before_creating_a_run(raw_archive):
+    from buduunkhad.core.execution_policy import ExecutionPolicyError
+
+    config, register, _raw = raw_archive
+    run_id = "retired-override"
+    with pytest.raises(ExecutionPolicyError, match="--override is retired"):
+        run_pipeline(
+            config,
+            register,
+            only=["00"],
+            dry_run=False,
+            override=True,
+            run_id=run_id,
+        )
+    assert not (config.runs_root / run_id).exists()
+
+
+def test_exact_operational_exception_is_scoped_and_recorded(raw_archive, monkeypatch):
+    from buduunkhad.core.execution_policy import (
+        AuthorizationAction,
+        ExecutionAuthorization,
+        ExecutionMode,
+        phase_gate_subject,
+    )
+    from buduunkhad.phases.phase01_data_audit import Phase01DataAudit
+
+    config, register, _raw = raw_archive
+    failure_item = "Phase 1 handoff package complete"
+
+    def failed_qaqc(self, ctx):  # noqa: ARG001
+        report = new_report("01", "Data audit")
+        report.add(failure_item, "Synthetic acceptance", decision=Decision.FAIL)
+        return report
+
+    monkeypatch.setattr(Phase01DataAudit, "qaqc", failed_qaqc)
+    authorization = ExecutionAuthorization.create(
+        action=AuthorizationAction.OPERATIONAL_EXCEPTION,
+        actor="pipeline-operator-test",
+        authorization_reference="TEST-OPS-001",
+        reason="Exercise exact bounded operational exception handling.",
+        subject=phase_gate_subject("01", "OPERATIONAL-EXCEPTION-01-HANDOFF-PACKAGE"),
+        recorded_at=datetime.now(UTC),
+        scope_phase_ids=("01",),
+        validity="until-expiry",
+        expires_at=datetime.now(UTC) + timedelta(days=1),
+        resulting_permitted_mode=ExecutionMode.SCAFFOLD,
+    )
+    path = config.base_dir / "operational-exception.json"
+    path.write_text(authorization.model_dump_json(indent=2) + "\n", encoding="utf-8")
+
+    manifest = run_pipeline(
+        config,
+        register,
+        only=["00", "01"],
+        dry_run=False,
+        authorization_paths=[path],
+    )
+
+    assert manifest.stopped_at == ""
+    assert manifest.used_authorization_ids == [authorization.authorization_id]
+    assert manifest.phases[1].gate_overridden is True
+    assert manifest.phases[1].authorization_ids == [authorization.authorization_id]
+    assert "AUTHORIZED OPERATIONAL EXCEPTION" in manifest.phases[1].gate_reason
 
 
 def test_phase04_cannot_bind_a_gate_blocked_phase03_source(raw_archive):
@@ -352,6 +441,7 @@ def test_successful_run_manifest_seals_every_publishable_output_and_runner_qaqc(
         "methodology_contract_sha256",
         "code_version",
         "parameters_sha256",
+        "execution_policy_sha256",
     }
 
 
@@ -397,6 +487,72 @@ def test_unexpected_missing_still_fails(raw_archive):
         run_pipeline(config, register, only=["00"], dry_run=False)
 
 
+def test_unexpected_gap_requires_exact_expiring_acknowledgement(raw_archive):
+    from buduunkhad.core import raw_guard, registers
+    from buduunkhad.core.execution_policy import (
+        AuthorizationAction,
+        ExecutionAuthorization,
+        ExecutionMode,
+    )
+    from buduunkhad.pipeline import _sha256_json, baseline_checksum_path
+
+    config, register, raw_root = raw_archive
+    source = run_pipeline(config, register, only=["00"], dry_run=False)
+    boundary = next(r for r in register if r.no == config.boundary.input_no)
+    (raw_root / boundary.evidence_group / boundary.filename).unlink()
+    now = datetime.now(UTC)
+    authorization = ExecutionAuthorization.create(
+        action=AuthorizationAction.DATA_GAP_ACKNOWLEDGEMENT,
+        actor="data-custodian-test",
+        authorization_reference="TEST-GAP-001",
+        reason="Exercise an exact synthetic missing-input acknowledgement.",
+        subject=f"raw-input:{boundary.filename}",
+        recorded_at=now,
+        scope_phase_ids=("01",),
+        validity="until-expiry",
+        expires_at=now + timedelta(days=1),
+        resulting_permitted_mode=ExecutionMode.SCAFFOLD,
+    )
+    path = config.base_dir / "data-gap-acknowledgement.json"
+    path.write_text(authorization.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    old = registers.read_checksum_register_csv(baseline_checksum_path(config))
+    current = {
+        item.relative_path: item.sha256
+        for item in raw_guard.build_checksum_records(config.raw_root)
+    }
+    transition = ExecutionAuthorization.create(
+        action=AuthorizationAction.RAW_IDENTITY_TRANSITION,
+        actor="data-custodian-test",
+        authorization_reference="TEST-RAW-002",
+        reason="Bind the synthetic missing-input test to the exact changed archive.",
+        subject="raw-archive",
+        old_identity_sha256=_sha256_json(old),
+        new_identity_sha256=_sha256_json(current),
+        recorded_at=now,
+        scope_phase_ids=("01",),
+        validity="until-superseded",
+        resulting_permitted_mode=ExecutionMode.SCAFFOLD,
+    )
+    transition_path = config.base_dir / "raw-transition-for-gap.json"
+    transition_path.write_text(transition.model_dump_json(indent=2) + "\n", encoding="utf-8")
+
+    manifest = run_pipeline(
+        config,
+        register,
+        only=["01"],
+        dry_run=False,
+        input_phase_runs={"00": source.run_id},
+        authorization_paths=[path, transition_path],
+    )
+
+    assert set(manifest.used_authorization_ids) == {
+        authorization.authorization_id,
+        transition.authorization_id,
+    }
+    assert set(manifest.phases[0].authorization_ids) == set(manifest.used_authorization_ids)
+    assert any("explicitly acknowledged" in warning for warning in manifest.warnings)
+
+
 def test_missing_data_message_flags_incomplete_walk(raw_archive):
     # When the walk finds some inputs yet is missing several the manifest records as PRESENT
     # (the cloud virtual-FS under-enumeration failure mode, e.g. Drive for Desktop), the error
@@ -414,16 +570,11 @@ def test_missing_data_message_flags_incomplete_walk(raw_archive):
 
 
 def test_stub_phase_real_run_records_not_implemented(raw_archive):
+    from buduunkhad.core.execution_policy import ExecutionPolicyError
+
     config, register, _raw = raw_archive
-    # Phase 05 is still a stub -> real run raises NotImplementedError (Phases 00-04 are built).
-    manifest = run_pipeline(config, register, only=["05"], dry_run=False)
-    assert manifest.stopped_at == "05"
-    assert manifest.phases[0].status == "not-implemented"
-    assert manifest.phases[0].output_artifacts == []
-    assert "build pending" in manifest.phases[0].error
-    run_dir = config.runs_root / manifest.run_id
-    assert (run_dir / "staging" / "05").is_dir()
-    assert not (run_dir / "phases" / "05").exists()
+    with pytest.raises(ExecutionPolicyError, match="Phase 05 has no real execution mode"):
+        run_pipeline(config, register, only=["05"], dry_run=False)
 
 
 def test_default_run_ids_are_uuidv7_and_distinct_in_the_same_second():

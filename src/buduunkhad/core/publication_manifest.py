@@ -10,9 +10,11 @@ from typing import Final, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from buduunkhad.ai.fingerprint import sha256_value
+from buduunkhad.core.execution_policy import ExecutionMode, legacy_execution_mode
 from buduunkhad.core.run_artifacts import canonical_relative_path
 
-PUBLICATION_MANIFEST_FORMAT_VERSION: Final[Literal["1.1.0"]] = "1.1.0"
+PUBLICATION_MANIFEST_FORMAT_VERSION: Final[Literal["1.2.0"]] = "1.2.0"
+SUPPORTED_PUBLICATION_MANIFEST_FORMAT_VERSIONS: Final = frozenset({"1.1.0", "1.2.0"})
 QGZ_FLAT_DATASOURCE_REWRITE: Final[Literal["qgz-flat-datasource-rewrite-v1"]] = (
     "qgz-flat-datasource-rewrite-v1"
 )
@@ -110,6 +112,8 @@ class PublishedPhase(BaseModel):
     gate_provisional: bool
     human_review_or_qaqc_pending: bool
     pending_human_review_or_qaqc_count: int | None = Field(default=None, ge=0)
+    execution_mode: ExecutionMode
+    authorization_ids: tuple[str, ...]
     source_binding_mode: SourceBindingMode
     outputs: tuple[PublishedOutput, ...] = Field(min_length=1)
 
@@ -145,6 +149,13 @@ class PublishedPhase(BaseModel):
             raise ValueError(f"source output path does not belong to {expected_package_tag}")
         if paths != tuple(sorted(paths)):
             raise ValueError("published phase outputs must be sorted by path")
+        if tuple(sorted(set(self.authorization_ids))) != self.authorization_ids:
+            raise ValueError("published phase authorization IDs must be unique and sorted")
+        if any(
+            re.fullmatch(r"exec-auth-[0-9a-f]{64}", identity) is None
+            for identity in self.authorization_ids
+        ):
+            raise ValueError("published phase authorization ID is invalid")
         if self.source_binding_mode == "SHA256_BOUND":
             if any(item.source_sha256 is None for item in self.outputs):
                 raise ValueError("SHA256-bound outputs require source hashes and sizes")
@@ -163,7 +174,9 @@ class CompatibilityRunManifest(BaseModel):
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
-def publication_status_for(phases: tuple[PublishedPhase, ...]) -> PublicationStatus:
+def publication_status_for(
+    phases: tuple[PublishedPhase, ...], *, enforce_execution_modes: bool = True
+) -> PublicationStatus:
     """Derive a conservative package state without treating automation as approval."""
 
     if any(phase.human_review_or_qaqc_pending for phase in phases):
@@ -171,6 +184,10 @@ def publication_status_for(phases: tuple[PublishedPhase, ...]) -> PublicationSta
     if any(phase.gate_provisional for phase in phases):
         return "PROVISIONAL"
     if any(phase.source_binding_mode == "LEGACY_PATH_ONLY" for phase in phases):
+        return "PROVISIONAL"
+    if enforce_execution_modes and any(
+        phase.execution_mode is not ExecutionMode.AUTHORITATIVE for phase in phases
+    ):
         return "PROVISIONAL"
     if phases and all(phase.gate_state.upper() == "APPROVED" for phase in phases):
         return "APPROVED"
@@ -186,17 +203,26 @@ def publication_id_for(
     package_status: PublicationStatus,
     compatibility_run_manifest: CompatibilityRunManifest,
     superseded_publication_id: str | None,
+    manifest_format_version: str = PUBLICATION_MANIFEST_FORMAT_VERSION,
 ) -> str:
     """Return the stable package identity; publication time is deliberately excluded."""
 
+    if manifest_format_version not in SUPPORTED_PUBLICATION_MANIFEST_FORMAT_VERSIONS:
+        raise ValueError("publication manifest format version is unsupported")
+    phase_identities: object = phases
+    if manifest_format_version == "1.1.0":
+        phase_identities = tuple(
+            phase.model_dump(mode="python", exclude={"execution_mode", "authorization_ids"})
+            for phase in phases
+        )
     digest = sha256_value(
         {
-            "manifest_format_version": PUBLICATION_MANIFEST_FORMAT_VERSION,
+            "manifest_format_version": manifest_format_version,
             "project": project,
             "package_version": package_version,
             "git_commit_sha": git_commit_sha,
             "included_phase_ids": tuple(phase.phase_id for phase in phases),
-            "phases": phases,
+            "phases": phase_identities,
             "package_status": package_status,
             "compatibility_run_manifest": compatibility_run_manifest,
             "aggregation_notice": AGGREGATION_NOTICE,
@@ -211,7 +237,7 @@ class PublicationManifest(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    manifest_format_version: Literal["1.1.0"]
+    manifest_format_version: Literal["1.1.0", "1.2.0"]
     project: PublicationProjectReference
     package_version: str = Field(pattern=r"^\d+\.\d+\.\d+$")
     git_commit_sha: str | None = Field(default=None, pattern=r"^[0-9a-f]{40,64}$")
@@ -229,14 +255,32 @@ class PublicationManifest(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _raw_output_paths_are_globally_unique(cls, value: object) -> object:
-        """Reject duplicate claims before nested ownership or publication-ID validation."""
+    def _prepare_legacy_and_check_raw_paths(cls, value: object) -> object:
+        """Upgrade legacy phase records and reject duplicate claims before ID validation."""
 
         if not isinstance(value, dict):
             return value
         raw_phases = value.get("phases")
         if not isinstance(raw_phases, (list, tuple)):
             return value
+        if value.get("manifest_format_version") == "1.1.0":
+            upgraded: list[object] = []
+            for raw_phase in raw_phases:
+                if isinstance(raw_phase, dict):
+                    phase = dict(raw_phase)
+                    phase_id = phase.get("phase_id")
+                    if isinstance(phase_id, str):
+                        phase.setdefault(
+                            "execution_mode",
+                            legacy_execution_mode(phase_id).value,
+                        )
+                    phase.setdefault("authorization_ids", [])
+                    upgraded.append(phase)
+                else:
+                    upgraded.append(raw_phase)
+            value = dict(value)
+            value["phases"] = upgraded
+            raw_phases = upgraded
         paths: list[str] = []
         for raw_phase in raw_phases:
             if isinstance(raw_phase, PublishedPhase):
@@ -284,7 +328,10 @@ class PublicationManifest(BaseModel):
         ]
         if not matching_compatibility_sources:
             raise ValueError("compatibility manifest must be one selected source run")
-        expected_status = publication_status_for(self.phases)
+        expected_status = publication_status_for(
+            self.phases,
+            enforce_execution_modes=self.manifest_format_version != "1.1.0",
+        )
         if self.package_status != expected_status:
             raise ValueError("publication package status is inconsistent with its phase gates")
         expected_id = publication_id_for(
@@ -295,6 +342,7 @@ class PublicationManifest(BaseModel):
             package_status=self.package_status,
             compatibility_run_manifest=self.compatibility_run_manifest,
             superseded_publication_id=self.superseded_publication_id,
+            manifest_format_version=self.manifest_format_version,
         )
         if self.publication_id != expected_id:
             raise ValueError("publication ID does not match the manifest identity fields")

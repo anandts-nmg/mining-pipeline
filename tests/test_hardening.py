@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 
 import pytest
 
-from buduunkhad.core import winpath
+from buduunkhad.core import raw_guard, registers, winpath
+from buduunkhad.core.execution_policy import (
+    AuthorizationAction,
+    ExecutionAuthorization,
+    ExecutionMode,
+    ExecutionPolicyError,
+)
 from buduunkhad.core.raw_guard import RawIntegrityError
 from buduunkhad.pipeline import (
     PathTooLongError,
+    _sha256_json,
     baseline_checksum_path,
     preflight_path_lengths,
     run_pipeline,
@@ -78,7 +86,7 @@ def test_preflight_skipped_when_enabled(project):
 # --------------------------------------------------------------------------- #
 
 
-def test_raw_integrity_blocks_on_drift_and_override_bypasses(raw_archive):
+def test_raw_integrity_requires_exact_data_custodian_transition(raw_archive):
     config, register, raw_root = raw_archive
 
     # first real run of Phase 00 writes the SHA-256 baseline
@@ -93,9 +101,39 @@ def test_raw_integrity_blocks_on_drift_and_override_bypasses(raw_archive):
     with pytest.raises(RawIntegrityError):
         run_pipeline(config, register, only=["00"], dry_run=False)
 
-    # --override proceeds despite drift
-    manifest = run_pipeline(config, register, only=["00"], dry_run=False, override=True)
+    with pytest.raises(ExecutionPolicyError, match="--override is retired"):
+        run_pipeline(config, register, only=["00"], dry_run=False, override=True)
+
+    old = registers.read_checksum_register_csv(baseline_checksum_path(config))
+    current = {
+        item.relative_path: item.sha256
+        for item in raw_guard.build_checksum_records(config.raw_root)
+    }
+    authorization = ExecutionAuthorization.create(
+        action=AuthorizationAction.RAW_IDENTITY_TRANSITION,
+        actor="data-custodian-test",
+        authorization_reference="TEST-RAW-001",
+        reason="Synthetic test authorizes the exact changed archive identity.",
+        subject="raw-archive",
+        old_identity_sha256=_sha256_json(old),
+        new_identity_sha256=_sha256_json(current),
+        recorded_at=datetime.now(UTC),
+        scope_phase_ids=("00",),
+        validity="until-superseded",
+        resulting_permitted_mode=ExecutionMode.AUTHORITATIVE,
+    )
+    authorization_path = config.base_dir / "raw-transition.json"
+    authorization_path.write_text(authorization.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    manifest = run_pipeline(
+        config,
+        register,
+        only=["00"],
+        dry_run=False,
+        authorization_paths=[authorization_path],
+    )
     assert manifest.phases[0].phase_id == "00"
+    assert manifest.used_authorization_ids == [authorization.authorization_id]
+    assert manifest.phases[0].authorization_ids == [authorization.authorization_id]
 
 
 def test_first_real_run_has_no_baseline(raw_archive):

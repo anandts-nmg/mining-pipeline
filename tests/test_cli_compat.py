@@ -81,13 +81,31 @@ def test_run_dry_run_uses_legacy_defaults(project) -> None:
     assert "05  dry-run" in result.stdout
 
 
-def test_run_and_single_phase_help_expose_exact_predecessor_binding() -> None:
+def test_run_and_single_phase_help_expose_policy_and_exact_bindings() -> None:
     run_help = runner.invoke(app, ["run", "--help"])
     phase_help = runner.invoke(app, ["phase04", "--help"])
 
     assert run_help.exit_code == phase_help.exit_code == 0
     assert "--input-run" in run_help.stdout
     assert "--input-run" in phase_help.stdout
+    assert "--phase-mode" in run_help.stdout
+    assert "--execution-mode" in phase_help.stdout
+    assert "--authorization" in run_help.stdout
+    assert "--authorization" in phase_help.stdout
+    assert "Retired" in run_help.stdout
+
+
+def test_cli_generic_override_fails_closed_without_creating_run(project) -> None:
+    config, _register, work = project
+    config_path = work / "config" / "project.yaml"
+    result = runner.invoke(
+        app,
+        ["run", "--config", str(config_path), "--dry-run", "--override"],
+    )
+
+    assert result.exit_code == 2
+    assert "--override is retired" in result.stdout
+    assert not config.runs_root.exists()
 
 
 def test_manual_evidence_registration_requires_actor_and_reason() -> None:

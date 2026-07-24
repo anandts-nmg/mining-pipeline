@@ -1,8 +1,8 @@
 """Phase registry and the ordered pipeline runner.
 
 Runs phases in order 00 -> 99, honouring the decision gate before advancing,
-supporting ``--from/--to/--only`` and ``--dry-run/--override``, and writing a
-per-run log plus a top-level run manifest.
+supporting explicit execution modes and immutable scoped authorizations, and writing a per-run
+log plus a top-level run manifest.
 """
 
 from __future__ import annotations
@@ -25,6 +25,19 @@ from buduunkhad.core.evidence_manifest import (
     EvidenceManifestBinding,
     EvidenceManifestError,
     evidence_bindings,
+)
+from buduunkhad.core.execution_policy import (
+    AuthorizationAction,
+    ExecutionAuthorization,
+    ExecutionMode,
+    ExecutionPolicyBinding,
+    ExecutionPolicyError,
+    legacy_execution_mode,
+    load_execution_authorizations,
+    load_execution_policy,
+    phase_gate_subject,
+    resolve_execution_policy,
+    validate_authorizations_for_run,
 )
 from buduunkhad.core.gates import GateDecision, GateStatus
 from buduunkhad.core.qaqc import Decision
@@ -108,6 +121,7 @@ class PhaseOutcome:
     phase_id: str
     name: str
     mode: str
+    execution_mode: ExecutionMode
     status: str
     outputs: list[str] = field(default_factory=list)
     output_artifacts: list[RunOutputArtifact] = field(default_factory=list)
@@ -122,6 +136,7 @@ class PhaseOutcome:
     gate_reason: str = ""
     gate_overridden: bool = False
     gate_provisional: bool = False
+    authorization_ids: list[str] = field(default_factory=list)
     error: str = ""
 
     def as_dict(self) -> dict[str, object]:
@@ -129,6 +144,7 @@ class PhaseOutcome:
             "phase_id": self.phase_id,
             "name": self.name,
             "mode": self.mode,
+            "execution_mode": self.execution_mode.value,
             "status": self.status,
             "outputs": self.outputs,
             "output_artifacts": [
@@ -144,6 +160,7 @@ class PhaseOutcome:
                 "overridden": self.gate_overridden,
                 "provisional": self.gate_provisional,
             },
+            "authorization_ids": self.authorization_ids,
             "error": self.error,
         }
 
@@ -167,6 +184,9 @@ class RunManifest:
     execution_identity: dict[str, str] = field(default_factory=dict)
     evidence_manifests: list[EvidenceManifestBinding] = field(default_factory=list)
     source_phases: list[SourcePhaseBinding] = field(default_factory=list)
+    execution_policy: ExecutionPolicyBinding | None = None
+    authorizations: list[ExecutionAuthorization] = field(default_factory=list)
+    used_authorization_ids: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, object]:
         value: dict[str, object] = {
@@ -189,6 +209,12 @@ class RunManifest:
                 item.model_dump(mode="json") for item in self.evidence_manifests
             ]
             value["source_phases"] = [item.model_dump(mode="json") for item in self.source_phases]
+        if self.manifest_format_version == "2.2.0":
+            if self.execution_policy is None:
+                raise ValueError("run manifest v2.2 requires an execution-policy binding")
+            value["execution_policy"] = self.execution_policy.model_dump(mode="json")
+            value["authorizations"] = [item.model_dump(mode="json") for item in self.authorizations]
+            value["used_authorization_ids"] = self.used_authorization_ids
         return value
 
 
@@ -319,13 +345,18 @@ def baseline_checksum_path(config: ProjectConfig) -> Path:
 
 
 def verify_raw_integrity(
-    config: ProjectConfig, *, override: bool, logger: logging.Logger
+    config: ProjectConfig,
+    *,
+    authorizations: tuple[ExecutionAuthorization, ...],
+    selected_phases: list[str],
+    used_authorization_ids: set[str],
+    logger: logging.Logger,
 ) -> raw_guard.IntegrityResult | None:
     """Verify raw_root against the Phase 00 SHA-256 baseline, if one exists.
 
     Enforces the read-only invariant across runs: if a raw file changed or vanished
-    since it was archived, a real run stops loudly (unless ``override``). Returns the
-    integrity result, or ``None`` when there is no baseline yet (first run).
+    since it was archived, a real run stops loudly unless exact raw-identity transition records
+    cover every selected phase. Returns the result, or ``None`` when there is no baseline yet.
     """
     expected = registers.read_checksum_register_csv(baseline_checksum_path(config))
     if not expected:
@@ -337,11 +368,32 @@ def verify_raw_integrity(
     msg = (
         f"Raw integrity check failed vs baseline: {result.summary()}. "
         f"changed={result.mismatched[:5]} missing={result.missing[:5]}. "
-        "Re-run Phase 00 to refresh the baseline if this change is intentional, "
-        "or pass --override to proceed."
+        "Create an exact data-custodian RawIdentityTransition before changing the baseline."
     )
-    if override:
-        logger.warning("OVERRIDE: proceeding despite raw integrity drift. %s", msg)
+    current = {
+        item.relative_path: item.sha256
+        for item in raw_guard.build_checksum_records(config.raw_root)
+    }
+    old_identity = _sha256_json(expected)
+    new_identity = _sha256_json(current)
+    matching = tuple(
+        item
+        for item in authorizations
+        if item.action is AuthorizationAction.RAW_IDENTITY_TRANSITION
+        and item.subject == "raw-archive"
+        and item.old_identity_sha256 == old_identity
+        and item.new_identity_sha256 == new_identity
+    )
+    covered = {phase for item in matching for phase in item.scope_phase_ids}
+    if set(selected_phases) <= covered:
+        used_authorization_ids.update(item.authorization_id for item in matching)
+        logger.warning(
+            "Scoped raw identity transition accepted for %s; old=%s new=%s. %s",
+            selected_phases,
+            old_identity,
+            new_identity,
+            msg,
+        )
         return result
     logger.error(msg)
     raise RawIntegrityError(msg)
@@ -491,14 +543,16 @@ def _execution_identity(
     *,
     selected_phases: list[str],
     dry_run: bool,
-    override: bool,
+    execution_policy: ExecutionPolicyBinding,
+    authorizations: tuple[ExecutionAuthorization, ...],
     selected_evidence: tuple[EvidenceManifestBinding, ...] = (),
     source_phases: tuple[SourcePhaseBinding, ...] = (),
 ) -> dict[str, str]:
     parameters = {
         "selected_phases": selected_phases,
         "dry_run": dry_run,
-        "override": override,
+        "execution_policy": execution_policy.model_dump(mode="json"),
+        "authorizations": [item.model_dump(mode="json") for item in authorizations],
     }
     if selected_evidence:
         parameters["evidence_manifests"] = [
@@ -514,7 +568,12 @@ def _execution_identity(
         "methodology_contract_sha256": _methodology_contract_identity(config),
         "code_version": _code_identity(),
         "parameters_sha256": _sha256_json(parameters),
+        "execution_policy_sha256": execution_policy.policy_sha256,
     }
+    if authorizations:
+        identity["authorizations_sha256"] = _sha256_json(
+            [item.model_dump(mode="json") for item in authorizations]
+        )
     if selected_evidence:
         identity["evidence_manifests_sha256"] = _sha256_json(
             [item.model_dump(mode="json") for item in selected_evidence]
@@ -565,7 +624,9 @@ def _resolve_source_phases(
     return tuple(resolved)
 
 
-def _phase_outcome_from_dict(value: dict[str, Any]) -> PhaseOutcome:
+def _phase_outcome_from_dict(
+    value: dict[str, Any], *, format_version: str, dry_run: bool
+) -> PhaseOutcome:
     gate = value.get("gate")
     if not isinstance(gate, dict):
         raise ResumeError("run manifest phase gate is malformed")
@@ -576,11 +637,31 @@ def _phase_outcome_from_dict(value: dict[str, Any]) -> PhaseOutcome:
     outputs = value.get("outputs")
     if not isinstance(outputs, list) or not all(isinstance(item, str) for item in outputs):
         raise ResumeError("run manifest phase output inventory is malformed")
+    raw_authorizations = value.get("authorization_ids", [])
+    if not isinstance(raw_authorizations, list) or not all(
+        isinstance(item, str) for item in raw_authorizations
+    ):
+        raise ResumeError("run manifest phase authorization inventory is malformed")
+    if format_version != "2.2.0" and (
+        raw_authorizations or "execution_mode" in value or "authorization_ids" in value
+    ):
+        raise ResumeError("legacy run phase cannot claim execution-policy authorization")
+    if format_version == "2.2.0" and tuple(
+        sorted(set(cast(list[str], raw_authorizations)))
+    ) != tuple(raw_authorizations):
+        raise ResumeError("run manifest phase authorization inventory is inconsistent")
     try:
+        phase_id = str(value["phase_id"])
+        execution_mode = (
+            ExecutionMode(value["execution_mode"])
+            if format_version == "2.2.0"
+            else legacy_execution_mode(phase_id, dry_run=dry_run)
+        )
         return PhaseOutcome(
-            phase_id=str(value["phase_id"]),
+            phase_id=phase_id,
             name=str(value["name"]),
             mode=str(value["mode"]),
+            execution_mode=execution_mode,
             status=str(value["status"]),
             outputs=cast(list[str], outputs),
             output_artifacts=[RunOutputArtifact.model_validate(item) for item in artifacts],
@@ -594,6 +675,7 @@ def _phase_outcome_from_dict(value: dict[str, Any]) -> PhaseOutcome:
             gate_reason=str(gate.get("reason", "")),
             gate_overridden=gate.get("overridden") is True,
             gate_provisional=gate.get("provisional") is True,
+            authorization_ids=cast(list[str], raw_authorizations),
             error=str(value.get("error", "")),
         )
     except (KeyError, TypeError, ValueError) as exc:
@@ -619,6 +701,9 @@ def _load_resume_manifest(layout: RunLayout) -> RunManifest:
     selected = data.get("selected_phases")
     raw_evidence = data.get("evidence_manifests", [])
     raw_source_phases = data.get("source_phases", [])
+    raw_policy = data.get("execution_policy")
+    raw_authorizations = data.get("authorizations", [])
+    raw_used_authorizations = data.get("used_authorization_ids", [])
     if (
         not isinstance(phases, list)
         or not all(isinstance(value, dict) for value in phases)
@@ -630,11 +715,22 @@ def _load_resume_manifest(layout: RunLayout) -> RunManifest:
         or not all(isinstance(value, str) for value in selected)
         or not isinstance(raw_evidence, list)
         or not isinstance(raw_source_phases, list)
+        or not isinstance(raw_authorizations, list)
+        or not isinstance(raw_used_authorizations, list)
+        or not all(isinstance(value, str) for value in raw_used_authorizations)
     ):
         raise ResumeError("run manifest execution identity is malformed")
     try:
         manifest_evidence = [EvidenceManifestBinding.model_validate(item) for item in raw_evidence]
         source_phases = [SourcePhaseBinding.model_validate(item) for item in raw_source_phases]
+        execution_policy = (
+            ExecutionPolicyBinding.model_validate(raw_policy) if format_version == "2.2.0" else None
+        )
+        authorizations = (
+            [ExecutionAuthorization.model_validate(item) for item in raw_authorizations]
+            if format_version == "2.2.0"
+            else []
+        )
     except ValueError as exc:
         raise ResumeError("run manifest source or evidence binding is malformed") from exc
     source_ids = [item.phase_id for item in source_phases]
@@ -642,13 +738,55 @@ def _load_resume_manifest(layout: RunLayout) -> RunManifest:
         raise ResumeError("run manifest predecessor phase bindings are duplicated or unordered")
     if format_version == "2.0.0" and (manifest_evidence or source_phases):
         raise ResumeError("run manifest v2.0 cannot claim source or accepted-evidence bindings")
+    if format_version != "2.2.0" and (
+        raw_policy is not None or raw_authorizations or raw_used_authorizations
+    ):
+        raise ResumeError("legacy run manifest cannot claim execution-policy authorization")
+    if execution_policy is not None and tuple(
+        item.phase_id for item in execution_policy.phase_modes
+    ) != tuple(selected):
+        raise ResumeError("run manifest execution-policy phases do not match selection")
+    authorization_ids = {item.authorization_id for item in authorizations}
+    used_authorization_ids = set(raw_used_authorizations)
+    if (
+        len(authorization_ids) != len(authorizations)
+        or len(used_authorization_ids) != len(raw_used_authorizations)
+        or not used_authorization_ids <= authorization_ids
+    ):
+        raise ResumeError("run manifest execution authorizations are duplicated or inconsistent")
+    dry_run = data.get("dry_run") is True
+    parsed_phases = [
+        _phase_outcome_from_dict(
+            value,
+            format_version=cast(str, format_version),
+            dry_run=dry_run,
+        )
+        for value in phases
+    ]
+    if execution_policy is not None:
+        policy_modes = {item.phase_id: item.execution_mode for item in execution_policy.phase_modes}
+        authorization_map = {item.authorization_id: item for item in authorizations}
+        for phase in parsed_phases:
+            if phase.execution_mode is not policy_modes.get(phase.phase_id):
+                raise ResumeError("run phase execution mode contradicts execution policy")
+            if not set(phase.authorization_ids) <= used_authorization_ids or any(
+                phase.phase_id not in authorization_map[identity].scope_phase_ids
+                for identity in phase.authorization_ids
+            ):
+                raise ResumeError("run phase authorization inventory is inconsistent")
+        if (
+            data.get("finished_at")
+            and not data.get("error")
+            and used_authorization_ids != authorization_ids
+        ):
+            raise ResumeError("completed run contains an unused execution authorization")
     return RunManifest(
         run_id=layout.run_id,
         started_at=str(data.get("started_at", "")),
-        dry_run=data.get("dry_run") is True,
+        dry_run=dry_run,
         override=data.get("override") is True,
         selected_phases=cast(list[str], selected),
-        phases=[_phase_outcome_from_dict(value) for value in phases],
+        phases=parsed_phases,
         warnings=[str(value) for value in data.get("warnings", [])],
         stopped_at=str(data.get("stopped_at", "")),
         finished_at=str(data.get("finished_at", "")),
@@ -657,6 +795,9 @@ def _load_resume_manifest(layout: RunLayout) -> RunManifest:
         execution_identity=dict(identity),
         evidence_manifests=manifest_evidence,
         source_phases=source_phases,
+        execution_policy=execution_policy,
+        authorizations=authorizations,
+        used_authorization_ids=cast(list[str], raw_used_authorizations),
     )
 
 
@@ -727,6 +868,8 @@ def run_pipeline(
     resume: bool = False,
     evidence_manifest_ids: list[str] | None = None,
     input_phase_runs: Mapping[str, str] | None = None,
+    phase_modes: Mapping[str, str | ExecutionMode] | None = None,
+    authorization_paths: list[Path] | None = None,
 ) -> RunManifest:
     """Execute selected phases in one isolated run directory.
 
@@ -737,6 +880,10 @@ def run_pipeline(
     """
     if resume and run_id is None:
         raise ResumeError("resume requires an explicit run ID")
+    if override:
+        raise ExecutionPolicyError(
+            "--override is retired; use an exact scoped execution authorization record"
+        )
     run_id = validate_run_id(run_id or generate_run_id())
 
     # Validate the phase selection BEFORE creating the run dir/logger, so a bad --only/--from/--to
@@ -745,6 +892,22 @@ def run_pipeline(
     selected = select_phases(registry, from_=from_, to=to, only=only)
 
     selected_ids = [phase.id for phase in selected]
+    try:
+        requested_modes = {
+            phase_id: value if isinstance(value, ExecutionMode) else ExecutionMode(value)
+            for phase_id, value in dict(phase_modes or {}).items()
+        }
+    except ValueError as exc:
+        raise ExecutionPolicyError("requested phase execution mode is invalid") from exc
+    execution_policy = resolve_execution_policy(
+        selected_ids,
+        dry_run=dry_run,
+        requested_modes=requested_modes,
+    )
+    execution_modes = {item.phase_id: item.execution_mode for item in execution_policy.phase_modes}
+    authorizations = load_execution_authorizations(authorization_paths)
+    validate_authorizations_for_run(authorizations, execution_policy)
+    used_authorization_ids: set[str] = set()
     validate_execution_roots(config.raw_root, config.output_root, config.runs_root)
     required_sources = _required_external_phases(selected_ids, dry_run=dry_run)
     source_selectors = dict(input_phase_runs or {})
@@ -790,7 +953,8 @@ def run_pipeline(
             register,
             selected_phases=selected_ids,
             dry_run=dry_run,
-            override=override,
+            execution_policy=execution_policy,
+            authorizations=authorizations,
             selected_evidence=selected_evidence,
             source_phases=source_phase_bindings,
         )
@@ -800,15 +964,23 @@ def run_pipeline(
             if (
                 manifest.selected_phases != selected_ids
                 or manifest.dry_run != dry_run
-                or manifest.override != override
+                or manifest.override
                 or manifest.execution_identity != identity
                 or manifest.evidence_manifests != list(selected_evidence)
                 or manifest.source_phases != list(source_phase_bindings)
+                or (
+                    manifest.manifest_format_version == "2.2.0"
+                    and (
+                        manifest.execution_policy != execution_policy
+                        or manifest.authorizations != list(authorizations)
+                    )
+                )
             ):
                 raise ResumeError(
                     "resume identity differs from the recorded sources, configuration, "
                     "methodology, code, or parameters"
                 )
+            used_authorization_ids.update(manifest.used_authorization_ids)
             retained: list[PhaseOutcome] = []
             for outcome in manifest.phases:
                 if outcome.phase_id not in selected_ids:
@@ -893,11 +1065,13 @@ def run_pipeline(
                 run_id=run_id,
                 started_at=datetime.now(UTC).isoformat(),
                 dry_run=dry_run,
-                override=override,
+                override=False,
                 selected_phases=selected_ids,
                 execution_identity=identity,
                 evidence_manifests=list(selected_evidence),
                 source_phases=list(source_phase_bindings),
+                execution_policy=execution_policy,
+                authorizations=list(authorizations),
             )
 
         # Persist the immutable run identity before any preflight or phase side effect. A hard
@@ -906,12 +1080,12 @@ def run_pipeline(
         _write_manifest(layout, manifest)
 
         logger.info(
-            "Run %s | dry_run=%s override=%s resume=%s | phases=%s",
+            "Run %s | dry_run=%s resume=%s | phases=%s modes=%s",
             run_id,
             dry_run,
-            override,
             resume,
             manifest.selected_phases,
+            {phase: mode.value for phase, mode in execution_modes.items()},
         )
 
         # The body runs under try/finally so a startup abort still leaves a machine-readable
@@ -950,24 +1124,56 @@ def run_pipeline(
                             f"{len(ack)} acknowledged data gap(s): {', '.join(ack)}"
                         )
                     if unexpected:
-                        msg = _missing_raw_message(unexpected, register, present_names, config)
-                        logger.error(msg)
-                        raise MissingRawDataError(msg)
-                verify_raw_integrity(config, override=override, logger=logger)
+                        gap_records = tuple(
+                            item
+                            for item in authorizations
+                            if item.action is AuthorizationAction.DATA_GAP_ACKNOWLEDGEMENT
+                            and item.subject in {f"raw-input:{name}" for name in unexpected}
+                        )
+                        subjects = {item.subject for item in gap_records}
+                        fully_covered = all(
+                            f"raw-input:{name}" in subjects
+                            and set(selected_ids)
+                            <= {
+                                phase
+                                for item in gap_records
+                                if item.subject == f"raw-input:{name}"
+                                for phase in item.scope_phase_ids
+                            }
+                            for name in unexpected
+                        )
+                        if not fully_covered:
+                            msg = _missing_raw_message(unexpected, register, present_names, config)
+                            logger.error(msg)
+                            raise MissingRawDataError(msg)
+                        used_authorization_ids.update(item.authorization_id for item in gap_records)
+                        manifest.warnings.append(
+                            f"{len(unexpected)} explicitly acknowledged raw input gap(s): "
+                            f"{', '.join(unexpected)}"
+                        )
+                verify_raw_integrity(
+                    config,
+                    authorizations=authorizations,
+                    selected_phases=selected_ids,
+                    used_authorization_ids=used_authorization_ids,
+                    logger=logger,
+                )
 
             ctx = RunContext(
                 config=config,
                 register=register,
                 run_id=run_id,
                 dry_run=dry_run,
-                override=override,
+                override=False,
                 logger=logger,
                 run_isolated=True,
+                execution_modes=execution_modes,
                 resolved_evidence=resolved_evidence,
                 source_phase_dirs={
                     item.binding.phase_id: item.phase_dir for item in resolved_source_phases
                 },
             )
+            operational_exception_controls = load_execution_policy().operational_exception_controls
 
             for phase in selected:
                 if phase.id in completed_ids:
@@ -992,7 +1198,17 @@ def run_pipeline(
                         )
                     ctx.resolved_evidence = refreshed
                 outcome = PhaseOutcome(
-                    phase_id=phase.id, name=phase.name, mode=phase.mode, status="pending"
+                    phase_id=phase.id,
+                    name=phase.name,
+                    mode=phase.mode,
+                    execution_mode=execution_modes[phase.id],
+                    status="pending",
+                    authorization_ids=sorted(
+                        item.authorization_id
+                        for item in authorizations
+                        if item.authorization_id in used_authorization_ids
+                        and phase.id in item.scope_phase_ids
+                    ),
                 )
                 decision: GateDecision | None = None
                 finalized = False
@@ -1021,11 +1237,54 @@ def run_pipeline(
                         item.decision is Decision.PENDING for item in report.items
                     )
                     decision = phase.gate(report, ctx)
+                    if decision.status is GateStatus.BLOCKED:
+                        failed_items = tuple(
+                            item.item for item in report.items if item.decision is Decision.FAIL
+                        )
+                        matching_controls = tuple(
+                            item
+                            for item in operational_exception_controls
+                            if item.phase_id == phase.id
+                            and item.qaqc_items == failed_items
+                            and execution_modes[phase.id] in item.permitted_modes
+                        )
+                        if len(matching_controls) > 1:
+                            raise ExecutionPolicyError(
+                                f"execution policy ambiguously classifies Phase {phase.id} gate"
+                            )
+                        subject = (
+                            phase_gate_subject(phase.id, matching_controls[0].control_id)
+                            if matching_controls
+                            else None
+                        )
+                        matching_exceptions = tuple(
+                            item
+                            for item in authorizations
+                            if item.action is AuthorizationAction.OPERATIONAL_EXCEPTION
+                            and item.subject == subject
+                            and phase.id in item.scope_phase_ids
+                            and item.resulting_permitted_mode is execution_modes[phase.id]
+                        )
+                        if len(matching_exceptions) > 1:
+                            raise ExecutionPolicyError(
+                                f"multiple operational exceptions claim Phase {phase.id} gate"
+                            )
+                        if matching_exceptions:
+                            authorization = matching_exceptions[0]
+                            used_authorization_ids.add(authorization.authorization_id)
+                            outcome.authorization_ids.append(authorization.authorization_id)
+                            outcome.authorization_ids.sort()
+                            decision = GateDecision(
+                                phase.id,
+                                GateStatus.GO,
+                                "AUTHORIZED OPERATIONAL EXCEPTION - " + decision.reason,
+                                overridden=True,
+                            )
                     outcome.gate_status = decision.status.value
                     outcome.gate_reason = decision.reason
                     outcome.gate_overridden = decision.overridden
                     outcome.gate_provisional = decision.provisional
-                    if not report.passed and not dry_run:
+                    if not report.passed and not dry_run and not decision.overridden:
                         outcome.status = "qaqc-failed"
                         outcome.outputs = []
                     else:
@@ -1098,6 +1357,14 @@ def run_pipeline(
                         decision.reason,
                     )
                     break
+            unused_authorizations = sorted(
+                {item.authorization_id for item in authorizations} - used_authorization_ids
+            )
+            if unused_authorizations:
+                raise ExecutionPolicyError(
+                    f"selected execution authorization was not applicable: {unused_authorizations}"
+                )
+            manifest.used_authorization_ids = sorted(used_authorization_ids)
         except Exception as exc:  # startup abort — record it in the manifest, then re-raise
             manifest.error = f"{type(exc).__name__}: {exc}"
             raise
